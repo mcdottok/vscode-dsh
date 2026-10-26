@@ -1,0 +1,182 @@
+import type { BackendDiscovery } from '@dsh-vscode/application'
+import { isLoopbackEndpoint, type BackendCandidate } from '@dsh-vscode/domain'
+import { isDshPackageVersion } from '@dsh-vscode/dsh-adapter'
+
+import { discoveryCancelled, type DiscoveryProvider } from './provider.js'
+
+export class CompositeInstanceDiscovery implements BackendDiscovery {
+  public constructor(private readonly providers: readonly DiscoveryProvider[]) {}
+
+  public async discover(signal?: AbortSignal): Promise<readonly BackendCandidate[]> {
+    return this.discoverProviders(this.providers, signal)
+  }
+
+  public async discoverFast(signal?: AbortSignal): Promise<readonly BackendCandidate[]> {
+    return this.discoverProviders(
+      this.providers.filter((provider) => provider.phase !== 'fallback'),
+      signal,
+    )
+  }
+
+  public async discoverRemaining(
+    fastCandidates: readonly BackendCandidate[],
+    signal?: AbortSignal,
+  ): Promise<readonly BackendCandidate[]> {
+    return this.discoverProviders(
+      this.providers.filter((provider) => provider.phase === 'fallback'),
+      signal,
+      fastCandidates,
+    )
+  }
+
+  public async resolvePreferred(
+    candidates: readonly BackendCandidate[],
+    signal?: AbortSignal,
+  ): Promise<readonly BackendCandidate[]> {
+    const endpoints = candidates
+      .filter((candidate) => isLoopbackEndpoint(candidate.endpoint))
+      .map((candidate) => candidate.endpoint)
+    if (endpoints.length === 0) return []
+    const processIds = candidates.flatMap((candidate) =>
+      candidate.processIdHint === undefined ? [] : [candidate.processIdHint],
+    )
+    return this.discoverProviders(
+      this.providers.flatMap((provider) =>
+        provider.discoverEndpoints === undefined
+          ? []
+          : [
+              {
+                id: provider.id,
+                discover: (probeSignal?: AbortSignal) =>
+                  provider.discoverEndpoints!(endpoints, probeSignal, processIds),
+              },
+            ],
+      ),
+      signal,
+      candidates,
+    )
+  }
+
+  private async discoverProviders(
+    providers: readonly DiscoveryProvider[],
+    signal?: AbortSignal,
+    initialCandidates: readonly BackendCandidate[] = [],
+  ): Promise<readonly BackendCandidate[]> {
+    if (signal?.aborted) throw discoveryCancelled(signal.reason)
+    const results = await Promise.allSettled(providers.map((provider) => provider.discover(signal)))
+    // allSettled deliberately isolates stale optional discovery providers, but
+    // it must not turn a caller cancellation into a successful empty result.
+    if (signal?.aborted) throw discoveryCancelled(signal.reason)
+    const byEndpoint = new Map<string, BackendCandidate[]>()
+    const groups = [
+      initialCandidates,
+      ...results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : [])),
+    ]
+    for (const candidates of groups) {
+      for (const candidate of candidates) {
+        if (!isLoopbackEndpoint(candidate.endpoint)) continue
+        const key = `${candidate.endpoint.host}:${candidate.endpoint.port}`
+        const existing = byEndpoint.get(key)
+        if (existing === undefined) byEndpoint.set(key, [candidate])
+        else existing.push(candidate)
+      }
+    }
+    return [...byEndpoint.values()].map(mergeEndpointCandidates).sort((left, right) => {
+      const score = rank(right) - rank(left)
+      if (score !== 0) return score
+      return left.endpoint.port - right.endpoint.port
+    })
+  }
+}
+
+function mergeEndpointCandidates(candidates: readonly BackendCandidate[]): BackendCandidate {
+  const winner = candidates.reduce((best, candidate) => (rank(candidate) > rank(best) ? candidate : best))
+  const processes = candidates.filter((candidate) => candidate.source === 'process-scan')
+  const processPids = new Set(
+    processes.flatMap((candidate) =>
+      candidate.pid !== undefined && Number.isSafeInteger(candidate.pid) && candidate.pid > 0
+        ? [candidate.pid]
+        : [],
+    ),
+  )
+  const manifestEvidence = processes.filter(
+    (candidate) => candidate.runtimeVersionEvidence === 'process-manifest',
+  )
+  const verifiedManifestEvidence = manifestEvidence.filter(
+    (candidate) =>
+      candidate.runtimeVersion !== undefined &&
+      isDshPackageVersion(candidate.runtimeVersion) &&
+      candidate.pid !== undefined &&
+      Number.isSafeInteger(candidate.pid) &&
+      candidate.pid > 0 &&
+      processPids.has(candidate.pid) &&
+      hasProcessImage(candidate),
+  )
+  const malformedManifest = verifiedManifestEvidence.length !== manifestEvidence.length
+  const distinctVersions = new Set(
+    verifiedManifestEvidence.flatMap((candidate) =>
+      candidate.runtimeVersion === undefined ? [] : [candidate.runtimeVersion],
+    ),
+  )
+  const processIdentityConflict = processPids.size > 1
+  const uniqueProcessPid = processPids.size === 1 ? [...processPids][0] : undefined
+  const runtimeVersion =
+    !malformedManifest &&
+    verifiedManifestEvidence.length > 0 &&
+    !processIdentityConflict &&
+    uniqueProcessPid !== undefined &&
+    verifiedManifestEvidence.every((candidate) => candidate.pid === uniqueProcessPid) &&
+    distinctVersions.size === 1
+      ? [...distinctVersions][0]
+      : undefined
+  const processIdentity =
+    runtimeVersion === undefined || uniqueProcessPid === undefined
+      ? undefined
+      : verifiedManifestEvidence.find(
+          (candidate) => candidate.pid === uniqueProcessPid && hasProcessImage(candidate),
+        )
+  const {
+    runtimeVersion: discardedVersion,
+    runtimeVersionEvidence: discardedEvidence,
+    pid: discardedPid,
+    commandLine: discardedCommandLine,
+    executablePath: discardedExecutablePath,
+    ...winnerWithoutIdentity
+  } = winner
+  void discardedVersion
+  void discardedEvidence
+  void discardedPid
+  void discardedCommandLine
+  void discardedExecutablePath
+
+  return {
+    ...winnerWithoutIdentity,
+    ...(runtimeVersion === undefined
+      ? {}
+      : { runtimeVersion, runtimeVersionEvidence: 'process-manifest' as const }),
+    ...(processIdentity === undefined
+      ? {}
+      : {
+          pid: processIdentity.pid,
+          ...(processIdentity.commandLine === undefined ? {} : { commandLine: processIdentity.commandLine }),
+          ...(processIdentity.executablePath === undefined
+            ? {}
+            : { executablePath: processIdentity.executablePath }),
+        }),
+  }
+}
+
+function hasProcessImage(candidate: BackendCandidate): boolean {
+  return Boolean(candidate.commandLine?.trim() || candidate.executablePath?.trim())
+}
+
+function rank(candidate: BackendCandidate): number {
+  const sourceWeight: Record<BackendCandidate['source'], number> = {
+    configured: 50,
+    known: 40,
+    companion: 30,
+    'process-scan': 20,
+    'default-port': 10,
+  }
+  return sourceWeight[candidate.source] * 1000 + candidate.confidence
+}

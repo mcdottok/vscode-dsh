@@ -1,0 +1,199 @@
+// @vitest-environment jsdom
+
+import { afterEach, describe, expect, it } from 'vitest'
+
+import type {
+  AccountLifecycleSnapshotDto,
+  FeatureHostEvent,
+  FeatureRequest,
+  HostMessage,
+} from '@dsh-vscode/webview-protocol'
+import type { ProtocolClient } from './protocol-client.js'
+import { createHostBackedAppStore as createAppStore } from '../test/host-window-store.js'
+
+const attemptId = 'd80ff092-0cdd-4a34-b5fb-05503d8574d8'
+const snapshot = {
+  status: 'signed-out' as const,
+  attempt: { id: attemptId, phase: 'waiting-browser' as const },
+}
+const accountDetails = {
+  accountScopeRevision: 1,
+  profile: { status: 'ready' as const, value: { name: 'Ada', contact: 'ada@example.test' } },
+  balance: { status: 'ready' as const, value: { wallets: [], bonusWallets: [] } },
+  bonus: { status: 'ready' as const, value: null },
+}
+
+class AccountStoreClient {
+  public readonly accountRequests: FeatureRequest[] = []
+  private readonly hostListeners = new Set<(message: HostMessage) => void>()
+  private readonly featureListeners = new Set<(message: FeatureHostEvent) => void>()
+
+  public request<T>(_request: never): Promise<T> {
+    return Promise.resolve(undefined as T)
+  }
+
+  public featureRequest<T>(request: FeatureRequest): Promise<T> {
+    this.accountRequests.push(request)
+    const payload =
+      request.type === 'account.signOutImpact'
+        ? { kind: 'account.impact', impact: 'unknown' }
+        : request.type === 'account.details.read'
+          ? { kind: 'account.details', snapshot: accountDetails }
+          : request.type === 'account.bonus.ack'
+            ? { kind: 'account.bonus.ack', accepted: true }
+            : request.type === 'account.page.open'
+              ? { kind: 'account.page.opened', page: request.payload.page }
+              : { kind: 'account.lifecycle', snapshot }
+    return Promise.resolve(payload as T)
+  }
+
+  public subscribe(listener: (message: HostMessage) => void): () => void {
+    this.hostListeners.add(listener)
+    return () => this.hostListeners.delete(listener)
+  }
+
+  public subscribeFeature(listener: (message: FeatureHostEvent) => void): () => void {
+    this.featureListeners.add(listener)
+    return () => this.featureListeners.delete(listener)
+  }
+
+  public dispose(): void {
+    this.hostListeners.clear()
+    this.featureListeners.clear()
+  }
+
+  public connected(generation: number, accountLifecycleAvailable: boolean): void {
+    const message: HostMessage = {
+      type: 'event',
+      name: 'connection.snapshot',
+      sequence: generation,
+      payload: {
+        kind: 'connected',
+        backendInstanceId: 'backend-instance',
+        connectionGeneration: generation,
+        dshVersion: generation === 1 ? '0.1.7-rc.2' : '0.1.2-alpha.1',
+        accountLifecycleAvailable,
+      },
+    }
+    for (const listener of this.hostListeners) listener(message)
+  }
+
+  public update(snapshotValue: AccountLifecycleSnapshotDto, generation = 1): void {
+    const message: FeatureHostEvent = {
+      type: 'feature.event',
+      name: 'account.lifecycle.updated',
+      identity: {
+        backendInstanceId: 'backend-instance',
+        connectionGeneration: generation,
+        stream: 'host',
+        localSeq: 1,
+      },
+      snapshot: snapshotValue,
+    }
+    for (const listener of this.featureListeners) listener(message)
+  }
+
+  public expire(): void {
+    const message: FeatureHostEvent = {
+      type: 'feature.event',
+      name: 'account.session-expired',
+      identity: {
+        backendInstanceId: 'backend-instance',
+        connectionGeneration: 1,
+        stream: 'host',
+        localSeq: 2,
+      },
+    }
+    for (const listener of this.featureListeners) listener(message)
+  }
+}
+
+describe('account lifecycle store', () => {
+  afterEach(() => document.body.replaceChildren())
+
+  it('uses only capability-gated account requests and applies safe state events', async () => {
+    const client = new AccountStoreClient()
+    const store = createAppStore(client as unknown as ProtocolClient)
+    client.connected(1, true)
+
+    expect(store.getState().accountLifecycleAvailable).toBe(true)
+    await store.loadAccountLifecycle()
+    await store.startAccountSignIn()
+    await store.cancelAccountSignIn(attemptId)
+    await store.checkAccountSignOutImpact()
+    await store.signOutAccount()
+
+    expect(client.accountRequests.map(({ type, payload }) => ({ type, payload }))).toEqual([
+      { type: 'account.state', payload: {} },
+      { type: 'account.signIn', payload: {} },
+      { type: 'account.cancelSignIn', payload: { attemptId } },
+      { type: 'account.signOutImpact', payload: {} },
+      { type: 'account.signOut', payload: {} },
+    ])
+    expect(JSON.stringify(client.accountRequests)).not.toMatch(
+      /authorizeUrl|code_challenge|token|callbackOrigin/u,
+    )
+    expect(store.getState().accountLifecycleImpact).toBe('unknown')
+
+    const liveSnapshot = { status: 'credential-stored' as const, attempt: null }
+    client.update(liveSnapshot)
+    expect(store.getState().accountLifecycle).toEqual(liveSnapshot)
+    await store.loadAccountDetails()
+    expect(store.getState().accountProfileDetails).toEqual(accountDetails)
+    expect(await store.acknowledgeAccountBonus(attemptId)).toBe(true)
+    await store.openAccountPage('usage')
+    expect(client.accountRequests.slice(-3).map(({ type, payload }) => ({ type, payload }))).toEqual([
+      { type: 'account.details.read', payload: {} },
+      { type: 'account.bonus.ack', payload: { orderId: attemptId } },
+      { type: 'account.page.open', payload: { page: 'usage' } },
+    ])
+    expect(JSON.stringify(client.accountRequests)).not.toMatch(/accountId|avatarUrl|https?:\/\//u)
+    store.dispose()
+  })
+
+  it('hides account controls without the selected adapter capability', async () => {
+    const client = new AccountStoreClient()
+    const store = createAppStore(client as unknown as ProtocolClient)
+    client.connected(1, false)
+
+    expect(store.getState().accountLifecycleAvailable).toBe(false)
+    await store.loadAccountLifecycle()
+    await store.startAccountSignIn()
+    expect(client.accountRequests).toEqual([])
+    store.dispose()
+  })
+
+  it('clears cached account details when the stored session expires', async () => {
+    const client = new AccountStoreClient()
+    const store = createAppStore(client as unknown as ProtocolClient)
+    client.connected(1, true)
+    client.update({ status: 'credential-stored', attempt: null })
+    await store.loadAccountDetails()
+    expect(store.getState().accountProfileDetails).toEqual(accountDetails)
+    client.expire()
+    expect(store.getState().accountProfileDetails).toBeNull()
+    expect(store.getState().accountProfileLoading).toBe(false)
+    store.dispose()
+  })
+
+  it('clears account state across backend lifetimes even when the new Host reuses the same scope revision', async () => {
+    const client = new AccountStoreClient()
+    const store = createAppStore(client as unknown as ProtocolClient)
+    const signedIn: AccountLifecycleSnapshotDto = { status: 'credential-stored', attempt: null }
+    client.connected(1, true)
+    client.update(signedIn, 1)
+    await store.loadAccountDetails()
+    expect(store.getState().accountProfileDetails).toEqual(accountDetails)
+
+    client.connected(2, true)
+    expect(store.getState().accountLifecycle).toBeNull()
+    expect(store.getState().accountProfileDetails).toBeNull()
+    expect(store.getState().accountProfileLoading).toBe(false)
+
+    client.update(signedIn, 2)
+    await store.loadAccountDetails()
+    expect(store.getState().accountProfileDetails).toEqual(accountDetails)
+    expect(store.getState().accountProfileDetails?.accountScopeRevision).toBe(1)
+    store.dispose()
+  })
+})

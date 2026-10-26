@@ -1,0 +1,362 @@
+import {
+  hostEnvelopeSchema,
+  PROTOCOL_VERSION,
+  featureHostEnvelopeSchema,
+  featureWebviewEnvelopeSchema,
+  webviewRequestSchema,
+  type FeatureHostEvent,
+  type FeatureHostMessage,
+  type FeatureRequest,
+  type HostMessage,
+  type ProtocolEnvelope,
+  type WebviewRequest,
+} from '@dsh-vscode/webview-protocol'
+
+import { translate } from '../i18n.js'
+import type { VsCodeApi } from '../vscode-api.js'
+
+interface Pending {
+  readonly responseType: 'response' | 'feature.response'
+  readonly resolve: (value: unknown) => void
+  readonly reject: (reason: unknown) => void
+  readonly timer: number
+}
+
+const publicRequestErrors = new WeakSet<Error>()
+
+interface FeatureBackendIdentity {
+  readonly backendInstanceId: string
+  readonly connectionGeneration: number
+}
+
+// npm installation is a host-side operation and may legitimately take longer
+// than ordinary chat/settings requests. Keep the Webview pending until the
+// Extension Host can return the real result instead of turning a slow download
+// into a misleading generic timeout.
+// A check runs `npm view` and then `npm list --global`, each with its own 30s
+// host budget, plus the runtime scan, so the client budget has to cover both
+// calls: a shorter one reports a timeout for a check the Host completes and
+// drops the version list the drawer was waiting for.
+const RUNTIME_UPDATE_CHECK_TIMEOUT_MS = 90_000
+// Covers metadata lookup, the ten-minute npm install, verification and connection.
+const RUNTIME_UPDATE_INSTALL_TIMEOUT_MS = 13 * 60_000
+// Checkpoint work reads or writes every recorded file through the host file
+// API, which on a remote workspace is a round trip per file. Timing out
+// mid-restore reports a failure for work that is already overwriting workspace
+// files, and the late real result is dropped.
+const CHECKPOINT_TIMEOUT_MS = 180_000
+// An export is size-proportional work on the Host side: the ZIP deflates the
+// whole session, and the text formats read the entire paged history (200
+// messages per round trip). An ordinary request budget reports a failure for a
+// file the Host then finishes writing, so the export gets the long-operation
+// budget instead.
+const SESSION_EXPORT_TIMEOUT_MS = 180_000
+// These requests wait for a native file/password dialog, not just an RPC.
+// Give the user time to choose or cancel while retaining a bounded lifetime.
+const NATIVE_DIALOG_TIMEOUT_MS = 600_000
+const PLUGIN_INSTALL_TIMEOUT_MS = 600_000
+
+/** Per-type host budgets; any request not listed keeps the ordinary timeout. */
+const EXTENDED_TIMEOUT_MS: Readonly<Record<string, number>> = {
+  'workspace.addFolder': NATIVE_DIALOG_TIMEOUT_MS,
+  'attachment.pick': NATIVE_DIALOG_TIMEOUT_MS,
+  'provider.secret.configure': NATIVE_DIALOG_TIMEOUT_MS,
+  'plugin.credential.configure': NATIVE_DIALOG_TIMEOUT_MS,
+  'plugin.bundle.install': PLUGIN_INSTALL_TIMEOUT_MS,
+  'plugin.bundle.waitForInstall': PLUGIN_INSTALL_TIMEOUT_MS,
+  'mods.band.read': 30_000,
+  'runtime.action': RUNTIME_UPDATE_INSTALL_TIMEOUT_MS,
+  'runtime.update.check': RUNTIME_UPDATE_CHECK_TIMEOUT_MS,
+  'runtime.update.install': RUNTIME_UPDATE_INSTALL_TIMEOUT_MS,
+  'checkpoint.create': CHECKPOINT_TIMEOUT_MS,
+  'checkpoint.preview': CHECKPOINT_TIMEOUT_MS,
+  'checkpoint.restore': CHECKPOINT_TIMEOUT_MS,
+  'checkpoint.delete': CHECKPOINT_TIMEOUT_MS,
+  'session.export': SESSION_EXPORT_TIMEOUT_MS,
+}
+
+function timeoutMsFor(ordinaryTimeoutMs: number, type: string): number {
+  return Math.max(ordinaryTimeoutMs, EXTENDED_TIMEOUT_MS[type] ?? 0)
+}
+
+const timeoutError = (requestType: string): Error => {
+  const promptRequest = requestType === 'session.sendPrompt' || requestType === 'subagent.send'
+  const error = new Error(translate(promptRequest ? 'app.error.promptTimeout' : 'app.error.timeout'))
+  Object.assign(error, { retryable: true })
+  publicRequestErrors.add(error)
+  return error
+}
+
+/** Only validated Host summaries and local safe timeout messages may be shown verbatim. */
+export function publicProtocolErrorMessage(reason: unknown): string | undefined {
+  return reason instanceof Error && publicRequestErrors.has(reason) ? reason.message : undefined
+}
+
+export class ProtocolClient {
+  private readonly pending = new Map<string, Pending>()
+  private readonly listeners = new Set<(message: HostMessage) => void>()
+  private readonly featureListeners = new Set<(message: FeatureHostEvent) => void>()
+  private readonly sequences = new Map<string, number>()
+  private readonly featureSequences = new Map<string, number>()
+  private readonly featureGenerations = new Map<string, number>()
+  private featureBackendIdentity: FeatureBackendIdentity | undefined
+  private featureConnectionKnown = false
+  private disposed = false
+  private readonly windowListener = (event: MessageEvent<unknown>): void => this.handle(event.data)
+
+  public constructor(
+    private readonly api: VsCodeApi,
+    private readonly timeoutMs = 30_000,
+  ) {
+    window.addEventListener('message', this.windowListener)
+  }
+
+  public request<T>(request: WebviewRequest, signal?: AbortSignal): Promise<T> {
+    if (this.disposed) return Promise.reject(new Error(translate('app.error.disposed')))
+    if (signal?.aborted === true) return Promise.reject(new DOMException('Cancelled', 'AbortError'))
+    const result = this.sendRequest<T>(
+      { protocolVersion: PROTOCOL_VERSION, message: webviewRequestSchema.parse(request) },
+      'response',
+    )
+    if (signal === undefined) return result
+    const abort = (): void => {
+      const pending = this.takePending(request.requestId, 'response')
+      if (pending === undefined) return
+      this.cancelTimedOutRequest(request.requestId)
+      pending.reject(new DOMException('Cancelled', 'AbortError'))
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    if (signal.aborted) abort()
+    return result.finally(() => signal.removeEventListener('abort', abort))
+  }
+
+  /** Request the staged, strict feature surface without widening legacy schemas. */
+  public featureRequest<T>(request: FeatureRequest): Promise<T> {
+    if (this.disposed) return Promise.reject(new Error(translate('app.error.disposed')))
+    const parsed = featureWebviewEnvelopeSchema.parse({
+      protocolVersion: PROTOCOL_VERSION,
+      message: request,
+    }).message
+    return this.sendRequest({ protocolVersion: PROTOCOL_VERSION, message: parsed }, 'feature.response')
+  }
+
+  private sendRequest<T>(
+    envelope: Extract<ProtocolEnvelope, { message: WebviewRequest | FeatureRequest }>,
+    responseType: Pending['responseType'],
+  ): Promise<T> {
+    const parsed = envelope.message
+    if (this.pending.has(parsed.requestId))
+      return Promise.reject(new Error(translate('app.error.duplicateRequest')))
+    return new Promise<T>((resolve, reject) => {
+      const timeoutMs = timeoutMsFor(this.timeoutMs, parsed.type)
+      const timer = window.setTimeout(() => {
+        if (this.pending.get(parsed.requestId)?.timer !== timer) return
+        this.pending.delete(parsed.requestId)
+        reject(timeoutError(parsed.type))
+        // A prompt send can still be running in the Host after the local
+        // waiter expires; request cancellation is best effort, so the UI
+        // reports that delivery is unconfirmed instead of claiming failure.
+        if (
+          parsed.type === 'session.sendPrompt' ||
+          parsed.type === 'subagent.send' ||
+          parsed.type === 'mods.band.read' ||
+          parsed.type === 'mods.band.press'
+        )
+          this.cancelTimedOutRequest(parsed.requestId)
+      }, timeoutMs)
+      this.pending.set(parsed.requestId, {
+        responseType,
+        resolve: (value) => resolve(value as T),
+        reject,
+        timer,
+      })
+      try {
+        this.api.postMessage(envelope)
+      } catch (error) {
+        window.clearTimeout(timer)
+        this.pending.delete(parsed.requestId)
+        reject(error instanceof Error ? error : new Error(String(error)))
+      }
+    })
+  }
+
+  public handle(rawMessage: unknown): void {
+    if (this.disposed) return
+    const parsed = hostEnvelopeSchema.safeParse(rawMessage)
+    if (parsed.success) {
+      this.handleLegacyMessage(parsed.data.message)
+      return
+    }
+    const feature = featureHostEnvelopeSchema.safeParse(rawMessage)
+    if (!feature.success) return
+    this.handleFeatureMessage(feature.data.message)
+  }
+
+  public subscribeFeature(listener: (message: FeatureHostEvent) => void): () => void {
+    if (this.disposed) return () => undefined
+    this.featureListeners.add(listener)
+    return () => this.featureListeners.delete(listener)
+  }
+
+  private handleLegacyMessage(message: HostMessage): void {
+    if (message.type === 'response') {
+      const pending = this.takePending(message.requestId, message.type)
+      if (pending === undefined) return
+      if (message.ok) pending.resolve(message.payload)
+      else {
+        const error = new Error(message.error?.message ?? translate('app.error.hostUnspecified'))
+        if (message.error !== undefined) Object.assign(error, message.error)
+        publicRequestErrors.add(error)
+        pending.reject(error)
+      }
+      return
+    }
+    const previous = this.sequences.get(message.name) ?? -1
+    if (message.sequence <= previous) return
+    this.sequences.set(message.name, message.sequence)
+    if (message.name === 'connection.snapshot' || message.name === 'connection.lost')
+      this.updateFeatureBackendIdentity(
+        message.name === 'connection.lost' ? { kind: 'lost' } : message.payload,
+      )
+    for (const listener of this.listeners) listener(message)
+  }
+
+  private handleFeatureMessage(message: FeatureHostMessage): void {
+    if (message.type === 'feature.response') {
+      const pending = this.takePending(message.requestId, message.type)
+      if (pending === undefined) return
+      if (message.ok) pending.resolve(message.payload)
+      else {
+        const error = new Error(message.error.message)
+        Object.assign(error, message.error)
+        publicRequestErrors.add(error)
+        pending.reject(error)
+      }
+      return
+    }
+    const identity = message.identity
+    if (this.featureConnectionKnown) {
+      const current = this.featureBackendIdentity
+      if (current === undefined) return
+      if (identity.backendInstanceId !== current.backendInstanceId) return
+      if (identity.connectionGeneration < current.connectionGeneration) return
+      if (identity.connectionGeneration > current.connectionGeneration) {
+        this.featureBackendIdentity = {
+          backendInstanceId: identity.backendInstanceId,
+          connectionGeneration: identity.connectionGeneration,
+        }
+        this.featureSequences.clear()
+        this.featureGenerations.clear()
+      }
+    } else {
+      this.featureBackendIdentity = {
+        backendInstanceId: identity.backendInstanceId,
+        connectionGeneration: identity.connectionGeneration,
+      }
+    }
+    const generationKey = [identity.backendInstanceId, identity.stream, identity.sessionId ?? ''].join(':')
+    const previousGeneration = this.featureGenerations.get(generationKey)
+    if (previousGeneration !== undefined && identity.connectionGeneration < previousGeneration) return
+    if (previousGeneration === undefined || identity.connectionGeneration > previousGeneration)
+      this.featureGenerations.set(generationKey, identity.connectionGeneration)
+    const key = [
+      identity.backendInstanceId,
+      identity.connectionGeneration,
+      identity.stream,
+      identity.sessionId ?? '',
+    ].join(':')
+    const sequence = identity.stream === 'mux' ? identity.serverSeq : identity.localSeq
+    const previous = this.featureSequences.get(key) ?? -1
+    if (sequence <= previous) return
+    this.featureSequences.set(key, sequence)
+    for (const listener of this.featureListeners) listener(message)
+  }
+
+  private updateFeatureBackendIdentity(payload: unknown): void {
+    this.featureConnectionKnown = true
+    const snapshot = object(payload)
+    if (snapshot?.kind !== 'connected') {
+      this.featureBackendIdentity = undefined
+      this.featureSequences.clear()
+      this.featureGenerations.clear()
+      return
+    }
+    const backendInstanceId =
+      typeof snapshot.backendInstanceId === 'string' ? snapshot.backendInstanceId : undefined
+    const connectionGeneration =
+      typeof snapshot.connectionGeneration === 'number' &&
+      Number.isSafeInteger(snapshot.connectionGeneration) &&
+      snapshot.connectionGeneration >= 0
+        ? snapshot.connectionGeneration
+        : undefined
+    if (backendInstanceId === undefined || connectionGeneration === undefined) {
+      this.featureBackendIdentity = undefined
+      this.featureSequences.clear()
+      this.featureGenerations.clear()
+      return
+    }
+    const current = this.featureBackendIdentity
+    if (
+      current !== undefined &&
+      current.backendInstanceId === backendInstanceId &&
+      connectionGeneration < current.connectionGeneration
+    )
+      return
+    if (
+      current === undefined ||
+      current.backendInstanceId !== backendInstanceId ||
+      current.connectionGeneration !== connectionGeneration
+    ) {
+      this.featureSequences.clear()
+      this.featureGenerations.clear()
+    }
+    this.featureBackendIdentity = { backendInstanceId, connectionGeneration }
+  }
+
+  public subscribe(listener: (message: HostMessage) => void): () => void {
+    if (this.disposed) return () => undefined
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
+
+  private takePending(requestId: string, responseType: Pending['responseType']): Pending | undefined {
+    const pending = this.pending.get(requestId)
+    if (pending?.responseType !== responseType) return undefined
+    this.pending.delete(requestId)
+    window.clearTimeout(pending.timer)
+    return pending
+  }
+
+  public dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
+    window.removeEventListener('message', this.windowListener)
+    for (const pending of this.pending.values()) {
+      window.clearTimeout(pending.timer)
+      pending.reject(new Error(translate('app.error.webviewDisposed')))
+    }
+    this.pending.clear()
+    this.listeners.clear()
+    this.featureListeners.clear()
+    this.featureSequences.clear()
+    this.featureGenerations.clear()
+    this.featureBackendIdentity = undefined
+    this.featureConnectionKnown = false
+  }
+
+  private cancelTimedOutRequest(targetRequestId: string): void {
+    const requestId =
+      globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    void this.featureRequest({
+      type: 'feature.request.cancel',
+      requestId,
+      payload: { targetRequestId },
+    }).catch(() => undefined)
+  }
+}
+
+function object(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined
+}

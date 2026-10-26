@@ -1,0 +1,102 @@
+import type { ReactElement } from 'react'
+import type { DiagnosticsSnapshot } from '@dsh-vscode/domain'
+import { ContentFlow } from '../../components/common/ContentFlow.js'
+import { useI18n } from '../../i18n.js'
+import { Icon } from '../../ui/Icon.js'
+import { DiagnosticsDrawer } from '../diagnostics/DiagnosticsDrawer.js'
+
+export interface RuntimeMissingViewProps {
+  readonly searchedLocations: readonly string[]
+  readonly busyAction: 'install' | 'select' | undefined
+  readonly onAction: (action: 'install' | 'select' | 'copy-command' | 'open-docs') => void
+  readonly onRetry?: () => void
+  readonly onOpenSettings?: () => void
+  readonly onReadDiagnostics?: () => Promise<DiagnosticsSnapshot | undefined>
+  readonly onReconnectDiagnostics?: () => Promise<void>
+  readonly onShowDiagnosticsOutput?: () => Promise<void>
+}
+
+export function RuntimeMissingView(props: RuntimeMissingViewProps): ReactElement {
+  const { t } = useI18n()
+  const searchedLocations = [...new Set(props.searchedLocations.filter((location) => location.trim() !== ''))]
+  return (
+    <section className="dsh-runtime-missing" aria-labelledby="runtime-missing-title">
+      <div className="dsh-runtime-missing__intro">
+        <span className="dsh-app__eyebrow">{t('runtime.eyebrow')}</span>
+        <div className="dsh-runtime-missing__title-row">
+          <span className="dsh-runtime-missing__icon" aria-hidden="true">
+            <Icon name="box" />
+          </span>
+          <h1 id="runtime-missing-title">{t('runtime.title')}</h1>
+        </div>
+        <ContentFlow as="p" className="dsh-runtime-missing__description">
+          {t('runtime.description')}
+        </ContentFlow>
+      </div>
+      <ContentFlow as="ol" className="dsh-runtime-missing__steps" aria-label={t('runtime.steps')}>
+        <li>{t('runtime.step.install')}</li>
+        <li>{t('runtime.step.reconnect')}</li>
+        <li>{t('runtime.step.docs')}</li>
+      </ContentFlow>
+      <div className="dsh-runtime-missing__actions">
+        <button
+          className="dsh-button dsh-button--primary"
+          type="button"
+          disabled={props.busyAction === 'install'}
+          onClick={() => props.onAction('install')}
+        >
+          {props.busyAction === 'install' ? t('runtime.installing') : t('runtime.install')}
+        </button>
+        <button
+          className="dsh-button dsh-button--secondary"
+          type="button"
+          disabled={props.busyAction === 'select'}
+          onClick={() => props.onAction('select')}
+        >
+          {props.busyAction === 'select' ? t('runtime.selecting') : t('runtime.select')}
+        </button>
+        <button
+          className="dsh-button dsh-button--ghost"
+          type="button"
+          onClick={() => props.onAction('copy-command')}
+        >
+          {t('runtime.copy')}
+        </button>
+        <button className="dsh-button dsh-button--ghost" type="button" onClick={props.onRetry}>
+          {t('runtime.retry')}
+        </button>
+        {props.onOpenSettings === undefined ? null : (
+          <button className="dsh-button dsh-button--ghost" type="button" onClick={props.onOpenSettings}>
+            {t('runtime.openSettings')}
+          </button>
+        )}
+        {props.onReadDiagnostics === undefined ||
+        props.onReconnectDiagnostics === undefined ||
+        props.onShowDiagnosticsOutput === undefined ? null : (
+          <DiagnosticsDrawer
+            onRead={props.onReadDiagnostics}
+            onReconnect={props.onReconnectDiagnostics}
+            onShowOutput={props.onShowDiagnosticsOutput}
+          />
+        )}
+        <button
+          className="dsh-button dsh-button--ghost"
+          type="button"
+          onClick={() => props.onAction('open-docs')}
+        >
+          {t('runtime.docs')}
+        </button>
+      </div>
+      <details>
+        <summary>{t('runtime.searched', { count: searchedLocations.length })}</summary>
+        <ul>
+          {searchedLocations.map((location) => (
+            <li key={location}>
+              <code>{location}</code>
+            </li>
+          ))}
+        </ul>
+      </details>
+    </section>
+  )
+}

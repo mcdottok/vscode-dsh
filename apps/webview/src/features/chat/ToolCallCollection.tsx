@@ -1,0 +1,293 @@
+import { SubmittedPlanCard } from './SubmittedPlanCard.js'
+import { memo, useCallback, type ReactElement } from 'react'
+import { terminalPresentationFailed, type MessageImageReference } from '@dsh-vscode/domain'
+import { projectToolCallTree, type TimelineNode, type ToolCallTreeNode } from '@dsh-vscode/timeline'
+import {
+  ToolRendererRegistry,
+  toolNameLabel,
+  toolStatusLabel,
+  type ToolCodeRenderProps,
+  type ToolDiffRenderProps,
+  type ToolSearchRenderProps,
+  type ToolTerminalRenderProps,
+  type ToolWebRenderProps,
+} from '@dsh-vscode/ui'
+import { ContentFlow } from '../../components/common/index.js'
+import { Icon } from '../../ui/Icon.js'
+import type { Translate } from '../../i18n.js'
+import { MessageImages } from './MessageImages.js'
+import { ToolCodePreview } from './ToolCodePreview.js'
+import { ToolDiffPreview } from './ToolDiffPreview.js'
+import { ToolSearchPreview } from './ToolSearchPreview.js'
+import { ToolTerminalPreview } from './ToolTerminalPreview.js'
+import { ToolWebPreview } from './ToolWebPreview.js'
+import { useConversationLayout } from '../../app/ConversationLayoutProvider.js'
+
+export type ToolTimelineNode = Extract<TimelineNode, { readonly kind: 'tool' }>
+
+export interface ToolCallCollectionProps {
+  readonly tools: readonly ToolTimelineNode[]
+  readonly expanded: ReadonlySet<string>
+  readonly onExpandedChange: (expanded: ReadonlySet<string>) => void
+  readonly translate: Translate
+  /** A parent presentation can own the disclosure; classic collections group by default. */
+  readonly grouped?: boolean
+  readonly onOpenLink?: (href: string) => void
+  readonly onLoadImage?: (image: MessageImageReference) => Promise<string | undefined>
+}
+
+const toolRendererRegistry = new ToolRendererRegistry()
+
+/**
+ * Keeps one tool and a contiguous batch on the same timeline contract. The
+ * collection itself is intentionally small; details remain delegated to the
+ * shared UI registry so specialized tool presentations stay reusable.
+ */
+export const ToolCallCollection = memo(function ToolCallCollection(
+  props: ToolCallCollectionProps,
+): ReactElement {
+  return (
+    <>
+      {props.tools
+        .filter((node) => node.tool.submittedPlan !== undefined)
+        .map((node) => (
+          <SubmittedPlanCard key={node.id} tool={node.tool} onOpenLink={props.onOpenLink} />
+        ))}
+      <ToolCallRows {...props} />
+    </>
+  )
+}, toolCollectionEqual)
+
+const ToolCallRows = memo(function ToolCallRows(props: ToolCallCollectionProps): ReactElement | null {
+  if (props.tools.length === 0) return null
+  const preparing = props.tools.filter((node) => node.tool.preparation !== undefined)
+  if (preparing.length > 0)
+    return (
+      <>
+        <ToolCallRows {...props} tools={props.tools.filter((node) => node.tool.preparation === undefined)} />
+        {projectToolCallTree(preparing).map((root) => (
+          <div className="dsh-timeline__tool-collection" key={root.node.id}>
+            {renderToolCard(root, props)}
+          </div>
+        ))}
+      </>
+    )
+  const roots = projectToolCallTree(props.tools)
+
+  if (props.grouped === false)
+    return (
+      <>
+        {roots.map((root) => (
+          <div className="dsh-timeline__tool-collection" key={root.node.id}>
+            {renderToolCard(root, props)}
+          </div>
+        ))}
+      </>
+    )
+
+  if (roots.length === 1) {
+    const root = roots[0]
+    return root === undefined ? null : (
+      <div className="dsh-timeline__tool-collection">{renderToolCard(root, props)}</div>
+    )
+  }
+
+  const latest = props.tools[props.tools.length - 1]
+  if (latest === undefined) return null
+  // The collapsed summary is the only surface a reader sees before expanding;
+  // a failed call inside the batch must stay visible there, not only on rows.
+  const hasFailure = roots.some(treeHasFailure)
+
+  return (
+    <details className="dsh-timeline__tool-group dsh-timeline__tool-collection">
+      <summary
+        className="dsh-timeline__tool-group-summary"
+        aria-label={props.translate('timeline.showToolCalls', { count: props.tools.length })}
+      >
+        <span className="dsh-timeline__tool-group-icon" aria-hidden="true">
+          <Icon name="tool" />
+        </span>
+        <span className="dsh-timeline__tool-group-count" aria-hidden="true">
+          {props.tools.length}
+        </span>
+        <ContentFlow
+          as="span"
+          variant="truncate"
+          className="dsh-timeline__tool-group-latest"
+          title={toolSummary(latest.tool, props.translate)}
+        >
+          {toolSummary(latest.tool, props.translate)}
+        </ContentFlow>
+        {hasFailure ? <span className="dsh-timeline__tool-group-failure" aria-hidden="true" /> : null}
+        <span className="dsh-timeline__tool-group-disclosure" aria-hidden="true">
+          <Icon name="chevron-down" />
+        </span>
+      </summary>
+      <div className="dsh-timeline__tool-group-list">
+        {roots.map((root) => (
+          <div key={root.node.id}>{renderToolCard(root, props)}</div>
+        ))}
+      </div>
+    </details>
+  )
+}, toolCollectionEqual)
+
+function renderToolCard(tree: ToolCallTreeNode, props: ToolCallCollectionProps): ReactElement {
+  return (
+    <ToolCardView
+      tree={tree}
+      expanded={props.expanded}
+      onExpandedChange={props.onExpandedChange}
+      translate={props.translate}
+      {...(props.onOpenLink === undefined ? {} : { onOpenLink: props.onOpenLink })}
+      {...(props.onLoadImage === undefined ? {} : { onLoadImage: props.onLoadImage })}
+    />
+  )
+}
+
+/** The row-level failed verdict, including Auto Review denials, for a subtree. */
+function treeHasFailure(tree: ToolCallTreeNode): boolean {
+  const status = terminalPresentationFailed(tree.node.tool.presentation) ? 'failed' : tree.node.tool.status
+  return status === 'failed' || tree.children.some(treeHasFailure)
+}
+
+interface ToolCardViewProps {
+  readonly tree: ToolCallTreeNode
+  readonly expanded: ReadonlySet<string>
+  readonly onExpandedChange: (expanded: ReadonlySet<string>) => void
+  readonly translate: Translate
+  readonly onOpenLink?: (href: string) => void
+  readonly onLoadImage?: (image: MessageImageReference) => Promise<string | undefined>
+}
+
+const ToolCardView = memo(function ToolCardView(props: ToolCardViewProps): ReactElement {
+  const focused = useConversationLayout()?.layout === 'focused'
+  const { expanded: expandedKeys, tree, onExpandedChange } = props
+  const node = tree.node
+  const expanded = expandedKeys.has(node.id)
+  const onToggle = useCallback((): void => {
+    const next = new Set(expandedKeys)
+    if (next.has(node.id)) next.delete(node.id)
+    else next.add(node.id)
+    onExpandedChange(next)
+  }, [expandedKeys, node.id, onExpandedChange])
+
+  return (
+    <div className="dsh-timeline__tool-call" data-tool-call-id={node.id}>
+      {toolRendererRegistry.render(node.tool, {
+        focused,
+        expanded,
+        translate: props.translate,
+        onToggle,
+        renderCode: renderToolCode,
+        renderDiff: renderToolDiff,
+        renderTerminal: renderToolTerminal,
+        renderSearch: renderToolSearch,
+        renderWeb: renderToolWeb,
+        ...(props.onOpenLink === undefined ? {} : { onOpenLink: props.onOpenLink }),
+      })}
+      {expanded && (node.tool.images?.length ?? 0) > 0 ? (
+        <MessageImages
+          images={node.tool.images ?? []}
+          translate={props.translate}
+          {...(props.onLoadImage === undefined ? {} : { loadImage: props.onLoadImage })}
+        />
+      ) : null}
+      {tree.children.length === 0 ? null : (
+        <div
+          className="dsh-timeline__tool-subcalls"
+          data-subcalls="true"
+          role="group"
+          aria-label={props.translate('timeline.toolSubcalls')}
+        >
+          {tree.children.map((child) => (
+            <ToolCardView
+              key={child.node.id}
+              tree={child}
+              expanded={expandedKeys}
+              onExpandedChange={onExpandedChange}
+              translate={props.translate}
+              {...(props.onOpenLink === undefined ? {} : { onOpenLink: props.onOpenLink })}
+              {...(props.onLoadImage === undefined ? {} : { onLoadImage: props.onLoadImage })}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}, toolCardViewEqual)
+
+function renderToolCode(props: ToolCodeRenderProps): ReactElement {
+  return <ToolCodePreview {...props} />
+}
+
+function renderToolDiff(props: ToolDiffRenderProps): ReactElement {
+  return <ToolDiffPreview {...props} />
+}
+
+function renderToolTerminal(props: ToolTerminalRenderProps): ReactElement {
+  return <ToolTerminalPreview {...props} />
+}
+
+function renderToolSearch(props: ToolSearchRenderProps): ReactElement {
+  return <ToolSearchPreview {...props} />
+}
+
+function renderToolWeb(props: ToolWebRenderProps): ReactElement {
+  return <ToolWebPreview {...props} />
+}
+
+function toolCollectionEqual(previous: ToolCallCollectionProps, next: ToolCallCollectionProps): boolean {
+  if (
+    previous.onExpandedChange !== next.onExpandedChange ||
+    previous.onOpenLink !== next.onOpenLink ||
+    previous.onLoadImage !== next.onLoadImage ||
+    previous.translate !== next.translate ||
+    previous.grouped !== next.grouped ||
+    previous.tools.length !== next.tools.length
+  )
+    return false
+  for (let index = 0; index < previous.tools.length; index += 1)
+    if (previous.tools[index] !== next.tools[index]) return false
+  if (previous.expanded === next.expanded) return true
+  for (const tool of next.tools)
+    if (previous.expanded.has(tool.id) !== next.expanded.has(tool.id)) return false
+  return true
+}
+
+function toolCardViewEqual(previous: ToolCardViewProps, next: ToolCardViewProps): boolean {
+  return (
+    previous.tree.node === next.tree.node &&
+    previous.tree.children === next.tree.children &&
+    previous.onExpandedChange === next.onExpandedChange &&
+    previous.onOpenLink === next.onOpenLink &&
+    previous.onLoadImage === next.onLoadImage &&
+    previous.translate === next.translate &&
+    expandedTreeEqual(previous.tree, previous.expanded, next.expanded)
+  )
+}
+
+function expandedTreeEqual(
+  tree: ToolCallTreeNode,
+  previous: ReadonlySet<string>,
+  next: ReadonlySet<string>,
+): boolean {
+  if (previous.has(tree.node.id) !== next.has(tree.node.id)) return false
+  return tree.children.every((child) => expandedTreeEqual(child, previous, next))
+}
+
+function toolSummary(tool: ToolTimelineNode['tool'], translate: Translate): string {
+  const title = tool.title.trim()
+  const name = tool.name.trim()
+  const normalizedTitle = title.toLowerCase()
+  const normalizedName = name.toLowerCase()
+  const label =
+    title !== '' && normalizedTitle !== 'tool' && normalizedTitle !== normalizedName
+      ? title
+      : (toolNameLabel(name, translate) ?? (name || title || translate('timeline.toolFallback')))
+  const status = toolStatusLabel(
+    terminalPresentationFailed(tool.presentation) ? 'failed' : tool.status,
+    translate,
+  )
+  return label === '' ? status : `${label} · ${status}`
+}

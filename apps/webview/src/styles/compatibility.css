@@ -1,0 +1,9 @@
+/* Ordered cascade entry. Keep fragment order stable; feature refinements follow their base rules. */
+@import './compatibility/01-shared-surfaces.css';
+@import './compatibility/02-message-media.css';
+@import './compatibility/03-session-and-runtime.css';
+@import './compatibility/04-presets-and-settings.css';
+@import './compatibility/05-plugin-configuration.css';
+@import './compatibility/06-subagent-navigation.css';
+@import './compatibility/07-session-switcher.css';
+@import './compatibility/08-responsive.css';

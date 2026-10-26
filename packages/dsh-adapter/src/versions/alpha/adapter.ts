@@ -1,0 +1,418 @@
+import { NegotiatedEditorBridgeRepository } from '../../repositories/editor-bridge-repository.js'
+import { workspaceChangeSource } from '../alpha162/workspace-changes.js'
+import {
+  AppError,
+  type BackendCandidate,
+  type BackendCapabilities,
+  type BackendEndpoint,
+  type ConnectedBackend,
+  type DshBackend,
+  type BackendEvent,
+  type AccountLifecycleRepository,
+  type PluginRepository,
+  type PluginBundleRepository,
+  type PresetRepository,
+  type ScheduleRepository,
+  type UserQuestionRepository,
+  type SessionProjectionValues,
+  type ModsBandRepository,
+  type InspectorDevtoolsRepository,
+  type EditorBridgeRepository,
+} from '@dsh-vscode/domain'
+
+import { DshVersionAdapterBase, type VersionAdapterIdentity } from '../../adapter-base.js'
+import {
+  isKnownDshVersion,
+  isMalformedDshVersionHint,
+  normalizeDshVersion,
+  type DshTransport,
+} from '../../contracts.js'
+import { withBestEffortAdapterCapabilities, withExactAdapterCapabilities } from '../../compatibility.js'
+import type { Rc6AdapterOptions } from '../rc6/adapter.js'
+import type { ExportFileSystem } from '../../repositories/export-repository.js'
+import { Rc6CommandRepository, type CommandAttachmentWire } from '../../repositories/command-repository.js'
+import { Rc6CredentialRepository } from '../../repositories/credential-repository.js'
+import { Rc6ExportRepository } from '../../repositories/export-repository.js'
+import { Rc6MessageFeedbackRepository } from '../../repositories/feedback-repository.js'
+import { Rc6GoalRepository } from '../../repositories/goal-repository.js'
+import { Rc6InteractionRepository } from '../../repositories/interaction-repository.js'
+import { Rc6JobRepository, type EventAwareJobRepository } from '../../repositories/job-repository.js'
+import { Rc6ModelRepository } from '../../repositories/model-repository.js'
+import { Rc6PluginRepository } from '../../repositories/plugin-repository.js'
+import { Rc6PresetRepository } from '../../repositories/preset-repository.js'
+import { Rc6ReferenceRepository } from '../../repositories/reference-repository.js'
+import {
+  historyGapRecovery,
+  Rc6SessionRepository,
+  type Rc6SessionRepositoryOptions,
+} from '../../repositories/session-repository.js'
+import { Rc6SettingsRepository } from '../../repositories/settings-repository.js'
+import { Rc6SkillRepository } from '../../repositories/skill-repository.js'
+import {
+  Rc6SubagentRepository,
+  type SubagentRepositoryOptions,
+} from '../../repositories/subagent-repository.js'
+import { Rc6WorkspaceRepository } from '../../repositories/workspace-repository.js'
+import { SubagentAddressRegistry } from '../../repositories/shared/subagent-addresses.js'
+import { AlphaEventSource } from './events.js'
+import {
+  AlphaLoopbackApiClient,
+  type AlphaLoopbackApiClientOptions,
+  type AlphaWebSocketConstructor,
+  type AssistantPreviewState,
+} from './transport.js'
+import { callRpc } from '../rc6/rpc.js'
+import { deriveFeatureCapabilityProfile } from '../../feature-capabilities.js'
+
+export type AlphaAdapterOptions = Omit<Rc6AdapterOptions, 'webSocket'> & {
+  readonly allowLocalInspector?: (endpoint: BackendEndpoint) => boolean
+  readonly authCookie?: (endpoint: BackendEndpoint) => string | undefined
+  readonly webSocket?: AlphaWebSocketConstructor
+  readonly exportFileSystem?: ExportFileSystem
+  /** Host-side observability for the optional transient assistant preview. */
+  readonly onAssistantPreview?: (state: AssistantPreviewState) => void
+}
+
+/** Shared adapter assembly for the verified 0.1.2 alpha Connection/Gateway contract. */
+export class Alpha1VersionAdapter extends DshVersionAdapterBase {
+  protected override readonly identity: VersionAdapterIdentity = {
+    id: 'dsh-0.1.2-alpha.1',
+    supportedVersion: '0.1.2-alpha.1',
+    protocolVersion: 'alpha1',
+    compatibilityPriority: 80,
+    fallback: false,
+  }
+
+  /** Alpha.1/2 accept only text/content blocks on the subagent wire. */
+  protected readonly supportsWorkspaceChanges: boolean = false
+  protected readonly supportsLiveGoal: boolean = false
+  protected readonly supportsFileUploads: boolean = false
+  protected readonly supportsInlineSubagentImages: boolean = false
+  /** Only the 0.1.6 alpha line exposes the upstream unarchive Remote. */
+  protected readonly supportsSessionRestore: boolean = false
+  /** Only exact DSH RC2 exposes the account-controller Remote. */
+  protected readonly supportsAccountLifecycle: boolean = false
+  /** Only DSH 0.2.0-rc.2 exposes the timed userQuestions Remotes. */
+  protected readonly supportsUserQuestions: boolean = false
+  /** Only DSH 0.1.3-alpha.2 requires `subagent.prompt.delivery`. */
+  protected readonly supportsSubagentPromptDelivery: boolean = false
+  /** 0.1.3-alpha.1 renamed the commands/execute attachment parameter. */
+  protected readonly commandAttachmentWire: CommandAttachmentWire = 'images'
+  /** New Session Control profiles supplement host queues from durable follow snapshots. */
+  protected readonly queueBaselineMode: 'control' | 'control-follow' = 'control'
+
+  protected permissionCatalogReader(
+    _transport: DshTransport,
+  ): ((signal?: AbortSignal) => Promise<readonly string[]>) | undefined {
+    return undefined
+  }
+
+  public constructor(protected readonly options: AlphaAdapterOptions) {
+    super()
+  }
+
+  public async probe(
+    candidate: BackendCandidate,
+    signal?: AbortSignal,
+  ): Promise<BackendCapabilities | undefined> {
+    return this.probeAlpha(candidate, signal, false)
+  }
+
+  public async probeCompatibility(
+    candidate: BackendCandidate,
+    signal?: AbortSignal,
+  ): Promise<BackendCapabilities | undefined> {
+    return this.probeAlpha(candidate, signal, true)
+  }
+
+  private async probeAlpha(
+    candidate: BackendCandidate,
+    signal: AbortSignal | undefined,
+    compatibility: boolean,
+  ): Promise<BackendCapabilities | undefined> {
+    if (isMalformedDshVersionHint(candidate.runtimeVersion)) return undefined
+    const hintedVersion = normalizeDshVersion(candidate.runtimeVersion)
+    if (!compatibility && candidate.runtimeVersion !== hintedVersion) return undefined
+    // Exact probes are still strict. Compatibility probes are a separate,
+    // read-only path for an unknown or absent runtime label; the successful
+    // response, not the release suffix, is what permits reuse of this
+    // adapter's known contract. A known release is declined here because an
+    // exact adapter owns it.
+    if (
+      compatibility
+        ? hintedVersion !== undefined && isKnownDshVersion(hintedVersion)
+        : hintedVersion !== this.supportedVersion
+    )
+      return undefined
+    const transport = this.createTransport(candidate.endpoint)
+    try {
+      const value = await callRpc<unknown>(transport, 'session.list', {}, signal)
+      if (!isSessionList(value)) return undefined
+      const capabilities: BackendCapabilities = {
+        protocolVersion: this.protocolVersion,
+        dshVersion: this.supportedVersion,
+        sessionRestore: this.supportsSessionRestore && !compatibility,
+        subagentImagePrompts: this.supportsInlineSubagentImages && !compatibility,
+        features: new Set([
+          'host',
+          'workspace',
+          'session',
+          'models',
+          'settings',
+          'credentials',
+          'goals',
+          'skills',
+          'subagents',
+          'events',
+          'commands',
+          'presets',
+          'references',
+          'feedback',
+          ...(this.supportsAccountLifecycle ? ['account-lifecycle'] : []),
+          ...(this.supportsUserQuestions && !compatibility ? ['user-questions'] : []),
+        ]),
+      }
+      return compatibility
+        ? withBestEffortAdapterCapabilities(capabilities, hintedVersion, this.id)
+        : withExactAdapterCapabilities(
+            { ...capabilities, featureProfile: deriveFeatureCapabilityProfile(capabilities) },
+            this.id,
+          )
+    } catch (error) {
+      if (signal?.aborted === true) throw error
+      if (
+        error instanceof AppError &&
+        ['AUTH_REQUIRED', 'PERMISSION_DENIED', 'INVALID_ENDPOINT'].includes(error.code)
+      )
+        throw error
+      return undefined
+    } finally {
+      await transport.close()
+    }
+  }
+
+  public createTransport(endpoint: BackendEndpoint): DshTransport {
+    return new AlphaLoopbackApiClient(this.createTransportOptions(endpoint))
+  }
+
+  protected createSubagentRepository(
+    transport: AlphaLoopbackApiClient,
+    options: SubagentRepositoryOptions,
+  ): Rc6SubagentRepository {
+    return new Rc6SubagentRepository(transport, options)
+  }
+
+  protected createTransportOptions(endpoint: BackendEndpoint): AlphaLoopbackApiClientOptions {
+    const options: AlphaLoopbackApiClientOptions = {
+      ...this.options,
+      endpoint,
+    }
+    return options
+  }
+
+  public createBackend(backend: ConnectedBackend): Promise<DshBackend> {
+    // One routing table for child sessions: the catalog commits it and the
+    // transport reuses it, so a child's live stream and history pages carry the
+    // durable descriptor the Session Controller requires for subagent Sessions.
+    const subagentAddresses = new SubagentAddressRegistry()
+    const transport = new AlphaLoopbackApiClient({
+      ...this.createTransportOptions(backend.endpoint),
+      subagentAddresses,
+    })
+    const eventsHolder: { value?: AlphaEventSource } = {}
+    const interactions = new Rc6InteractionRepository(transport, {
+      resetPendingOnSubscribe: false,
+      // Alpha never echoes a settlement to the client that performed it, so the
+      // accepted answer must be published locally. Otherwise the Host replay
+      // cache re-posts the settled request after every Webview reload and the
+      // task center keeps a needs-input row that can only fail.
+      onSettled: (event) => eventsHolder.value?.publish(event),
+    })
+    const workspaces = new Rc6WorkspaceRepository(transport, {
+      supportsSessionRestore: this.supportsSessionRestore,
+    })
+    const sessions = this.createSessionRepository(transport, workspaces, {
+      preallocatedSessionId: true,
+      supportsSessionRestore: this.supportsSessionRestore,
+      supportsFileUploads: this.supportsFileUploads,
+      readPermissionPresets: this.permissionCatalogReader(transport),
+      commandAttachmentWire: this.commandAttachmentWire,
+      maxPromptAttachmentBytes: 20 * 1024 * 1024,
+      maxPromptAttachmentTotalBytes: 200 * 1024 * 1024,
+      onSessionAccess: (sessionId) => eventsHolder.value?.watchSession(sessionId),
+      onSessionOpen: (sessionId) => eventsHolder.value?.refreshSession(sessionId),
+      deriveTitleFromCwd: true,
+      // Older alpha profiles baseline queues on the host-wide control stream.
+      // Alpha171+ derives the complete queue from each V4 follow projection,
+      // because fork children can inherit Inbox state without a control event.
+      queueBaseline: this.queueBaselineMode,
+      mapProjectionValues: (values) => this.mapProjectionValues(values),
+    })
+    const goals = new Rc6GoalRepository(transport, this.supportsLiveGoal)
+    const jobs = this.createJobRepository(transport)
+    const schedules = this.createScheduleRepository(transport)
+    const pluginBundles = this.createPluginBundleRepository(transport)
+    const account = this.createAccountLifecycleRepository(transport)
+    const userQuestions = this.createUserQuestionRepository(transport)
+    const modsBand = this.createModsBandRepository(transport)
+    const editorBridge = this.createEditorBridgeRepository(transport)
+    const inspectorDevtools = this.createInspectorRepository(backend.endpoint)
+    const observe = (event: BackendEvent): void => {
+      interactions.remember(event)
+      sessions.remember(event)
+      goals.remember(event)
+      jobs.remember(event)
+    }
+    const events = new AlphaEventSource(
+      transport,
+      observe,
+      historyGapRecovery(sessions),
+      jobs.watchRows === undefined ? undefined : (sessionId, signal) => jobs.watchRows!(sessionId, signal),
+      (event) => this.mapBackendEvent(event),
+      () => this.createSessionEventNormalizer(),
+    )
+    eventsHolder.value = events
+    let closed = false
+    const backendValue: DshBackend = {
+      connection: backend,
+      ...(this.supportsWorkspaceChanges ? { workspaceChanges: workspaceChangeSource(transport) } : {}),
+      sessions,
+      workspaces,
+      models: new Rc6ModelRepository(transport),
+      credentials: new Rc6CredentialRepository(transport),
+      interactions,
+      ...(userQuestions === undefined ? {} : { userQuestions }),
+      ...(modsBand === undefined ? {} : { modsBand }),
+      ...(editorBridge === undefined ? {} : { editorBridge }),
+      ...(inspectorDevtools === undefined ? {} : { inspectorDevtools }),
+      goals,
+      jobs,
+      subagents: this.createSubagentRepository(transport, {
+        inlineImagePrompts: backend.capabilities.subagentImagePrompts === true,
+        subagentPromptDelivery: this.supportsSubagentPromptDelivery,
+        maxPromptAttachmentBytes: 20 * 1024 * 1024,
+        maxPromptAttachmentTotalBytes: 200 * 1024 * 1024,
+        addresses: subagentAddresses,
+      }),
+      settings: new Rc6SettingsRepository(transport),
+      skills: new Rc6SkillRepository(transport),
+      commands: new Rc6CommandRepository(transport, this.commandAttachmentWire),
+      plugins: this.createPluginRepository(transport),
+      ...(pluginBundles === undefined ? {} : { pluginBundles }),
+      ...(account === undefined ? {} : { account }),
+      presets: this.createPresetRepository(transport),
+      ...(schedules === undefined ? {} : { schedules }),
+      exports: new Rc6ExportRepository(transport, this.options.exportFileSystem),
+      references: new Rc6ReferenceRepository(transport),
+      feedback: new Rc6MessageFeedbackRepository(transport),
+      events,
+      close: async () => {
+        if (closed) return
+        closed = true
+        try {
+          await Promise.all([
+            events?.close(),
+            userQuestions?.close(),
+            modsBand?.close(),
+            inspectorDevtools?.close(),
+          ])
+        } finally {
+          await transport.close()
+        }
+      },
+    }
+    return Promise.resolve(backendValue)
+  }
+
+  /** Optional plugin methods are probed independently of the native DSH API family. */
+  protected createEditorBridgeRepository(
+    transport: AlphaLoopbackApiClient,
+  ): EditorBridgeRepository | undefined {
+    return new NegotiatedEditorBridgeRepository(transport)
+  }
+
+  /** Allow a release seam to replace the old session-control-backed Job source. */
+  protected createJobRepository(transport: AlphaLoopbackApiClient): EventAwareJobRepository {
+    return new Rc6JobRepository(transport, { resetOnSubscribe: false })
+  }
+
+  /** Allow a release seam to replace changed plugin-inventory fields. */
+  protected createPluginRepository(transport: AlphaLoopbackApiClient): PluginRepository {
+    return new Rc6PluginRepository(transport)
+  }
+
+  /** Allow a release seam to replace changed preset-roster fields and methods. */
+  protected createPresetRepository(transport: AlphaLoopbackApiClient): PresetRepository {
+    return new Rc6PresetRepository(transport)
+  }
+
+  /** Allow exact release profiles to add session Remote capabilities. */
+  protected createSessionRepository(
+    transport: AlphaLoopbackApiClient,
+    workspaces: Rc6WorkspaceRepository,
+    options: Rc6SessionRepositoryOptions,
+  ): Rc6SessionRepository {
+    return new Rc6SessionRepository(transport, workspaces, this.options.samePath, options)
+  }
+
+  /** Version profiles normalize newly introduced durable projection values here. */
+  protected mapProjectionValues(values: Readonly<Record<string, unknown>>): SessionProjectionValues {
+    return values
+  }
+
+  /** Version profiles normalize structured events before repositories and clients observe them. */
+  protected mapBackendEvent(event: BackendEvent): BackendEvent {
+    return event
+  }
+
+  /** Each watched Session owns its version-specific transient projection state. */
+  protected createSessionEventNormalizer(): ((frame: unknown) => BackendEvent | undefined) | undefined {
+    return undefined
+  }
+
+  /** Only exact adapter profiles with the Schedule Remote expose this port. */
+  protected createScheduleRepository(_transport: AlphaLoopbackApiClient): ScheduleRepository | undefined {
+    return undefined
+  }
+
+  protected createModsBandRepository(_transport: AlphaLoopbackApiClient): ModsBandRepository | undefined {
+    return undefined
+  }
+
+  protected createInspectorRepository(_endpoint: BackendEndpoint): InspectorDevtoolsRepository | undefined {
+    return undefined
+  }
+
+  /** Only exact adapter profiles with RC2 Plugin Manager Remotes expose bundle controls. */
+  protected createPluginBundleRepository(
+    _transport: AlphaLoopbackApiClient,
+  ): PluginBundleRepository | undefined {
+    return undefined
+  }
+
+  /** Only the exact RC2 profile exposes the pinned account-controller Remotes. */
+  protected createAccountLifecycleRepository(
+    _transport: AlphaLoopbackApiClient,
+  ): AccountLifecycleRepository | undefined {
+    return undefined
+  }
+
+  /** Only exact DSH profiles with the timed userQuestions Remotes expose this port. */
+  protected createUserQuestionRepository(
+    _transport: AlphaLoopbackApiClient,
+  ): UserQuestionRepository | undefined {
+    return undefined
+  }
+}
+
+function isSessionList(value: unknown): boolean {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Array.isArray((value as { readonly items?: unknown }).items)
+  )
+}
+
+/** @deprecated Use {@link Alpha1VersionAdapter}; retained for source compatibility. */
+export { Alpha1VersionAdapter as AlphaVersionAdapter }

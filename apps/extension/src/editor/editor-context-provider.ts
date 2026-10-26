@@ -1,0 +1,623 @@
+import path from 'node:path'
+import * as vscode from 'vscode'
+
+import {
+  AppError,
+  EDITOR_CONTEXT_LIMITS,
+  editorContextTotalBytes,
+  type EditorContextAvailability,
+  type EditorContextCaptureInput,
+  type EditorContextItem,
+  type EditorContextKind,
+  type EditorContextOwner,
+  type EditorContextPreview,
+  type EditorContextResolveInput,
+  type ResolvedEditorContext,
+} from '@dsh-vscode/domain'
+import type { EditorContextPort } from '@dsh-vscode/application'
+
+import { EditorContextStore, type CurrentEditorContextContent } from './editor-context-store.js'
+import { openFileCandidateId } from './open-file-id.js'
+import { workspaceFolderId, WorkspacePathGuard } from './workspace-path-guard.js'
+
+export const DSH_CHAT_VIEW_OWNER_ID = 'dsh.chatView'
+const MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
+  '.c': 'text/x-c',
+  '.cpp': 'text/x-c++',
+  '.css': 'text/css',
+  '.go': 'text/x-go',
+  '.html': 'text/html',
+  '.java': 'text/x-java-source',
+  '.js': 'text/javascript',
+  '.json': 'application/json',
+  '.md': 'text/markdown',
+  '.py': 'text/x-python',
+  '.rs': 'text/x-rust',
+  '.sh': 'application/x-sh',
+  '.sql': 'application/sql',
+  '.ts': 'application/typescript',
+  '.tsx': 'application/typescript',
+  '.txt': 'text/plain',
+  '.xml': 'application/xml',
+  '.yaml': 'application/yaml',
+  '.yml': 'application/yaml',
+}
+
+export interface EditorContextProviderOptions {
+  readonly ownerId?: string
+  readonly ownerViewId?: string
+  readonly workspace?: typeof vscode.workspace
+  readonly window?: typeof vscode.window
+  readonly languages?: typeof vscode.languages
+  readonly commands?: typeof vscode.commands
+  readonly now?: () => number
+}
+
+interface EditorSymbol {
+  readonly name: string
+  readonly detail?: string
+  readonly range: vscode.Range
+}
+
+interface SymbolCandidate extends EditorSymbol {
+  readonly depth: number
+  readonly locationUri?: unknown
+}
+
+/** VS Code-facing capture and attachment resolver; all platform objects stop here. */
+export class EditorContextProvider implements EditorContextPort, vscode.Disposable {
+  private readonly ownerId: string
+  private readonly ownerViewId: string
+  private readonly workspace: typeof vscode.workspace
+  private readonly window: typeof vscode.window
+  private readonly languages: typeof vscode.languages
+  private readonly commands: typeof vscode.commands
+  private readonly guard: WorkspacePathGuard
+  private readonly store: EditorContextStore
+  private readonly contextStoreGeneration = 1
+  private lifecycleGeneration = 0
+
+  public constructor(options: EditorContextProviderOptions = {}) {
+    this.ownerId = options.ownerId ?? DSH_CHAT_VIEW_OWNER_ID
+    this.ownerViewId = options.ownerViewId ?? DSH_CHAT_VIEW_OWNER_ID
+    this.workspace = options.workspace ?? vscode.workspace
+    this.window = options.window ?? vscode.window
+    this.languages = options.languages ?? vscode.languages
+    this.commands = options.commands ?? vscode.commands
+    this.guard = new WorkspacePathGuard(this.workspace)
+    this.store = new EditorContextStore(options.now)
+  }
+
+  public capture(
+    input: EditorContextCaptureInput,
+    owner: EditorContextOwner,
+    signal?: AbortSignal,
+  ): Promise<EditorContextItem> {
+    this.assertOwner(owner)
+    throwIfAborted(signal)
+    const lifecycleGeneration = this.lifecycleGeneration
+    return this.captureActiveEditor(input, signal, lifecycleGeneration)
+  }
+
+  public clearAutomaticSelections(owner: EditorContextOwner): readonly string[] {
+    this.assertOwner(owner)
+    return this.store.clearAutomaticSelections(owner)
+  }
+
+  public list(owner: EditorContextOwner, signal?: AbortSignal): Promise<readonly EditorContextItem[]> {
+    this.assertOwner(owner)
+    throwIfAborted(signal)
+    return this.store.list(owner)
+  }
+
+  public async availability(
+    owner: EditorContextOwner,
+    signal?: AbortSignal,
+  ): Promise<EditorContextAvailability> {
+    this.assertOwner(owner)
+    throwIfAborted(signal)
+
+    const editor = this.window.activeTextEditor
+    if (editor === undefined || editor.document.uri.scheme !== 'file') return { availableKinds: [] }
+    const folder = this.workspace.getWorkspaceFolder(editor.document.uri)
+    if (folder === undefined) return { availableKinds: [] }
+    const workspaceId = workspaceFolderId(folder)
+    if (owner.workspaceFolderId !== undefined && owner.workspaceFolderId !== workspaceId)
+      return { availableKinds: [] }
+
+    let resolved: ReturnType<WorkspacePathGuard['resolve']>
+    try {
+      resolved = this.guard.resolve(workspaceId, this.guard.relativePath(folder, editor.document.uri))
+      await this.guard.assertRegularFile(resolved)
+    } catch {
+      return { availableKinds: [] }
+    }
+    throwIfAborted(signal)
+
+    const currentItems = await this.store.list(owner)
+    const currentBytes = editorContextTotalBytes(currentItems.map((item) => item.ref))
+    const canFit = (bytes: number): boolean =>
+      currentItems.length < EDITOR_CONTEXT_LIMITS.maxItems &&
+      currentBytes + bytes <= EDITOR_CONTEXT_LIMITS.maxTotalBytes &&
+      bytes <= EDITOR_CONTEXT_LIMITS.maxItemBytes
+
+    const availableKinds: EditorContextKind[] = []
+    const fileSize = await Promise.resolve(this.workspace.fs.stat(editor.document.uri))
+      .then((info) => info.size)
+      .catch(() => undefined)
+    if (fileSize !== undefined && canFit(fileSize)) availableKinds.push('file')
+
+    const selection = editor.selection
+    if (!selection.isEmpty) {
+      const selectionBytes = Buffer.byteLength(editor.document.getText(selection), 'utf8')
+      if (canFit(selectionBytes)) availableKinds.push('selection')
+    }
+
+    const selectedLine = selection.active.line
+    const diagnostics = this.languages
+      .getDiagnostics(editor.document.uri)
+      .filter(
+        (diagnostic) =>
+          diagnostic.range.start.line <= selectedLine && diagnostic.range.end.line >= selectedLine,
+      )
+    if (diagnostics.length > 0) {
+      const diagnosticBytes = Buffer.byteLength(
+        diagnostics.map((diagnostic) => `${diagnostic.severity}: ${diagnostic.message}`).join('\n'),
+        'utf8',
+      )
+      if (canFit(diagnosticBytes)) availableKinds.push('diagnostic')
+    }
+
+    const symbol = await this.findSymbolAtCursor(editor, signal)
+    if (symbol !== undefined) {
+      const symbolText = editor.document.getText(symbol.range)
+      const symbolBytes = Buffer.byteLength(symbolText, 'utf8')
+      if (symbolText.length > 0 && canFit(symbolBytes)) availableKinds.push('symbol')
+    }
+
+    return { availableKinds }
+  }
+
+  public preview(
+    contextRef: string,
+    owner: EditorContextOwner,
+    signal?: AbortSignal,
+  ): Promise<EditorContextPreview> {
+    this.assertOwner(owner)
+    throwIfAborted(signal)
+    return this.store.preview(contextRef, owner)
+  }
+
+  public release(
+    contextRefs: readonly string[],
+    owner: EditorContextOwner,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    this.assertOwner(owner)
+    throwIfAborted(signal)
+    this.store.release(contextRefs, owner)
+    return Promise.resolve()
+  }
+
+  public resolveForPrompt(
+    input: EditorContextResolveInput,
+    signal?: AbortSignal,
+  ): Promise<readonly ResolvedEditorContext[]> {
+    this.assertOwner(input)
+    throwIfAborted(signal)
+    return this.store.resolveForPrompt(input)
+  }
+
+  public dispose(): void {
+    this.lifecycleGeneration += 1
+    this.store.clear()
+  }
+
+  public get size(): number {
+    return this.store.size
+  }
+
+  /** Capture an already validated open tab through the same file-context store as the active editor. */
+  public async captureOpenFile(
+    uri: vscode.Uri,
+    signal?: AbortSignal,
+    lifecycleGeneration = this.lifecycleGeneration,
+  ): Promise<EditorContextItem | undefined> {
+    if (uri.scheme !== 'file') return undefined
+    const folder = this.workspace.getWorkspaceFolder(uri)
+    if (folder === undefined) return undefined
+    const id = workspaceFolderId(folder)
+    const resolved = this.guard.resolve(id, this.guard.relativePath(folder, uri))
+    await this.guard.assertRegularFile(resolved)
+    throwIfAborted(signal)
+    const info = await Promise.resolve(this.workspace.fs.stat(uri)).catch(() => undefined)
+    if (info !== undefined && info.size > EDITOR_CONTEXT_LIMITS.maxItemBytes) return undefined
+    const document = await this.openCurrentDocument(uri).catch(() => undefined)
+    if (document === undefined) return undefined
+    const source = await this.readSource(document, 'file', undefined)
+    this.assertCaptureIsCurrent(lifecycleGeneration, signal)
+    if (source.bytes.byteLength > EDITOR_CONTEXT_LIMITS.maxItemBytes) return undefined
+    const relativePath = resolved.relativePath
+    const readCurrent = async (): Promise<CurrentEditorContextContent> => {
+      this.assertCaptureIsCurrent(lifecycleGeneration)
+      const current = await this.openCurrentDocument(uri)
+      this.assertCaptureIsCurrent(lifecycleGeneration)
+      return this.readSource(current, 'file', undefined)
+    }
+    return this.store.capture({
+      workspaceFolderId: id,
+      ownerId: this.ownerId,
+      ownerViewId: this.ownerViewId,
+      contextStoreGeneration: this.contextStoreGeneration,
+      kind: 'file',
+      relativePath,
+      sourceCandidateId: openFileCandidateId(uri),
+      label: `file: ${relativePath}`.slice(0, 512),
+      bytes: source.bytes,
+      mimeType: mimeTypeFor(relativePath),
+      ...(source.documentVersion === undefined ? {} : { documentVersion: source.documentVersion }),
+      readCurrent,
+    })
+  }
+
+  private async captureActiveEditor(
+    input: EditorContextCaptureInput,
+    signal?: AbortSignal,
+    lifecycleGeneration = this.lifecycleGeneration,
+  ): Promise<EditorContextItem> {
+    const editor = this.window.activeTextEditor
+    if (editor === undefined) throw contextUnavailable('Open a text editor before adding editor context.')
+    if (editor.document.uri.scheme !== 'file') throw pathNotAllowed()
+    const folder = this.workspace.getWorkspaceFolder(editor.document.uri)
+    if (folder === undefined) throw contextUnavailable('The active editor is outside a trusted workspace.')
+    const id = workspaceFolderId(folder)
+    if (input.workspaceFolderId !== undefined && input.workspaceFolderId !== id) throw resourceNotOwned()
+    const resolved = this.guard.resolve(id, this.guard.relativePath(folder, editor.document.uri))
+    await this.guard.assertRegularFile(resolved)
+    throwIfAborted(signal)
+    if (input.kind === 'file') {
+      const file = await this.captureOpenFile(editor.document.uri, signal, lifecycleGeneration)
+      if (file === undefined) throw contextLimit()
+      return file
+    }
+
+    let range: vscode.Range | undefined
+    let symbolName: string | undefined
+    if (input.kind === 'symbol') {
+      const symbol = await this.findSymbolAtCursor(editor, signal)
+      if (symbol === undefined) throw contextUnavailable('No symbol is available at the current cursor.')
+      range = symbol.range
+      symbolName = symbol.name
+    } else {
+      range = captureRange(editor, input.kind)
+    }
+    const contextRange = range === undefined ? undefined : toContextRange(range)
+    const selectedLine = editor.selection.active.line
+    const source = await this.readSource(editor.document, input.kind, range, selectedLine)
+    this.assertCaptureIsCurrent(lifecycleGeneration, signal)
+    if (source.bytes.byteLength > EDITOR_CONTEXT_LIMITS.maxItemBytes) throw contextLimit()
+    const relativePath = resolved.relativePath
+    // The chip label is a protocol field capped at 512 characters. A deep
+    // relative path or a long symbol name can exceed that on its own, and an
+    // over-budget response is replaced wholesale by the Host router, so the
+    // whole editor-context rail would fail to load.
+    const endLine = range === undefined ? undefined : Math.max(range.start.line + 1, range.end.line + (range.end.character === 0 ? 0 : 1))
+    const label = `${input.kind}: ${relativePath}${range === undefined ? '' : `:${range.start.line + 1}–${endLine}`}${
+      symbolName === undefined ? '' : ` ${symbolName}`
+    }`.slice(0, 512)
+    const readCurrent = async (): Promise<CurrentEditorContextContent> => {
+      // Do not retain the capture request's AbortSignal in a long-lived
+      // context handle. A cancellation after capture admission must not make
+      // a later prompt resolution permanently fail; lifecycle generation is
+      // the ownership boundary for the stored handle.
+      this.assertCaptureIsCurrent(lifecycleGeneration)
+      const document = await this.openCurrentDocument(editor.document.uri)
+      this.assertCaptureIsCurrent(lifecycleGeneration)
+      const currentRange = captureRangeForDocument(document, input.kind, range)
+      return this.readSource(document, input.kind, currentRange, selectedLine)
+    }
+    return this.store.capture({
+      workspaceFolderId: id,
+      ownerId: this.ownerId,
+      ownerViewId: this.ownerViewId,
+      contextStoreGeneration: this.contextStoreGeneration,
+      kind: input.kind,
+      relativePath,
+      ...(input.kind === 'selection' && input.automaticSelection === true
+        ? { automaticSelection: true }
+        : {}),
+      ...(contextRange === undefined ? {} : { range: contextRange }),
+      label,
+      bytes: source.bytes,
+      mimeType: mimeTypeFor(relativePath),
+      ...(source.documentVersion === undefined ? {} : { documentVersion: source.documentVersion }),
+      readCurrent,
+    })
+  }
+
+  private assertCaptureIsCurrent(lifecycleGeneration: number, signal?: AbortSignal): void {
+    if (lifecycleGeneration !== this.lifecycleGeneration) throw contextStale()
+    throwIfAborted(signal)
+  }
+
+  private async openCurrentDocument(uri: vscode.Uri): Promise<vscode.TextDocument> {
+    const open = this.workspace.textDocuments.find((candidate) => candidate.uri.toString() === uri.toString())
+    return open ?? this.workspace.openTextDocument(uri)
+  }
+
+  private async readSource(
+    document: vscode.TextDocument,
+    kind: EditorContextCaptureInput['kind'],
+    range: vscode.Range | undefined,
+    selectedLine?: number,
+  ): Promise<CurrentEditorContextContent> {
+    if (kind === 'diagnostic') {
+      const diagnostics = this.languages.getDiagnostics(document.uri)
+      const current = diagnostics.filter(
+        (diagnostic) =>
+          selectedLine === undefined ||
+          (diagnostic.range.start.line <= selectedLine && diagnostic.range.end.line >= selectedLine),
+      )
+      if (current.length === 0)
+        throw contextUnavailable('No diagnostic is available at the current editor line.')
+      const text = current.map((diagnostic) => `${diagnostic.severity}: ${diagnostic.message}`).join('\n')
+      return { bytes: Buffer.from(text, 'utf8'), documentVersion: document.version }
+    }
+    if (range === undefined && (kind === 'selection' || kind === 'symbol'))
+      throw contextUnavailable(
+        kind === 'selection'
+          ? 'Select non-empty text before adding context.'
+          : 'No symbol is available at the current cursor.',
+      )
+    if (range === undefined && document.uri.scheme === 'file') {
+      const info = await Promise.resolve(this.workspace.fs.stat(document.uri)).catch(() => undefined)
+      if (info !== undefined && info.size > EDITOR_CONTEXT_LIMITS.maxItemBytes) throw contextLimit()
+    }
+    const text = range === undefined ? document.getText() : document.getText(range)
+    if (kind === 'selection' && text.length === 0)
+      throw contextUnavailable('Select non-empty text before adding context.')
+    if (kind === 'symbol' && text.length === 0)
+      throw contextUnavailable('The current symbol has no readable content.')
+    return { bytes: Buffer.from(text, 'utf8'), documentVersion: document.version }
+  }
+
+  private async findSymbolAtCursor(
+    editor: vscode.TextEditor,
+    signal?: AbortSignal,
+  ): Promise<EditorSymbol | undefined> {
+    throwIfAborted(signal)
+    let result: unknown
+    try {
+      result = await this.commands.executeCommand<unknown>(
+        'vscode.executeDocumentSymbolProvider',
+        editor.document.uri,
+      )
+    } catch {
+      throwIfAborted(signal)
+      return undefined
+    }
+    throwIfAborted(signal)
+    return findSymbolAtPosition(result, editor.document, editor.selection.active)
+  }
+
+  private assertOwner(owner: EditorContextOwner): void {
+    if (owner.ownerId !== this.ownerId || owner.ownerViewId !== this.ownerViewId) throw resourceNotOwned()
+    if (owner.contextStoreGeneration !== this.contextStoreGeneration) throw generationMismatch()
+  }
+}
+
+function captureRange(
+  editor: vscode.TextEditor,
+  kind: EditorContextCaptureInput['kind'],
+): vscode.Range | undefined {
+  if (kind !== 'selection') return undefined
+  if (editor.selection.isEmpty) throw contextUnavailable('Select non-empty text before adding context.')
+  return new vscode.Range(editor.selection.start, editor.selection.end)
+}
+
+function captureRangeForDocument(
+  document: vscode.TextDocument,
+  kind: EditorContextCaptureInput['kind'],
+  captured: vscode.Range | undefined,
+): vscode.Range | undefined {
+  if (kind !== 'selection' && kind !== 'symbol') return undefined
+  if (captured === undefined)
+    throw contextUnavailable(
+      kind === 'selection'
+        ? 'The captured selection is no longer available.'
+        : 'The captured symbol is no longer available.',
+    )
+  if (
+    captured.start.line >= document.lineCount ||
+    captured.end.line >= document.lineCount ||
+    captured.start.line > captured.end.line
+  )
+    throw contextStale()
+  if (
+    captured.start.character > document.lineAt(captured.start.line).text.length ||
+    captured.end.character > document.lineAt(captured.end.line).text.length ||
+    (captured.start.line === captured.end.line && captured.start.character > captured.end.character)
+  )
+    throw contextStale()
+  return captured
+}
+
+function findSymbolAtPosition(
+  value: unknown,
+  document: vscode.TextDocument,
+  position: vscode.Position,
+): EditorSymbol | undefined {
+  if (!validDocumentPosition(document, position)) return undefined
+  const candidates: SymbolCandidate[] = []
+  collectSymbolCandidates(value, 0, candidates)
+  return candidates
+    .filter(
+      (candidate) =>
+        isDocumentRangeValid(document, candidate.range) &&
+        (candidate.locationUri === undefined || sameUri(candidate.locationUri, document.uri)) &&
+        rangeContains(candidate.range, position),
+    )
+    .sort(compareSymbolCandidates)[0]
+}
+
+function collectSymbolCandidates(value: unknown, depth: number, result: SymbolCandidate[]): void {
+  if (!Array.isArray(value)) return
+  for (const entry of value) {
+    if (!isRecord(entry)) continue
+    const name = typeof entry.name === 'string' ? entry.name.trim() : ''
+    const location = isRecord(entry.location) ? entry.location : undefined
+    const range = toSymbolRange(entry.range) ?? toSymbolRange(location?.range)
+    if (name !== '' && range !== undefined) {
+      const detail = typeof entry.detail === 'string' && entry.detail.trim() !== '' ? entry.detail : undefined
+      const locationUri = location?.uri
+      result.push({
+        name,
+        range,
+        depth,
+        ...(detail === undefined ? {} : { detail }),
+        ...(locationUri === undefined ? {} : { locationUri }),
+      })
+    }
+    collectSymbolCandidates(entry.children, depth + 1, result)
+  }
+}
+
+function toSymbolRange(value: unknown): vscode.Range | undefined {
+  if (!isRecord(value)) return undefined
+  const start = toSymbolPosition(value.start)
+  const end = toSymbolPosition(value.end)
+  if (start === undefined || end === undefined || comparePosition(start, end) > 0) return undefined
+  return new vscode.Range(start.line, start.character, end.line, end.character)
+}
+
+function toSymbolPosition(value: unknown): { readonly line: number; readonly character: number } | undefined {
+  if (!isRecord(value)) return undefined
+  if (
+    !Number.isSafeInteger(value.line) ||
+    !Number.isSafeInteger(value.character) ||
+    (value.line as number) < 0 ||
+    (value.character as number) < 0
+  )
+    return undefined
+  return { line: value.line as number, character: value.character as number }
+}
+
+function isDocumentRangeValid(document: vscode.TextDocument, range: vscode.Range): boolean {
+  return (
+    validDocumentPosition(document, range.start) &&
+    validDocumentPosition(document, range.end) &&
+    comparePosition(range.start, range.end) <= 0
+  )
+}
+
+function validDocumentPosition(
+  document: vscode.TextDocument,
+  position: { line: number; character: number },
+): boolean {
+  return (
+    Number.isSafeInteger(position.line) &&
+    position.line >= 0 &&
+    position.line < document.lineCount &&
+    Number.isSafeInteger(position.character) &&
+    position.character >= 0 &&
+    position.character <= document.lineAt(position.line).text.length
+  )
+}
+
+function rangeContains(
+  range: vscode.Range,
+  position: { readonly line: number; readonly character: number },
+): boolean {
+  return comparePosition(range.start, position) <= 0 && comparePosition(position, range.end) <= 0
+}
+
+function comparePosition(
+  left: { readonly line: number; readonly character: number },
+  right: { readonly line: number; readonly character: number },
+): number {
+  if (left.line !== right.line) return left.line - right.line
+  return left.character - right.character
+}
+
+function compareSymbolCandidates(left: SymbolCandidate, right: SymbolCandidate): number {
+  const leftLineSpan = left.range.end.line - left.range.start.line
+  const rightLineSpan = right.range.end.line - right.range.start.line
+  if (leftLineSpan !== rightLineSpan) return leftLineSpan - rightLineSpan
+  const leftCharacterSpan = left.range.end.character - left.range.start.character
+  const rightCharacterSpan = right.range.end.character - right.range.start.character
+  if (leftCharacterSpan !== rightCharacterSpan) return leftCharacterSpan - rightCharacterSpan
+  if (left.depth !== right.depth) return right.depth - left.depth
+  return left.name.localeCompare(right.name)
+}
+
+function sameUri(value: unknown, expected: vscode.Uri): boolean {
+  if (!isRecord(value)) return false
+  return value.scheme === expected.scheme && value.fsPath === expected.fsPath
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function toContextRange(range: vscode.Range): {
+  start: { line: number; column: number }
+  end: { line: number; column: number }
+} {
+  return {
+    start: { line: range.start.line, column: range.start.character },
+    end: { line: range.end.line, column: range.end.character },
+  }
+}
+
+function mimeTypeFor(relativePath: string): string {
+  return MIME_BY_EXTENSION[path.extname(relativePath).toLowerCase()] ?? 'text/plain'
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted === true)
+    throw new AppError({
+      code: 'REQUEST_CANCELLED',
+      message: 'The editor context request was cancelled.',
+      retryable: true,
+    })
+}
+
+function contextUnavailable(message: string): AppError {
+  return new AppError({ code: 'CAPABILITY_UNAVAILABLE', message, retryable: false })
+}
+
+function contextLimit(message = 'The editor context is too large.'): AppError {
+  return new AppError({ code: 'CONTEXT_LIMIT', message, retryable: false })
+}
+
+function contextStale(): AppError {
+  return new AppError({
+    code: 'CONTEXT_STALE',
+    message: 'The editor document changed after capture.',
+    retryable: false,
+  })
+}
+
+function pathNotAllowed(): AppError {
+  return new AppError({
+    code: 'PATH_NOT_ALLOWED',
+    message: 'Only a workspace file can be added as editor context.',
+    retryable: false,
+  })
+}
+
+function resourceNotOwned(): AppError {
+  return new AppError({
+    code: 'RESOURCE_NOT_OWNED',
+    message: 'The editor context belongs to another view.',
+    retryable: false,
+  })
+}
+
+function generationMismatch(): AppError {
+  return new AppError({
+    code: 'GENERATION_MISMATCH',
+    message: 'The editor context belongs to an older view generation.',
+    retryable: false,
+  })
+}

@@ -1,0 +1,185 @@
+import type {
+  CompactionView,
+  GoalView,
+  MessageAttachment,
+  MessageImageReference,
+  PresentedFileView,
+  TeamActivityView,
+  TodoView,
+  TokenUsage,
+  ToolCallView,
+  TurnEndFailure,
+  UserQuestionReplyView,
+  WorkflowSummary,
+} from '@dsh-vscode/domain'
+
+/**
+ * Aggregated model-retry status row. Consecutive retry signals collapse into
+ * one producer-correlated row. It persists with its scheduled/started state;
+ * a scheduled wait becomes cancelled if its owning step closes first.
+ */
+export interface ModelRetryNode {
+  readonly kind: 'retry'
+  readonly id: string
+  readonly sequence?: number
+  readonly turn: number
+  readonly step: number
+  readonly attempt: number
+  readonly state: 'scheduled' | 'started' | 'cancelled'
+  readonly delayMs?: number
+  readonly maxRetries?: number
+  readonly message?: string
+}
+
+/** The durable DSH boundaries used by chat timing displays. */
+export interface AssistantTiming {
+  readonly stepStartTime: number | null
+  readonly firstTokenTime: number | null
+  readonly completedTime: number | null
+}
+
+export type TimelineNode =
+  | {
+      readonly kind: 'user-message'
+      readonly id: string
+      readonly markdown: string
+      readonly attachments?: readonly MessageAttachment[]
+      readonly images?: readonly MessageImageReference[]
+      readonly rpcId?: string
+      readonly source?: string
+      readonly sourceForm?: string
+      readonly sourceSummary?: string
+      readonly questionReply?: UserQuestionReplyView
+      /** Labels from a hidden structured DSH session-reference message. */
+      readonly sessionReferenceLabels?: readonly string[]
+    }
+  | {
+      readonly kind: 'assistant-message'
+      readonly id: string
+      readonly markdown: string
+      readonly streaming: boolean
+      /** Durable event sequence used as the rc.6 session.fork anchor. */
+      readonly sequence?: number
+      /** DSH coordinates keep step and turn completion separate. */
+      readonly turn?: number
+      readonly step?: number
+      /** Set only after the durable turn/end boundary closes this turn. */
+      readonly turnCompleted?: boolean
+      /** Exact aggregate, present only when the loaded Turn has complete usage. */
+      readonly turnUsage?: TurnTokenUsage | undefined
+      readonly modelLabel?: string
+      readonly usage?: TokenUsage
+      readonly images?: readonly MessageImageReference[]
+      readonly timing?: AssistantTiming
+      /** rc.8 marks a delivered prefix that ended because the step was interrupted. */
+      readonly interrupted?: true
+      /** Versioned Session process-local stream identity; never a durable cursor. */
+      readonly liveAttemptId?: string
+      /** Highest transient frame index folded into this node. */
+      readonly liveLastIndex?: number
+      /** Durable DSH cursor immediately before this live attempt started. */
+      readonly liveStartedAfterSequence?: number
+      readonly reasoning?: {
+        readonly markdown: string
+        readonly streaming: boolean
+      }
+    }
+  | {
+      readonly kind: 'reasoning'
+      readonly id: string
+      readonly markdown: string
+      readonly streaming: boolean
+      /** Versioned Session process-local stream identity for reconnect deduplication. */
+      readonly liveAttemptId?: string
+      /** Highest transient frame index folded into this reasoning node. */
+      readonly liveLastIndex?: number
+      /** Durable DSH cursor immediately before this live attempt started. */
+      readonly liveStartedAfterSequence?: number
+    }
+  | { readonly kind: 'tool'; readonly id: string; readonly tool: ToolCallView; readonly sequence?: number }
+  | {
+      /** Explicit files declared by DSH's durable `present` tool. */
+      readonly kind: 'deliverables'
+      readonly id: string
+      readonly sequence?: number
+      readonly turn: number
+      readonly callId: string
+      readonly files: readonly PresentedFileView[]
+    }
+  | { readonly kind: 'goal'; readonly id: string; readonly goals: readonly GoalView[] }
+  | { readonly kind: 'todo'; readonly id: string; readonly todos: readonly TodoView[] }
+  | { readonly kind: 'compaction'; readonly id: string; readonly compaction: CompactionView }
+  | ModelRetryNode
+  | { readonly kind: 'workflow'; readonly id: string; readonly workflow: WorkflowSummary }
+  | { readonly kind: 'team'; readonly id: string; readonly activity: TeamActivityView }
+  | {
+      readonly kind: 'notice'
+      readonly transient?: 'connection'
+      readonly id: string
+      readonly level: 'info' | 'warning' | 'error'
+      readonly text: string
+    }
+  | {
+      /** Durable human `/command` input projected from command/run. */
+      readonly kind: 'command-input'
+      readonly id: string
+      readonly text: string
+    }
+  | {
+      readonly kind: 'turn-terminal'
+      readonly id: string
+      readonly turn: number
+      readonly sequence: number
+      readonly reason: 'aborted' | 'blocked' | 'error' | 'max-tokens' | 'interrupted' | 'unknown'
+      readonly failure?: TurnEndFailure
+    }
+  | {
+      readonly kind: 'event'
+      readonly id: string
+      /** Durable DSH sequence used to place unknown events in the transcript. */
+      readonly sequence?: number
+      readonly name: string
+      readonly payload: unknown
+    }
+
+export interface TimelineState {
+  readonly sessionId: string | undefined
+  readonly nodes: readonly TimelineNode[]
+  readonly lastSequence: number
+  /** First raw node that may differ from the previous reducer result. */
+  readonly nodeChangeStart?: number
+  /** Identity of the node array from which nodeChangeStart was derived. */
+  readonly nodeChangeBase?: readonly TimelineNode[]
+  /** Number of raw unknown-event nodes; maintained incrementally by the reducer. */
+  readonly eventCount?: number
+  /** In-flight DSH command names used to classify command/done events. */
+  readonly commandModes?: Readonly<Record<string, 'plan' | 'permission'>>
+  readonly tokenUsage?: TokenUsage
+  /** Open-turn attempt usage evidence; incomplete loaded windows remain hidden. */
+  readonly turnUsageTracking?: Readonly<Record<string, TurnUsageTracking>>
+  /** In-flight step boundaries waiting for their assistant message. */
+  readonly stepTimings?: Readonly<Record<string, AssistantTiming>>
+  /** Durable turn currently open; message.completed only closes a step. */
+  readonly activeTurn?: number
+  /** Authoritative DSH turn/start epoch milliseconds, independent of view mounting. */
+  readonly activeTurnStartedAt?: number
+  /** Prevent late durable projections from reopening a closed turn. */
+  readonly closedTurns?: readonly number[]
+}
+
+/** Exact aggregate for a completed Turn with complete structured attempt evidence. */
+export interface TurnTokenUsage extends TokenUsage {
+  readonly totalTokens: number
+}
+
+/** Evidence needed before a completed Turn may expose an aggregate usage row. */
+export interface TurnUsageTracking {
+  readonly turnStarted: boolean
+  readonly invalid: boolean
+  readonly attempts: readonly TokenUsage[]
+  readonly active?: {
+    readonly step: number
+    readonly state: 'open' | 'attempt-settled' | 'retry-scheduled' | 'message-settled'
+    readonly retry?: { readonly id: string; readonly attempt: number }
+  }
+}

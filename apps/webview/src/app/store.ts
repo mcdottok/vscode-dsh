@@ -1,0 +1,1079 @@
+import type {
+  AgentConfiguration,
+  BackendEvent,
+  PromptMode,
+  SubagentCatalog,
+  SubagentView,
+} from '@dsh-vscode/domain'
+import type { FeatureRequest } from '@dsh-vscode/webview-protocol'
+import { PluginInstallRecoveryController } from './plugin-install-recovery.js'
+import { createAccountActions } from './store/account-actions.js'
+import { createSettingsActions } from './store/settings-actions.js'
+import { createSessionConfigurationController } from './store/session-configuration-controller.js'
+import { createGlobalCatalogController } from './store/global-catalog-controller.js'
+import { createRetryDelays } from './store/retry-delays.js'
+import { createFeatureActions } from './store/feature-actions.js'
+import { defineStateView, type StoreWithoutStateView } from './store/state-view.js'
+import { createJobActions } from './store/job-actions.js'
+import { withAvailableList } from './store/list-availability.js'
+import { getVsCodeApi } from '../vscode-api.js'
+import { ProtocolClient } from './protocol-client.js'
+import type { AppStore, StateSetter } from './store/types.js'
+import { requestId } from './store/ids.js'
+import { createPendingOpenBuffer } from './store/opening-state.js'
+import { createGoalQueueActions } from './store/goal-queue-actions.js'
+import { createSessionActions } from './store/session-actions.js'
+import { createCommandDirectoryCache, readCommandList } from './store/command-directory.js'
+import { refreshSessionModelDirectory } from './store/session-model-directory.js'
+import { createDshUpdateActions } from './store/dsh-update.js'
+import { createFeedbackCache } from './store/feedback-cache.js'
+import { createFeedbackActions } from './store/feedback-actions.js'
+import { createInteractionActions } from './store/interaction-actions.js'
+import { createSessionCatalogActions } from './store/session-catalog-actions.js'
+import { createSessionOpenController } from './store/session-open-controller.js'
+import { createTurnWatchers } from './store/turn-watchers.js'
+import { createSurfaceActions } from './store/surface-actions.js'
+import { subscribeHostEvents } from './store/host-event-subscription.js'
+import { createPromptActions } from './store/prompt-actions.js'
+import { createHistoryActions } from './store/history-actions.js'
+import { installTranscript, parseTranscript } from './store/transcript-state.js'
+import { createSessionCreationActions } from './store/session-creation-actions.js'
+import { createAppLifecycleActions } from './store/app-lifecycle-actions.js'
+import { parseGoalViews } from './store/event-values.js'
+import { parseDshSettingsSnapshot } from './store/host-settings.js'
+import { createInitialState } from './store/initial-state.js'
+import {
+  sameGoalList,
+  sameSessionSummaryList,
+  sameStringList,
+  strictListValues,
+} from './store/list-equality.js'
+import { normalizedModelSelection } from './store/model-catalog.js'
+import { parsePluginInventory } from './store/plugin-parsers.js'
+import { isSessionSummary, readPersistedWebviewState } from './store/session-guards.js'
+import { clearedActiveSession, type ProjectionSequenceIndex } from './store/session-projection.js'
+import { refreshSessions, selectStartupSessionId } from './store/session-registry.js'
+import { isSubagentView, parseSubagentCatalog } from './store/subagent.js'
+import { object } from './store/unknown-record.js'
+import { isStreamingTextAppend } from './store/streaming-notifications.js'
+
+export type {
+  ActiveSubagent,
+  AppActions,
+  AppState,
+  AppStore,
+  DshSettingsSnapshot,
+  IngestedFile,
+  OpenFileCandidate,
+  ReferenceCandidate,
+  WebviewBackendState,
+} from './store/types.js'
+export type { JobFollowState } from './store/job-follow.js'
+
+// A transient session.open failure (request timeout, BACKEND_UNREACHABLE while
+// the backend is still settling) leaves the panel without any conversation at
+// all. Retry the open request a bounded number of times with a short backoff;
+// the host marks definitive rejections with retryable: false and those surface
+// to the error banner immediately.
+const OPEN_RETRY_ATTEMPTS = 3
+const OPEN_RETRY_BASE_DELAY_MS = 300
+
+const isRetryableOpenFailure = (reason: unknown): boolean =>
+  reason instanceof Error && (reason as { retryable?: unknown }).retryable === true
+
+export function createAppStore(client = new ProtocolClient(getVsCodeApi())): AppStore {
+  const vscodeApi = getVsCodeApi()
+  let persistedWebviewState = readPersistedWebviewState(vscodeApi.getState())
+  let composerPreferences = persistedWebviewState.composerPreferences ?? {}
+  let state = createInitialState(composerPreferences)
+  let disposed = false
+  const retryDelays = createRetryDelays()
+  // Projection values arrive from both the Alpha Session/follow stream and
+  // the independent session/control stream. Keep their DSH cut outside the
+  // public state so an older snapshot cannot overwrite a newer live value.
+  const projectionSequences: ProjectionSequenceIndex = {
+    perKey: new Map(),
+    baselines: new Map(),
+    queueBySession: new Map(),
+    connectionIdentity: undefined,
+  }
+  const listeners = new Set<() => void>()
+  let notificationFrame: number | undefined
+  let notificationFallback: number | undefined
+  const cancelNotification = (): void => {
+    if (notificationFrame !== undefined) window.cancelAnimationFrame(notificationFrame)
+    if (notificationFallback !== undefined) window.clearTimeout(notificationFallback)
+    notificationFrame = undefined
+    notificationFallback = undefined
+  }
+  const notify = (): void => {
+    cancelNotification()
+    if (!disposed) for (const listener of listeners) listener()
+  }
+  const turnWatchers = createTurnWatchers({ isDisposed: () => disposed })
+  const setState: StateSetter = (next): void => {
+    if (disposed) return
+    const nextState = typeof next === 'function' ? next(state) : next
+    if (nextState === state) return
+    const previousTranscript = state.transcript
+    state =
+      nextState.transcript !== undefined && nextState.transcript.sessionId !== nextState.activeSessionId
+        ? { ...nextState, transcript: undefined }
+        : nextState
+    if (state.transcript !== undefined) {
+      const active = state.activeSessionId
+      const retained = Object.entries(state.projections).filter(([id]) => id === active)
+      if (retained.length !== Object.keys(state.projections).length)
+        state = { ...state, projections: Object.fromEntries(retained) }
+      for (const index of [
+        projectionSequences.perKey,
+        projectionSequences.baselines,
+        projectionSequences.queueBySession,
+      ])
+        for (const id of index.keys()) if (id !== active) index.delete(id)
+    }
+    if (state.transcript !== undefined && state.transcript !== previousTranscript) {
+      const window = state.transcript
+      void client
+        .request<unknown>({
+          type: 'session.transcript.ack',
+          requestId: requestId(),
+          payload: { sessionId: window.sessionId, revision: window.revision },
+        })
+        .catch(() => undefined)
+    }
+    // Install/ACK every patch immediately, but render ongoing appends once per
+    // browser paint. Never build a FIFO of obsolete React/Markdown renders.
+    // The first token, phase changes, completion and user controls still flush.
+    if (
+      isStreamingTextAppend(previousTranscript, state.transcript) &&
+      typeof window.requestAnimationFrame === 'function' &&
+      listeners.size > 0
+    ) {
+      if (notificationFrame === undefined) {
+        notificationFrame = window.requestAnimationFrame(notify)
+        // A hidden/throttled Webview must not strand its final notification.
+        notificationFallback = window.setTimeout(notify, 100)
+      }
+    } else notify()
+  }
+  const feedbackCache = createFeedbackCache({ client, setState, getState: () => state })
+  const invalidateFeedback = feedbackCache.invalidate
+  const pluginInstallRecovery = new PluginInstallRecoveryController({
+    featureRequest: <T>(request: FeatureRequest): Promise<T> => client.featureRequest<T>(request),
+    requestId,
+    onStateChange: (pluginInstallOperation, refreshCatalog) =>
+      setState((current) => ({
+        ...current,
+        pluginInstallOperation,
+        ...(refreshCatalog ? { pluginInventoryRevision: current.pluginInventoryRevision + 1 } : {}),
+      })),
+  })
+  // Path-scoped feature routes accept only the VS Code folder the Host
+  // resolved for the session; the DSH workspace id is a different namespace
+  // and a session row without this value means no folder is open at all.
+  const sessionWorkspaceFolderId = (sessionId: string): string | undefined => {
+    const session = state.sessions.find((candidate) => candidate.id === sessionId)
+    if (session?.workspaceFolderId !== undefined) return session.workspaceFolderId
+    const subagent = state.activeSubagent
+    if (subagent?.entry.id !== sessionId) return undefined
+    // A catalog-resolved child has no workspace row of its own; its paths
+    // belong to the parent session it was delegated from.
+    return state.sessions.find((candidate) => candidate.id === subagent.entry.parentSessionId)
+      ?.workspaceFolderId
+  }
+  const accountActions = createAccountActions({ client, getState: () => state, setState })
+  const jobActions = createJobActions({ client, getState: () => state, setState })
+  const featureActions = createFeatureActions({
+    client,
+    getState: () => state,
+    setState,
+    sessionWorkspaceFolderId,
+  })
+  const persistWebviewState = (overrides: { readonly activeSessionId?: string } = {}): void => {
+    if (disposed) return
+    const activeSessionId = overrides.activeSessionId ?? state.activeSessionId
+    persistedWebviewState =
+      activeSessionId === undefined
+        ? { version: 1, composerPreferences }
+        : { version: 1, composerPreferences, activeSessionId }
+    vscodeApi.setState(persistedWebviewState)
+  }
+  const rememberComposerConfiguration = (configuration: AgentConfiguration): void => {
+    if (disposed) return
+    const model = normalizedModelSelection(configuration.model)
+    const rememberedModel = model ?? composerPreferences.model
+    composerPreferences = {
+      ...composerPreferences,
+      ...(rememberedModel === undefined ? {} : { model: rememberedModel }),
+    }
+    persistWebviewState()
+  }
+  const callbacks: { openCreatedSession?: (sessionId: string) => Promise<void> } = {}
+  let refreshVersion = 0
+  let goalActivationAvailable = false
+  let goalReadGeneration = 0
+  let openVersion = 0
+  let manualOpenOwner: symbol | undefined
+  let sessionModelDirectoryGeneration = 0
+  let pendingSessionRevision = 0
+  let pendingSend: { readonly revision: number; readonly promise: Promise<void> } | undefined
+  const {
+    capturePresetSessionTarget,
+    synchronizeBlankSessionPreset,
+    nextConfigurationGeneration,
+    isConfigurationGenerationCurrent,
+    nextPresetRosterGeneration,
+    isPresetRosterCurrent,
+  } = createSessionConfigurationController({
+    client,
+    getState: () => state,
+    setState,
+    getPendingSendRevision: () => pendingSend?.revision,
+  })
+  const globalCatalogs = createGlobalCatalogController({
+    client,
+    setState,
+    isDisposed: () => disposed,
+    nextPresetRosterGeneration,
+    isPresetRosterCurrent,
+  })
+
+  const refreshLiveGoals = async (force = false): Promise<void> => {
+    const sessionId = state.activeSessionId
+    if (sessionId === undefined || (!force && !goalActivationAvailable)) return
+    const generation = ++goalReadGeneration
+    const version = openVersion
+    try {
+      const goals = parseGoalViews(
+        await client.request<unknown>({ type: 'goal.list', requestId: requestId(), payload: { sessionId } }),
+      )
+      if (
+        !disposed &&
+        version === openVersion &&
+        generation === goalReadGeneration &&
+        state.activeSessionId === sessionId &&
+        goals !== undefined
+      )
+        setState((current) => {
+          const available = withAvailableList(current, 'goals')
+          return sameGoalList(available.goals, goals) ? available : { ...available, goals }
+        })
+    } catch {
+      /* Durable goal state remains available; the next live edge retries. */
+    }
+  }
+
+  // Claims the "most recent view request" slot for opens that have to await a
+  // catalog read before they can claim `openVersion`.
+  let openIntent = 0
+  const refreshSessionModelDirectoryForSession = (sessionId: string): Promise<void> => {
+    // This store projects one active session's catalog. An off-screen refresh
+    // has nowhere useful to merge and must not retire that active session's
+    // pending directory read.
+    if (state.activeSessionId !== sessionId) return Promise.resolve()
+    const generation = ++sessionModelDirectoryGeneration
+    const version = openVersion
+    return refreshSessionModelDirectory(
+      client,
+      setState,
+      sessionId,
+      () => !disposed && version === openVersion && generation === sessionModelDirectoryGeneration,
+    )
+  }
+  // A newly-created store has not yet made its one automatic session choice.
+  // Keep that decision pending when the first registry snapshot is empty: the
+  // DSH workspace/session registries can publish in adjacent turns.
+  let startupRestorePending = true
+  let startupRestoreArmed = false
+  let startupRestorePromise: Promise<void> | undefined
+  const pendingOpenBuffer = createPendingOpenBuffer((pending) => {
+    // Never let recovery for a failed or superseded open reclaim the panel.
+    if (pending.version !== openVersion || pending.sessionId !== state.activeSessionId) return
+    turnWatchers.disposeAll()
+    const sessionId = state.activeSessionId
+    if (sessionId !== undefined)
+      void client
+        .request({
+          type: 'session.transcript.resync',
+          requestId: requestId(),
+          payload: { sessionId },
+        })
+        .catch(() => undefined)
+    // The Host republishes its existing window; do not reopen the session.
+  })
+  const markSessionUnavailable = (
+    reason: 'removed' | 'archived' | 'workspace-removed',
+    retiredSessionId?: string,
+  ): void => {
+    const sessionId = retiredSessionId ?? state.activeSessionId ?? pendingOpenBuffer.sessionId ?? ''
+    const retiredIds = new Set([
+      sessionId,
+      pendingOpenBuffer.sessionId,
+      state.pendingSession?.createdSessionId,
+      state.activeSubagent?.entry.parentSessionId,
+    ])
+    openVersion += 1
+    openIntent += 1
+    refreshVersion += 1
+    sessionModelDirectoryGeneration += 1
+    pendingSessionRevision += 1
+    pendingSend = undefined
+    manualOpenOwner = undefined
+    startupRestorePending = false
+    pendingOpenBuffer.clear()
+    turnWatchers.disposeAll()
+    jobActions.stopBeforeSessionOpen()
+    featureActions.retireForSessionSwitch()
+    commandDirectory.invalidate()
+    invalidateFeedback()
+    setState((current) => ({
+      ...current,
+      ...clearedActiveSession(current, sessionId),
+      pendingSession: undefined,
+      sessionStartup: { kind: 'unavailable', reason },
+      permissions: current.permissions.filter((request) => !retiredIds.has(request.sessionId)),
+      questions: current.questions.filter((question) => !retiredIds.has(question.sessionId)),
+      editorContext: [],
+      editorContextLoading: false,
+      changes: [],
+      changesLoading: false,
+      tasks: [],
+      tasksLoading: false,
+      checkpoints: [],
+      checkpointsLoading: false,
+    }))
+    persistWebviewState()
+  }
+  const handleRegistryEvent = (event: BackendEvent): void => {
+    const target =
+      pendingOpenBuffer.sessionId ?? state.pendingSession?.createdSessionId ?? state.activeSessionId
+    const selectedIds = new Set(
+      [
+        target,
+        target === state.activeSessionId ? state.activeSubagent?.entry.parentSessionId : undefined,
+      ].filter((id): id is string => id !== undefined),
+    )
+    if (event.type === 'session.removed' && selectedIds.has(event.sessionId))
+      markSessionUnavailable('removed')
+    else if (event.type === 'archived.sessions.changed' && event.sessionIds.some((id) => selectedIds.has(id)))
+      markSessionUnavailable('archived')
+    else if (
+      event.type === 'workspace.removed' &&
+      event.workspaceId !== undefined &&
+      (state.pendingSession?.workspaceId === event.workspaceId ||
+        state.sessions.some(
+          (session) => selectedIds.has(session.id) && session.workspaceId === event.workspaceId,
+        ))
+    )
+      markSessionUnavailable('workspace-removed')
+    if (event.type === 'archived.sessions.changed')
+      setState((current) =>
+        sameStringList(current.archivedSessionIds, event.sessionIds)
+          ? current
+          : { ...current, archivedSessionIds: event.sessionIds },
+      )
+    if (event.type === 'workspace.removed' && event.workspaceId !== undefined)
+      setState((current) => ({
+        ...current,
+        workspaces: current.workspaces.filter((workspace) => workspace.id !== event.workspaceId),
+      }))
+  }
+  const commandDirectory = createCommandDirectoryCache((sessionId) => readCommandList(client, sessionId))
+  const loadCommandDirectory = (
+    sessionId: string,
+    force?: boolean,
+  ): ReturnType<typeof commandDirectory.load> => commandDirectory.load(sessionId, force)
+  const refreshCommands = async (
+    sessionId: string | undefined = state.activeSessionId,
+    force = false,
+  ): Promise<void> => {
+    if (disposed || sessionId === undefined) return
+    const commands = await loadCommandDirectory(sessionId, force)
+    if (commands === undefined) return
+    setState((current) =>
+      current.activeSessionId === sessionId && current.commands !== commands
+        ? { ...current, commands }
+        : current,
+    )
+  }
+  const loadSubagentCatalog = async (sessionId: string): Promise<SubagentCatalog | undefined> => {
+    try {
+      return parseSubagentCatalog(
+        await client.request<unknown>({
+          type: 'subagent.list',
+          requestId: requestId(),
+          payload: { sessionId },
+        }),
+      )
+    } catch {
+      // Catalog discovery is an optional header surface. Keep the conversation
+      // usable on a transient read failure, but never adopt a partial answer.
+      return undefined
+    }
+  }
+  const refresh = async (): Promise<void> => {
+    if (disposed) return
+    const version = ++refreshVersion
+    const navigationIntent = openIntent
+    const selectedSessionId =
+      pendingOpenBuffer.sessionId ?? state.pendingSession?.createdSessionId ?? state.activeSessionId
+    if (
+      state.backend.kind === 'connected' &&
+      state.activeSessionId === undefined &&
+      state.pendingSession === undefined &&
+      startupRestorePromise === undefined &&
+      state.sessionStartup?.kind !== 'unavailable'
+    )
+      setState((current) => ({ ...current, sessionStartup: { kind: 'loading' } }))
+    let failed = false
+    try {
+      // Session/workspace visibility is enough to choose the startup session.
+      // Global providers, models, and presets are merged in the background so
+      // their latency cannot delay opening the conversation.
+      await refreshSessions(
+        client,
+        setState,
+        globalCatalogs.refreshAll,
+        () => !disposed && version === refreshVersion,
+        false,
+      )
+      if (disposed || version !== refreshVersion || navigationIntent !== openIntent) return
+      // A reconnect gap can miss the live archive event. The authoritative
+      // archive roster is sufficient evidence even after it cleared the view.
+      if (selectedSessionId !== undefined && state.archivedSessionIds.includes(selectedSessionId)) {
+        markSessionUnavailable('archived', selectedSessionId)
+        return
+      }
+      if (state.sessionDirectoryStatus === 'error') {
+        failed = true
+        return
+      }
+      // The first session.list can legitimately be an empty projection while a
+      // workspace attach is still being committed. Retry the automatic restore
+      // after every authoritative refresh until a session has been opened.
+      if (
+        startupRestoreArmed &&
+        state.surface?.kind !== 'editor' &&
+        state.sessionStartup?.kind !== 'unavailable'
+      ) {
+        const handoff = object(
+          await client
+            .request<unknown>({
+              type: 'workspace.browser',
+              requestId: requestId(),
+              payload: { action: 'resume' },
+            })
+            .catch(() => undefined),
+        )
+        if (
+          !disposed &&
+          version === refreshVersion &&
+          navigationIntent === openIntent &&
+          typeof handoff?.sessionId === 'string'
+        ) {
+          setState((current) => ({ ...current, sessionStartup: { kind: 'restoring' } }))
+          await openSession(handoff.sessionId)
+          startupRestoreArmed = false
+          return
+        }
+      }
+      if (disposed || version !== refreshVersion || navigationIntent !== openIntent) return
+      if (startupRestoreArmed) await attemptStartupRestore()
+      if (
+        startupRestoreArmed &&
+        !startupRestorePending &&
+        !disposed &&
+        state.backend.kind === 'connected' &&
+        state.surface?.kind !== 'editor' &&
+        state.activeSessionId === undefined &&
+        state.pendingSession === undefined &&
+        manualOpenOwner === undefined &&
+        pendingOpenBuffer.sessionId === undefined &&
+        state.sessionStartup?.kind !== 'unavailable' &&
+        state.workspaces.length > 0
+      )
+        await sessionCreationActions.stageSession(state.workspaces[0]?.id)
+
+      // The command directory is also advisory during startup. The session
+      // opener starts the same deduplicated load for the active session, while
+      // keeping slow command/skill providers off the first-paint critical path.
+      if (version === refreshVersion) void refreshCommands().catch(() => undefined)
+    } catch (reason) {
+      failed = true
+      throw reason
+    } finally {
+      // An early connected snapshot can refresh before app.ready assigns the
+      // surface. Keep the initial preparation screen until startup is armed.
+      if (
+        !disposed &&
+        version === refreshVersion &&
+        manualOpenOwner === undefined &&
+        (startupRestoreArmed || state.activeSessionId !== undefined || state.pendingSession !== undefined)
+      )
+        setState((current) =>
+          current.sessionStartup?.kind === 'unavailable' ||
+          current.sessionStartup?.kind === (failed ? 'error' : 'ready')
+            ? current
+            : { ...current, sessionStartup: { kind: failed ? 'error' : 'ready' } },
+        )
+    }
+  }
+  /**
+   * The switcher's archived section is a recovery surface, so it is fetched
+   * on demand instead of riding every refresh. A refused answer propagates:
+   * an empty list would claim the host holds no archived sessions.
+   */
+  const loadArchivedSessions = async (): Promise<void> => {
+    const result = await client.request<unknown>({
+      type: 'session.list',
+      requestId: requestId(),
+      payload: { archived: true },
+    })
+    const sessions = strictListValues(object(result)?.items, isSessionSummary)
+    if (sessions === undefined) return
+    setState((current) =>
+      sameSessionSummaryList(current.archivedSessions, sessions)
+        ? current
+        : { ...current, archivedSessions: sessions },
+    )
+  }
+  const applyBusyEnter = (values: Readonly<Record<string, unknown>>): void => {
+    const conversation = object(values['ui-conversation'])
+    const busyEnter = conversation?.busyEnter
+    if (busyEnter === 'queue' || busyEnter === 'steer')
+      setState((current) => (current.busyEnter === busyEnter ? current : { ...current, busyEnter }))
+  }
+  const applyBusyEnterPreference = async (): Promise<void> => {
+    try {
+      const snapshot = parseDshSettingsSnapshot(
+        await client.request<unknown>({ type: 'settings.read', requestId: requestId() }),
+      )
+      if (snapshot !== undefined) applyBusyEnter(snapshot.values)
+    } catch {
+      // A host that cannot serve settings yet keeps the official 'queue' default.
+    }
+  }
+  const rememberPromptMode = (promptMode: PromptMode): void => {
+    composerPreferences = { ...composerPreferences, promptMode }
+    persistWebviewState()
+  }
+  const rememberOpenFilePreference = (openFileId: string): void => {
+    composerPreferences = { ...composerPreferences, openFileId }
+    persistWebviewState()
+  }
+  const { executeCommandRequest, sendUserTurn } = createPromptActions({
+    client,
+    getState: () => state,
+    rememberPromptMode,
+    setState,
+  })
+  const requestSessionOpen = async (sessionId: string, version: number): Promise<unknown> => {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await client.request<unknown>({
+          type: 'session.open',
+          requestId: requestId(),
+          payload: { sessionId },
+        })
+      } catch (reason) {
+        if (attempt >= OPEN_RETRY_ATTEMPTS || version !== openVersion || !isRetryableOpenFailure(reason))
+          throw reason
+        if (!(await retryDelays.wait(OPEN_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1)))) throw reason
+        // A newer open() owns the panel now; do not re-request the stale one.
+        if (version !== openVersion) throw reason
+      }
+    }
+  }
+  /**
+   * A subagent child is a view onto its parent's catalog, never a root session:
+   * its follow-up prompt, Stop, lineage header, and one-shot read-only guard all
+   * key off `activeSubagent`. The registry projection does name children (the
+   * drawer, mention links, and lineage entries rely on that), so any path that
+   * asks to open one — a reload restoring the persisted view, a session mention,
+   * a lineage hop, a task row — has to be presented through the catalog the
+   * subagent view is built from. When the catalog no longer lists the child, the
+   * nearest ancestor that it does list is the only place the transcript is still
+   * reachable from.
+   */
+  const resolveSubagentOpen = async (
+    sessionId: string,
+  ): Promise<
+    | { readonly kind: 'subagent'; readonly entry: SubagentView; readonly parentAvailable: boolean }
+    | { readonly kind: 'session'; readonly sessionId: string }
+  > => {
+    const visited = new Set<string>([sessionId])
+    let target = sessionId
+    for (;;) {
+      const summary = state.sessions.find((session) => session.id === target)
+      if (summary?.origin !== 'subagent' || summary.parentSessionId === undefined) break
+      const catalog = await loadSubagentCatalog(summary.parentSessionId)
+      // A diagnostic entry is not presentable: `isSubagentView` keeps the climb
+      // going so those stay unreachable rather than half-openable.
+      const entry = catalog?.entries.find(
+        (candidate): candidate is SubagentView => isSubagentView(candidate) && candidate.id === target,
+      )
+      if (catalog !== undefined && entry !== undefined)
+        return { kind: 'subagent', entry, parentAvailable: catalog.parentAvailable }
+      // Malformed lineage must not walk forever; fall back to the named session.
+      if (visited.has(summary.parentSessionId)) return { kind: 'session', sessionId }
+      visited.add(summary.parentSessionId)
+      target = summary.parentSessionId
+    }
+    return { kind: 'session', sessionId: target }
+  }
+  const { open, openSubagent } = createSessionOpenController({
+    client,
+    getState: () => state,
+    setState,
+    getComposerPreferences: () => composerPreferences,
+    projectionSequences,
+    pendingOpenBuffer,
+    featureActions,
+    jobActions,
+    feedbackCache,
+    commandDirectory,
+    requestSessionOpen,
+    resolveSubagentOpen,
+    loadCommandDirectory,
+    loadSubagentCatalog,
+    sessionWorkspaceFolderId,
+    persistWebviewState,
+    nextOpenIntent: () => ++openIntent,
+    getOpenIntent: () => openIntent,
+    nextOpenVersion: () => ++openVersion,
+    getOpenVersion: () => openVersion,
+    nextSessionModelDirectoryGeneration: () => ++sessionModelDirectoryGeneration,
+    getSessionModelDirectoryGeneration: () => sessionModelDirectoryGeneration,
+    getGoalReadGeneration: () => goalReadGeneration,
+    setGoalActivationAvailable: () => {
+      goalActivationAvailable = true
+    },
+    clearStartupRestorePending: () => {
+      startupRestorePending = false
+    },
+  })
+  /**
+   * A replacement DSH process starts with no follow subscriptions of its own.
+   * Whatever the user is looking at has to be re-baselined against the new
+   * process, or the conversation silently stops receiving model and tool
+   * events while the shell reports a healthy connection.
+   *
+   * `connected` is published before the replacement process has committed its
+   * workspace projection, so the re-baseline can be rejected outright with the
+   * definitive `retryable: false` answer `requireCurrentWorkspaceSession` gives
+   * a session that is not (yet) part of the current workspace — the same race a
+   * cold start recovers from by re-arming its restore. Retry it here with the
+   * same bounded backoff, and stop as soon as the user looks at something else
+   * so the panel never jumps back to the view that failed.
+   */
+  const resubscribeActiveView = async (): Promise<void> => {
+    for (let attempt = 1; ; attempt += 1) {
+      if (disposed) return
+      const subagent = state.activeSubagent
+      const sessionId = subagent === undefined ? state.activeSessionId : subagent.entry.id
+      if (sessionId === undefined) return
+      try {
+        if (subagent === undefined) await open(sessionId)
+        else await openSubagent(subagent.entry, subagent.parentAvailable)
+        return
+      } catch {
+        const stillCurrent =
+          subagent === undefined
+            ? state.activeSubagent === undefined && state.activeSessionId === sessionId
+            : state.activeSubagent?.entry.id === sessionId
+        if (disposed || attempt >= OPEN_RETRY_ATTEMPTS || !stillCurrent) return
+        if (!(await retryDelays.wait(OPEN_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1)))) return
+      }
+    }
+  }
+  const reopenActiveView = (): void => {
+    if (manualOpenOwner !== undefined) return
+    void resubscribeActiveView()
+    // The replacement process may expose a different catalog entirely; the
+    // session switcher has to reflect that backend, not the previous one.
+    void refresh().catch(() => undefined)
+  }
+  const openCreatedSession = async (sessionId: string): Promise<void> => {
+    if (state.surface?.kind === 'editor') {
+      await client.request<unknown>({
+        type: 'surface.openInEditor',
+        requestId: requestId(),
+        payload: { sessionId, replaceCurrent: true },
+      })
+      setState((current) => ({ ...current, surface: { kind: 'editor', sessionId } }))
+      await open(sessionId)
+    } else await openSession(sessionId)
+  }
+  callbacks.openCreatedSession = openCreatedSession
+  // Surface identity arrives on the same generic event channel as the domain
+  // traffic. The Host assigns it (never the Webview), and an editor assignment
+  // opens its bound session through the ordinary open path above.
+  const surfaceActions = createSurfaceActions({
+    client,
+    getState: () => state,
+    setState,
+    openSession: open,
+  })
+  const unsubscribeHostEvents = subscribeHostEvents({
+    accountActions,
+    callbacks,
+    client,
+    commandDirectory,
+    featureActions,
+    getState: () => state,
+    invalidateFeedback,
+    lifecycle: {
+      handleRegistryEvent,
+      invalidateGlobalCatalogs: globalCatalogs.invalidate,
+      retireSessionReads: () => {
+        openVersion += 1
+        openIntent += 1
+        sessionModelDirectoryGeneration += 1
+        pendingOpenBuffer.clear()
+        commandDirectory.invalidate()
+        invalidateFeedback()
+      },
+      clearStartupRestorePending: () => {
+        startupRestorePending = false
+      },
+      getOpenVersion: () => openVersion,
+      incrementGoalReadGeneration: () => {
+        goalReadGeneration += 1
+      },
+      isDisposed: () => disposed,
+      setGoalActivationAvailable: (available) => {
+        goalActivationAvailable = available
+      },
+    },
+    loadSubagentCatalog,
+    pendingOpenBuffer,
+    pluginInstallRecovery,
+    projectionSequences,
+    refresh,
+    refreshModelCatalog: globalCatalogs.refreshModels,
+    refreshCommands,
+    refreshLiveGoals,
+    refreshSessionModelDirectoryForSession,
+    reopenActiveView,
+    setState,
+    surfaceActions,
+    turnWatchers,
+  })
+  const attemptStartupRestore = (): Promise<void> => {
+    // An editor surface is bound to one session: its assignment opens that
+    // session, and the side bar's "remembered/last session" choice must never
+    // load a different conversation into the tab.
+    if (
+      disposed ||
+      state.backend.kind !== 'connected' ||
+      state.surface?.kind === 'editor' ||
+      !startupRestorePending ||
+      state.sessionStartup?.kind === 'unavailable' ||
+      state.activeSessionId !== undefined
+    )
+      return Promise.resolve()
+    if (startupRestorePromise !== undefined) return startupRestorePromise
+    const startupCandidate = selectStartupSessionId(
+      state.sessions,
+      state.workspaces,
+      state.archivedSessionIds,
+      persistedWebviewState.activeSessionId,
+    )
+    // Resume only the user's remembered selection; otherwise start a local
+    // draft rather than choosing an unrelated recent conversation.
+    const sessionId =
+      startupCandidate === persistedWebviewState.activeSessionId ? startupCandidate : undefined
+    if (sessionId === undefined) {
+      if (state.workspaces.length === 0 || state.pendingSession !== undefined) return Promise.resolve()
+      return sessionCreationActions.stageSession(state.workspaces[0]?.id)
+    }
+    const title = state.sessions.find((session) => session.id === sessionId)?.title.trim()
+    setState((current) => ({
+      ...current,
+      sessionStartup: { kind: 'restoring', ...(title ? { title } : {}) },
+    }))
+    const restore = open(sessionId, { startup: true })
+      .then(() => {
+        if (state.activeSessionId === sessionId) startupRestorePending = false
+      })
+      .finally(() => {
+        if (startupRestorePromise === restore) startupRestorePromise = undefined
+      })
+    startupRestorePromise = restore
+    return restore
+  }
+  const { checkDshUpdates, installDshVersion } = createDshUpdateActions({ client, setState })
+  const lifecycleActions = createAppLifecycleActions({
+    applyBusyEnterPreference,
+    checkDshUpdates,
+    client,
+    invalidateFeedback,
+    markStartupRestoreArmed: () => {
+      startupRestoreArmed = true
+    },
+    refresh,
+  })
+  const settingsActions = createSettingsActions({
+    client,
+    setState,
+    refreshModelCatalog: globalCatalogs.refreshModels,
+    applyBusyEnter,
+    capturePresetSessionTarget,
+    nextPresetRosterGeneration,
+    isPresetRosterCurrent,
+    synchronizeBlankSessionPreset,
+  })
+  const feedbackActions = createFeedbackActions({ client, setState, getState: () => state, feedbackCache })
+  const interactionActions = createInteractionActions(client, setState)
+  const sessionCatalogActions = createSessionCatalogActions({
+    handleRegistryEvent,
+    client,
+    getState: () => state,
+    setState,
+    refresh,
+    open: (sessionId) => openSession(sessionId),
+    loadArchivedSessions,
+    nextOpenIntent: () => ++openIntent,
+    currentOpenIntent: () => openIntent,
+    isOpenIntentCurrent: (intent) => intent === openIntent,
+  })
+  const { loadOlderHistory } = createHistoryActions({
+    client,
+    getOpenVersion: () => openVersion,
+    getState: () => state,
+    setState,
+  })
+  const sessionCreationActions = createSessionCreationActions({
+    client,
+    clearStartupRestorePending: () => {
+      startupRestorePending = false
+    },
+    discardEditorContextForSessionSwitch: (sessionId) =>
+      featureActions.discardEditorContextForSessionSwitch(sessionId),
+    getComposerPreferences: () => composerPreferences,
+    getOpenIntent: () => openIntent,
+    getPendingSend: () => pendingSend,
+    getPendingSessionRevision: () => pendingSessionRevision,
+    getState: () => state,
+    nextOpenIntent: () => ++openIntent,
+    nextOpenVersion: () => ++openVersion,
+    nextPendingSessionRevision: () => ++pendingSessionRevision,
+    openSession: openCreatedSession,
+    persistWebviewState: () => persistWebviewState(),
+    rememberComposerConfiguration,
+    refresh,
+    sendUserTurn,
+    setPendingSend: (pending) => {
+      pendingSend = pending
+    },
+    setState,
+    stopJobsBeforeSessionOpen: () => jobActions.stopBeforeSessionOpen(),
+  })
+  const sessionActions = createSessionActions({
+    client,
+    getState: () => state,
+    setState,
+    executeCommandRequest,
+    sendUserTurn,
+    runMovetoCommand: surfaceActions.methods.runMovetoCommand,
+    refreshCommands: (sessionId) => refreshCommands(sessionId),
+    refreshSessionModelDirectoryForSession,
+    rememberComposerConfiguration,
+    rememberPromptMode,
+    rememberOpenFileId: rememberOpenFilePreference,
+    nextConfigurationGeneration,
+    isConfigurationGenerationCurrent,
+  })
+  const goalQueueActions = createGoalQueueActions({
+    client,
+    getState: () => state,
+    refreshGoals: () => refreshLiveGoals(true),
+  })
+
+  /**
+   * Editor tabs stay bound to their session; picking another session there
+   * opens its own tab. The sidebar always navigates locally, independently of
+   * how many editor tabs exist.
+   */
+  const openSession = (sessionId: string): Promise<void> => {
+    if (state.surface?.kind === 'editor' && state.surface.sessionId !== sessionId)
+      return surfaceActions.methods.openSessionInEditor(sessionId)
+    const owner = Symbol('manual-session-open')
+    manualOpenOwner = owner
+    if (state.activeSessionId === undefined && state.pendingSession === undefined) {
+      const title = state.sessions.find((session) => session.id === sessionId)?.title.trim()
+      setState((current) => ({
+        ...current,
+        sessionStartup: { kind: 'restoring', ...(title ? { title } : {}) },
+      }))
+    }
+    let failed = false
+    return open(sessionId)
+      .catch((reason: unknown) => {
+        failed = true
+        throw reason
+      })
+      .finally(() => {
+        if (manualOpenOwner !== owner) return
+        manualOpenOwner = undefined
+        setState((current) =>
+          current.sessionStartup?.kind === (failed ? 'error' : 'ready')
+            ? current
+            : { ...current, sessionStartup: { kind: failed ? 'error' : 'ready' } },
+        )
+      })
+  }
+  const store: StoreWithoutStateView = {
+    ...accountActions.methods,
+    ...jobActions.methods,
+    ...featureActions.methods,
+    ...surfaceActions.methods,
+    openSession,
+    ...settingsActions,
+    ...feedbackActions,
+    ...interactionActions,
+    ...sessionCatalogActions,
+    ...sessionCreationActions,
+    get sessionRestore() {
+      return state.sessionRestore === true
+    },
+    get feedbackUnavailable() {
+      return state.feedbackUnavailable ?? false
+    },
+    get unavailableLists() {
+      return state.unavailableLists ?? []
+    },
+    getState: () => state,
+    subscribe: (listener) => {
+      if (disposed) return () => undefined
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    watchSessionTurnEnd: (sessionId) => turnWatchers.watch(sessionId),
+    ...lifecycleActions,
+    refreshSessions: refresh,
+    refreshCommands: (sessionId) => refreshCommands(sessionId),
+    refreshSessionModels: async (sessionId) => {
+      const target = sessionId ?? state.activeSessionId
+      if (target === undefined) return
+      await refreshSessionModelDirectoryForSession(target)
+    },
+    loadOlderHistory,
+    navigateTranscript: async (direction) => {
+      const window = state.transcript
+      if (window === undefined) return
+      const result = await client.request<unknown>({
+        type: 'session.transcript.navigate',
+        requestId: requestId(),
+        payload: { sessionId: window.sessionId, revision: window.revision, direction },
+      })
+      setState((current) => installTranscript(current, parseTranscript(result)))
+    },
+    openTranscriptContent: async (nodeId) => {
+      const window = state.transcript
+      if (window === undefined) return
+      await client.request<unknown>({
+        type: 'session.transcript.openContent',
+        requestId: requestId(),
+        payload: { sessionId: window.sessionId, revision: window.revision, nodeId },
+      })
+    },
+    openSubagent,
+    ...sessionActions,
+    ...goalQueueActions,
+    runtimeAction: (action) =>
+      client
+        .request<unknown>({ type: 'runtime.action', requestId: requestId(), payload: { action } })
+        .then(() => undefined),
+    startTemporaryChat: async () => {
+      const result = object(
+        await client.request<unknown>({
+          type: 'workspace.browser',
+          requestId: requestId(),
+          payload: { action: 'temporary' },
+        }),
+      )
+      await refresh()
+      if (typeof result?.workspaceId === 'string' && state.pendingSession === undefined)
+        await sessionCreationActions.stageSession(result.workspaceId)
+    },
+    workspaceBrowser: (action, workspaceId, sessionId, beforeSequence) =>
+      client.request<unknown>({
+        type: 'workspace.browser',
+        requestId: requestId(),
+        payload: {
+          action,
+          ...(workspaceId === undefined ? {} : { workspaceId }),
+          ...(sessionId === undefined ? {} : { sessionId }),
+          ...(beforeSequence === undefined ? {} : { beforeSequence }),
+        },
+      }),
+    configureConnection: async (mode, endpoint) => {
+      await client.request<unknown>({
+        type: 'connection.configure',
+        requestId: requestId(),
+        payload: { mode, ...(endpoint === undefined ? {} : { endpoint }) },
+      })
+    },
+    checkDshUpdates,
+    installDshVersion,
+    loadPluginInventory: async () =>
+      parsePluginInventory(
+        await client.request<unknown>({ type: 'plugin.inventory', requestId: requestId() }),
+      ),
+    startPluginInstall: (input) => pluginInstallRecovery.start(input),
+    cancelPluginInstall: () => pluginInstallRecovery.cancel(),
+    recoverPluginInstall: () => pluginInstallRecovery.recover(),
+    exportSession: async (options) => {
+      // The host resolves `{ cancelled: true }` when the user closes the save
+      // dialog; that is a successful no-op, not an error.
+      await client.request<unknown>({
+        type: 'session.export',
+        requestId: requestId(),
+        payload: {
+          sessionId: options.sessionId,
+          format: options.format,
+          includeAttachments: options.includeAttachments,
+          includeReasoning: options.includeReasoning,
+        },
+      })
+    },
+    loadSubagentChildren: async (sessionId) => {
+      const catalog = await loadSubagentCatalog(sessionId)
+      if (catalog !== undefined)
+        setState((current) =>
+          current.activeSessionId === sessionId ? { ...current, subagents: catalog } : current,
+        )
+      return catalog
+    },
+    featureRequest: <T>(request: FeatureRequest): Promise<T> => client.featureRequest<T>(request),
+    subscribeFeature: (listener) => client.subscribeFeature(listener),
+    setDrawer: (drawer) => {
+      const openingSessionsDrawer = drawer === 'sessions' && state.drawer !== 'sessions'
+      setState((current) => ({ ...current, drawer }))
+      persistWebviewState()
+      if (openingSessionsDrawer) void refresh().catch(() => undefined)
+    },
+    dispose: () => {
+      if (disposed) return
+      disposed = true
+      cancelNotification()
+      retryDelays.dispose()
+      // Retire in-flight opens and release their bounded snapshots immediately.
+      pendingOpenBuffer.clear()
+      turnWatchers.disposeAll()
+      pluginInstallRecovery.dispose()
+      openVersion += 1
+      sessionModelDirectoryGeneration += 1
+      globalCatalogs.invalidate()
+      commandDirectory.invalidate()
+      accountActions.invalidate()
+      invalidateFeedback()
+      unsubscribeHostEvents()
+      client.dispose()
+      listeners.clear()
+    },
+  }
+  return defineStateView(store, () => state)
+}

@@ -1,0 +1,403 @@
+import * as vscode from 'vscode'
+import path from 'node:path'
+import { AppError, type DshBackend, type SessionDetail, type WorkspaceSummary } from '@dsh-vscode/domain'
+import type { BackendService, WorkspaceUseCases } from '@dsh-vscode/application'
+import type { TemporaryWorkspaceManager } from '../backend/temporary-workspace.js'
+import { registerWorkspaceFolders } from '../backend/register-workspace-folders.js'
+import { ownsCurrentWorkspaceSession } from '../view/session-ownership.js'
+import { sameWorkspacePath } from './workspace-state.js'
+import { sessionBelongsToWorkspaces } from './workspace-guards.js'
+import { sessionOpenFailure } from './session-payload.js'
+
+/**
+ * Workspace scope and session ownership for every Webview route. The guards are
+ * one entry so a route cannot reach a backend resource the current VS Code
+ * workspace does not own, and so the validated session detail is shared by the
+ * advisory reads an open fans out into.
+ */
+export interface SessionScopeDependencies {
+  readonly backendService: BackendService
+  readonly workspaceUseCases: WorkspaceUseCases
+  readonly temporaryWorkspaceManager: TemporaryWorkspaceManager
+  readonly currentWorkspaceFolders: () => readonly vscode.WorkspaceFolder[]
+  readonly currentWorkspaceFolder: () => vscode.WorkspaceFolder | undefined
+}
+
+interface SharedSessionLoad {
+  readonly promise: Promise<SessionDetail>
+  readonly controller: AbortController
+  callers: number
+  settled: boolean
+}
+
+/** Fork ownership must never open history: opening an old Session may migrate it. */
+export async function requireCatalogOwnedSession(
+  backend: DshBackend,
+  sessionId: string,
+  workspaces: readonly WorkspaceSummary[],
+  folders: readonly vscode.WorkspaceFolder[],
+  signal: AbortSignal,
+): Promise<void> {
+  const archived = await backend.workspaces.listArchivedSessionIds(signal)
+  if (archived.includes(sessionId))
+    throw new AppError({
+      code: 'PERMISSION_DENIED',
+      message: 'The requested session is archived.',
+      retryable: false,
+    })
+  const catalog = await backend.sessions.list(undefined, signal)
+  const visited = new Set<string>()
+  let candidate: string | undefined = sessionId
+  while (candidate !== undefined && !visited.has(candidate)) {
+    visited.add(candidate)
+    const summary = catalog.items.find((item) => item.id === candidate)
+    if (summary !== undefined && sessionBelongsToWorkspaces(summary, workspaces, folders)) return
+    candidate = backend.subagents.parentOf?.(candidate)
+  }
+  throw new AppError({
+    code: 'PERMISSION_DENIED',
+    message: 'The requested session is not part of the current VS Code workspace.',
+    retryable: false,
+  })
+}
+
+export interface SessionScope {
+  listCurrentWorkspaces(this: void, signal?: AbortSignal): Promise<readonly WorkspaceSummary[]>
+  listCurrentArchivedSessionIds(
+    this: void,
+    workspaces: readonly WorkspaceSummary[],
+    signal?: AbortSignal,
+  ): Promise<readonly string[]>
+  ensureCurrentWorkspace(
+    this: void,
+    requestedWorkspaceId: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceSummary>
+  invalidateCurrentWorkspaceSessionDetails(this: void): void
+  requireCurrentWorkspaceSession(
+    this: void,
+    sessionId: string,
+    signal: AbortSignal,
+    options?: { readonly fresh?: boolean; readonly allowArchived?: boolean; readonly rebaseline?: boolean },
+  ): Promise<SessionDetail>
+  requireCurrentWorkspaceId(this: void, workspaceId: string, signal: AbortSignal): Promise<void>
+  requireOwnedQueuedInput(this: void, inputId: string, signal: AbortSignal): Promise<void>
+  requireOwnedGoal(this: void, goalId: string, signal: AbortSignal): Promise<void>
+  requireOwnedPermission(this: void, requestId: string, signal: AbortSignal): Promise<void>
+  requireOwnedQuestion(this: void, questionId: string, signal: AbortSignal): Promise<void>
+}
+
+export function createSessionScope(deps: SessionScopeDependencies): SessionScope {
+  const { backendService, workspaceUseCases, temporaryWorkspaceManager } = deps
+  const currentWorkspaceFolders = deps.currentWorkspaceFolders
+  const currentWorkspaceFolder = deps.currentWorkspaceFolder
+
+  let temporaryRequested = false
+  const listCurrentWorkspaces = async (signal?: AbortSignal): Promise<readonly WorkspaceSummary[]> => {
+    const folders = currentWorkspaceFolders()
+    const workspaces = await workspaceUseCases.list(signal)
+    if (folders.length === 0) {
+      return temporaryRequested ? [await temporaryWorkspaceManager.resolve(workspaces, signal)] : []
+    }
+    return registerWorkspaceFolders(
+      folders.map((folder) => folder.uri.fsPath),
+      workspaces,
+      (input, requestSignal) => workspaceUseCases.create(input, requestSignal),
+      sameWorkspacePath,
+      vscode.workspace.isTrusted,
+      signal,
+    )
+  }
+  // Opening one session fans out into several advisory reads (queue, goals,
+  // jobs, feedback, subagents, commands, and model settings). They all need
+  // the same workspace ownership check, but each request used to repeat the
+  // full workspace/archive/session-history chain. Keep one validated detail
+  // per current backend generation and share in-flight reads across those
+  // requests. `session.open` can opt into a fresh read below.
+  const currentWorkspaceSessionDetails = new Map<
+    string,
+    { readonly generation: number; readonly detail: SessionDetail }
+  >()
+  const currentWorkspaceSessionLoads = new Map<string, SharedSessionLoad>()
+  let currentWorkspaceSessionGeneration = 0
+  const invalidateCurrentWorkspaceSessionDetails = (): void => {
+    currentWorkspaceSessionGeneration += 1
+    currentWorkspaceSessionDetails.clear()
+    currentWorkspaceSessionLoads.clear()
+  }
+  const listCurrentArchivedSessionIds = async (
+    workspaces: readonly WorkspaceSummary[],
+    signal?: AbortSignal,
+  ): Promise<readonly string[]> => {
+    if (workspaces.length === 0 && currentWorkspaceFolders().length === 0) return []
+    const backend = backendService.requireBackend()
+    // rc.6 defines this as a registry-global snapshot. Returning it directly
+    // avoids a second session.list race while a workspace attach/archive is
+    // being committed; the session list itself is still scoped below.
+    return backend.workspaces.listArchivedSessionIds(signal)
+  }
+  const ensureCurrentWorkspace = async (
+    requestedWorkspaceId: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<WorkspaceSummary> => {
+    const current = await listCurrentWorkspaces(signal)
+    const requested = current.find((workspace) => workspace.id === requestedWorkspaceId)
+    if (requested !== undefined) return requested
+    const existing = current[0]
+    if (existing !== undefined) return existing
+
+    const folder = currentWorkspaceFolder()
+    if (folder !== undefined) {
+      return workspaceUseCases.create(
+        {
+          name: path.basename(path.normalize(folder.uri.fsPath)) || 'Workspace',
+          path: folder.uri.fsPath,
+        },
+        signal,
+      )
+    }
+
+    temporaryRequested = true
+    return temporaryWorkspaceManager.ensure(signal)
+  }
+  /**
+   * A catalog-resolved child session has no workspace membership of its own —
+   * `session/list` drops a child without a cwd — so its ownership comes from
+   * the durable parent the subagent catalog published. Without this walk every
+   * child-scoped route the Webview legitimately opened from that catalog
+   * (subagent history/send/interrupt, goal/job/queue/feedback) would be
+   * refused as a foreign session.
+   */
+  const ownsSession = async (
+    sessionId: string,
+    detail: SessionDetail,
+    workspaces: readonly WorkspaceSummary[],
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const subagents = backendService.requireBackend().subagents
+    try {
+      return await ownsCurrentWorkspaceSession({
+        sessionId,
+        detail,
+        belongs: (session) => sessionBelongsToWorkspaces(session, workspaces, currentWorkspaceFolders()),
+        parentOf: (childSessionId) => subagents.parentOf?.(childSessionId),
+        readSession: (parentId) => backendService.requireBackend().sessions.get(parentId, signal),
+      })
+    } catch (error) {
+      throw sessionOpenFailure('parent session ownership check', error)
+    }
+  }
+  /**
+   * `allowArchived` serves only the two recovery routes that must reach a
+   * session the active surface refuses — restoring one, or deleting one for
+   * good. Such a read stays out of the active-session cache so a recovered row
+   * can never be handed to an ordinary route from there.
+   */
+  const requireCurrentWorkspaceSession = async (
+    sessionId: string,
+    signal: AbortSignal,
+    options: {
+      readonly fresh?: boolean
+      readonly allowArchived?: boolean
+      readonly rebaseline?: boolean
+    } = {},
+  ): Promise<SessionDetail> => {
+    signal.throwIfAborted()
+    if (options.fresh !== true && options.allowArchived !== true) {
+      const cached = currentWorkspaceSessionDetails.get(sessionId)
+      if (cached?.generation === currentWorkspaceSessionGeneration) return cached.detail
+    }
+    const pending = currentWorkspaceSessionLoads.get(sessionId)
+    // An explicit session.open owns a fresh stream baseline. Do not let an
+    // older advisory ownership read bypass that re-baselining hook. Recovery
+    // reads (allowArchived) share neither direction of the dedup: adopting an
+    // ordinary load would fail a restore or delete with the archived refusal,
+    // and letting an ordinary route adopt a recovery load would hand it an
+    // archived session the route's own contract must refuse.
+    if (
+      pending !== undefined &&
+      !pending.controller.signal.aborted &&
+      options.fresh !== true &&
+      options.allowArchived !== true
+    )
+      return joinSessionLoad(pending, signal)
+
+    const generation = currentWorkspaceSessionGeneration
+    const controller = new AbortController()
+    const loadSignal = controller.signal
+    const load = (async (): Promise<SessionDetail> => {
+      let workspaces: readonly WorkspaceSummary[]
+      try {
+        workspaces = await listCurrentWorkspaces(loadSignal)
+      } catch (error) {
+        throw sessionOpenFailure('workspace discovery', error)
+      }
+
+      let archivedSessionIds: readonly string[]
+      try {
+        archivedSessionIds = await backendService
+          .requireBackend()
+          .workspaces.listArchivedSessionIds(loadSignal)
+      } catch (error) {
+        throw sessionOpenFailure('archive state lookup', error)
+      }
+      if (archivedSessionIds.includes(sessionId) && options.allowArchived !== true)
+        throw sessionOpenFailure(
+          'archive state lookup',
+          new AppError({
+            code: 'PERMISSION_DENIED',
+            message: 'The requested session is archived.',
+            retryable: false,
+          }),
+        )
+
+      let detail: SessionDetail
+      try {
+        const sessions = backendService.requireBackend().sessions
+        detail =
+          options.fresh === true && options.rebaseline !== false && sessions.open !== undefined
+            ? await sessions.open(sessionId, loadSignal)
+            : await sessions.get(sessionId, loadSignal)
+      } catch (error) {
+        throw sessionOpenFailure('session summary and history read', error)
+      }
+      if (!(await ownsSession(sessionId, detail, workspaces, loadSignal)))
+        throw sessionOpenFailure(
+          'current workspace ownership check',
+          new AppError({
+            code: 'PERMISSION_DENIED',
+            message: 'The requested session is not part of the current VS Code workspace.',
+            retryable: false,
+          }),
+        )
+      loadSignal.throwIfAborted()
+      if (generation === currentWorkspaceSessionGeneration && options.allowArchived !== true) {
+        // Ownership/advisory reads need metadata, never a retained transcript body.
+        const { history: _history, ...metadata } = detail
+        void _history
+        currentWorkspaceSessionDetails.delete(sessionId)
+        if (JSON.stringify(metadata).length <= 256 * 1024)
+          currentWorkspaceSessionDetails.set(sessionId, { generation, detail: metadata })
+        while (currentWorkspaceSessionDetails.size > 16)
+          currentWorkspaceSessionDetails.delete(currentWorkspaceSessionDetails.keys().next().value!)
+      }
+      return detail
+    })()
+    // Recovery reads stay out of the shared in-flight map, mirroring the cache
+    // policy documented above: an ordinary route must never adopt one, and two
+    // overlapping recovery reads are rare, idempotent, and cheaper to reason
+    // about than a variant-aware dedup key.
+    const shared: SharedSessionLoad = { promise: load, controller, callers: 0, settled: false }
+    if (options.allowArchived !== true) currentWorkspaceSessionLoads.set(sessionId, shared)
+    const finish = (): void => {
+      shared.settled = true
+      if (currentWorkspaceSessionLoads.get(sessionId) === shared)
+        currentWorkspaceSessionLoads.delete(sessionId)
+    }
+    void load.then(finish, finish)
+    return joinSessionLoad(shared, signal)
+  }
+  const requireCurrentWorkspaceId = async (workspaceId: string, signal: AbortSignal): Promise<void> => {
+    const workspaces = await listCurrentWorkspaces(signal)
+    if (workspaces.some((workspace) => workspace.id === workspaceId)) return
+    throw new AppError({
+      code: 'PERMISSION_DENIED',
+      message: 'The requested workspace is not part of the current VS Code workspace.',
+      retryable: false,
+    })
+  }
+  const requireOwnedQueuedInput = async (inputId: string, signal: AbortSignal): Promise<void> => {
+    const owner = backendService.requireBackend().sessions.sessionForQueuedInput?.(inputId)
+    if (owner === undefined) {
+      throw new AppError({
+        code: 'PERMISSION_DENIED',
+        message: 'The queued DSH input is not owned by the current workspace.',
+        retryable: false,
+      })
+    }
+    await requireCurrentWorkspaceSession(owner, signal)
+  }
+  const requireOwnedGoal = async (goalId: string, signal: AbortSignal): Promise<void> => {
+    const owner = backendService.requireBackend().goals.sessionForGoal?.(goalId)
+    if (owner === undefined) {
+      throw new AppError({
+        code: 'PERMISSION_DENIED',
+        message: 'The requested goal is not owned by the current workspace.',
+        retryable: false,
+      })
+    }
+    await requireCurrentWorkspaceSession(owner, signal)
+  }
+  const requireOwnedPermission = async (requestId: string, signal: AbortSignal): Promise<void> => {
+    const owner = backendService.requireBackend().interactions.sessionForPermission?.(requestId)
+    if (owner === undefined) {
+      throw new AppError({
+        code: 'PERMISSION_DENIED',
+        message: 'The requested permission is not owned by the current workspace.',
+        retryable: false,
+      })
+    }
+    await requireCurrentWorkspaceSession(owner, signal)
+  }
+  const requireOwnedQuestion = async (questionId: string, signal: AbortSignal): Promise<void> => {
+    const owner = backendService.requireBackend().interactions.sessionForQuestion?.(questionId)
+    if (owner === undefined) {
+      throw new AppError({
+        code: 'PERMISSION_DENIED',
+        message: 'The requested question is not owned by the current workspace.',
+        retryable: false,
+      })
+    }
+    await requireCurrentWorkspaceSession(owner, signal)
+  }
+
+  return {
+    listCurrentWorkspaces,
+    listCurrentArchivedSessionIds,
+    ensureCurrentWorkspace,
+    invalidateCurrentWorkspaceSessionDetails,
+    requireCurrentWorkspaceSession,
+    requireCurrentWorkspaceId,
+    requireOwnedQueuedInput,
+    requireOwnedGoal,
+    requireOwnedPermission,
+    requireOwnedQuestion,
+  }
+}
+
+function joinSessionLoad(load: SharedSessionLoad, signal: AbortSignal): Promise<SessionDetail> {
+  load.callers += 1
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const finish = (complete: () => void): void => {
+      if (settled) return
+      settled = true
+      signal.removeEventListener('abort', onAbort)
+      load.callers -= 1
+      complete()
+    }
+    const onAbort = (): void => {
+      finish(() =>
+        reject(
+          new AppError({
+            code: 'REQUEST_CANCELLED',
+            message: 'The session ownership read was cancelled.',
+            retryable: false,
+          }),
+        ),
+      )
+      // Retire the underlying read only when no live caller needs it. Each
+      // advisory route owns its response cancellation independently.
+      if (load.callers === 0 && !load.settled) load.controller.abort(signal.reason)
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    if (signal.aborted) onAbort()
+    void load.promise.then(
+      (detail) => finish(() => resolve(detail)),
+      (error: unknown) =>
+        finish(() =>
+          reject(error instanceof Error ? error : new Error('The session read failed.', { cause: error })),
+        ),
+    )
+  })
+}

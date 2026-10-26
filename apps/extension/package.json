@@ -1,0 +1,576 @@
+{
+  "name": "vscode-dsh",
+  "displayName": "DSH",
+  "description": "Share and continue your DSH Desktop conversations in VS Code.",
+  "version": "0.1.71",
+  "publisher": "dsh-local",
+  "icon": "resources/dsh.png",
+  "license": "MIT",
+  "galleryBanner": {
+    "color": "#0f172a",
+    "theme": "dark"
+  },
+  "engines": {
+    "vscode": "^1.125.0",
+    "node": ">=22.19.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "keywords": [
+    "deepseek",
+    "dsh",
+    "agent",
+    "coding assistant"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "main": "./dist/extension.cjs",
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:dsh.openSidebar",
+    "onView:dsh.chatView",
+    "onWebviewPanel:dsh.chatPanel",
+    "onCustomEditor:dsh.sessionDrop",
+    "onCommand:dsh.connect",
+    "onCommand:dsh.reconnect",
+    "onCommand:dsh.newSession",
+    "onCommand:dsh.openChatInEditor",
+    "onCommand:dsh.moveChatToSidebar",
+    "onCommand:dsh.openWebUi",
+    "onCommand:dsh.installRuntime",
+    "onCommand:dsh.addSelectionContext",
+    "onCommand:dsh.addFileContext",
+    "onCommand:dsh.addSymbolContext",
+    "onCommand:dsh.addDiagnosticContext",
+    "onCommand:dsh.shareEditorState",
+    "onCommand:dsh.stopSharingEditorState",
+    "onCommand:dsh.manageEditorCompanion",
+    "onCommand:dsh.installEditorCompanion",
+    "onCommand:dsh.undoEditorEdit",
+    "onCommand:dsh.connectDesktop"
+  ],
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "dev": "node esbuild.mjs --watch",
+    "prepackage:vsix": "node -e \"require('node:fs').mkdirSync('../../artifacts',{recursive:true})\"",
+    "package:vsix": "vsce package --no-dependencies --no-gitHubIssueLinking -o ../../artifacts/vscode-dsh-0.1.69.vsix",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@dsh-vscode/application": "workspace:*",
+    "@dsh-vscode/domain": "workspace:*",
+    "@dsh-vscode/timeline": "workspace:*",
+    "@dsh-vscode/dsh-adapter": "workspace:*",
+    "@dsh-vscode/webview-protocol": "workspace:*",
+    "undici": "7.29.0",
+    "ws": "8.21.3",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/vscode": "1.125.0",
+    "@types/ws": "8.18.1"
+  },
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "dsh.sessionDrop",
+        "displayName": "DeepSeek Harness Chat",
+        "selector": [
+          {
+            "filenamePattern": "*.dsh-chat"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "viewsContainers": {
+      "secondarySidebar": [
+        {
+          "id": "vscode-dsh",
+          "title": "DSH",
+          "icon": "resources/dsh.svg"
+        }
+      ]
+    },
+    "views": {
+      "vscode-dsh": [
+        {
+          "id": "dsh.chatView",
+          "name": "Chat",
+          "type": "webview",
+          "visibility": "visible",
+          "icon": "resources/dsh.svg",
+          "contextualTitle": "Chat"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "dsh.openSidebar",
+        "title": "DSH: Open Chat / 打开聊天",
+        "icon": "resources/dsh.svg"
+      },
+      {
+        "command": "dsh.connectDesktop",
+        "title": "DSH: Connect to Desktop / 连接桌面端",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "dsh.connect",
+        "title": "DSH: Connect",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "dsh.reconnect",
+        "title": "DSH: Connected (Reconnect)",
+        "icon": {
+          "light": "resources/connected.svg",
+          "dark": "resources/connected.svg"
+        }
+      },
+      {
+        "command": "dsh.newSession",
+        "title": "DSH: Open Sessions",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "dsh.openSettings",
+        "title": "DSH: Open Settings",
+        "icon": "$(settings-gear)"
+      },
+      {
+        "command": "dsh.openWebUi",
+        "title": "DSH: Open Web UI",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "dsh.installRuntime",
+        "title": "DSH: Install DeepSeek Harness"
+      },
+      {
+        "command": "dsh.selectExecutable",
+        "title": "DSH: Select Executable"
+      },
+      {
+        "command": "dsh.copyInstallCommand",
+        "title": "DSH: Copy Install Command"
+      },
+      {
+        "command": "dsh.openDocumentation",
+        "title": "DSH: Open Documentation"
+      },
+      {
+        "command": "dsh.openInSecondarySidebar",
+        "title": "DSH: Move View to Secondary Side Bar"
+      },
+      {
+        "command": "dsh.openChatInEditor",
+        "title": "DSH: Open Chat in Editor Area",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "dsh.moveChatToSidebar",
+        "title": "DSH: Move Chat to Side Bar",
+        "icon": "$(layout-sidebar-right)"
+      },
+      {
+        "command": "dsh.showDiagnostics",
+        "title": "DSH: Show Redacted Diagnostics"
+      },
+      {
+        "command": "dsh.addSelectionContext",
+        "title": "DSH: Add Selection to Context",
+        "icon": "$(selection)"
+      },
+      {
+        "command": "dsh.addFileContext",
+        "title": "DSH: Add File to Context",
+        "icon": "$(file)"
+      },
+      {
+        "command": "dsh.addSymbolContext",
+        "title": "DSH: Add Symbol to Context",
+        "icon": "$(symbol-method)"
+      },
+      {
+        "command": "dsh.addDiagnosticContext",
+        "title": "DSH: Add Diagnostic to Context",
+        "icon": "$(error)"
+      },
+      {
+        "command": "dsh.shareEditorState",
+        "title": "DSH: Turn On Editor Tools",
+        "icon": "$(broadcast)"
+      },
+      {
+        "command": "dsh.stopSharingEditorState",
+        "title": "DSH: Turn Off Editor Tools",
+        "icon": "$(circle-slash)"
+      },
+      {
+        "command": "dsh.manageEditorCompanion",
+        "title": "DSH: Manage Editor Companion",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "dsh.installEditorCompanion",
+        "title": "DSH: Install Editor Companion",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "dsh.undoEditorEdit",
+        "title": "DSH: Undo Last Editor Edit",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "dsh.authorizeExternalConnection",
+        "title": "Authorize External Connection",
+        "category": "DSH"
+      },
+      {
+        "command": "dsh.clearExternalCredentials",
+        "title": "清除连接凭据与配对 / Clear External Connection Credentials",
+        "category": "DSH"
+      },
+      {
+        "command": "dsh.resetConnection",
+        "title": "重置连接 / Reset Connection",
+        "category": "DSH"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "dsh.openSidebar",
+          "group": "navigation@2"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "dsh.addSelectionContext",
+          "when": "editorTextFocus && dsh.editorContext.selectionAvailable",
+          "group": "dsh@1"
+        },
+        {
+          "command": "dsh.addFileContext",
+          "when": "editorTextFocus && dsh.editorContext.fileAvailable",
+          "group": "dsh@2"
+        },
+        {
+          "command": "dsh.addSymbolContext",
+          "when": "editorTextFocus && dsh.editorContext.symbolAvailable",
+          "group": "dsh@3"
+        },
+        {
+          "command": "dsh.addDiagnosticContext",
+          "when": "editorTextFocus && dsh.editorContext.diagnosticAvailable",
+          "group": "dsh@4"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "dsh.addSelectionContext",
+          "when": "editorLangId != '' && dsh.editorContext.selectionAvailable",
+          "group": "dsh@1"
+        },
+        {
+          "command": "dsh.addFileContext",
+          "when": "editorLangId != '' && dsh.editorContext.fileAvailable",
+          "group": "dsh@2"
+        },
+        {
+          "command": "dsh.addSymbolContext",
+          "when": "editorLangId != '' && dsh.editorContext.symbolAvailable",
+          "group": "dsh@3"
+        },
+        {
+          "command": "dsh.addDiagnosticContext",
+          "when": "editorLangId != '' && dsh.editorContext.diagnosticAvailable",
+          "group": "dsh@4"
+        }
+      ],
+      "view/item/context": [],
+      "commandPalette": [
+        {
+          "command": "dsh.openSidebar"
+        },
+        {
+          "command": "dsh.connectDesktop"
+        },
+        {
+          "command": "dsh.connect",
+          "when": "false"
+        },
+        {
+          "command": "dsh.reconnect",
+          "when": "false"
+        },
+        {
+          "command": "dsh.newSession"
+        },
+        {
+          "command": "dsh.openSettings"
+        },
+        {
+          "command": "dsh.openWebUi",
+          "when": "false"
+        },
+        {
+          "command": "dsh.installRuntime",
+          "when": "false"
+        },
+        {
+          "command": "dsh.selectExecutable",
+          "when": "false"
+        },
+        {
+          "command": "dsh.copyInstallCommand",
+          "when": "false"
+        },
+        {
+          "command": "dsh.openDocumentation",
+          "when": "false"
+        },
+        {
+          "command": "dsh.openInSecondarySidebar",
+          "when": "false"
+        },
+        {
+          "command": "dsh.openChatInEditor"
+        },
+        {
+          "command": "dsh.moveChatToSidebar"
+        },
+        {
+          "command": "dsh.showDiagnostics"
+        },
+        {
+          "command": "dsh.addSelectionContext",
+          "when": "false"
+        },
+        {
+          "command": "dsh.addFileContext",
+          "when": "false"
+        },
+        {
+          "command": "dsh.addSymbolContext",
+          "when": "false"
+        },
+        {
+          "command": "dsh.addDiagnosticContext",
+          "when": "false"
+        },
+        {
+          "command": "dsh.shareEditorState",
+          "when": "false"
+        },
+        {
+          "command": "dsh.stopSharingEditorState",
+          "when": "false"
+        },
+        {
+          "command": "dsh.manageEditorCompanion",
+          "when": "false"
+        },
+        {
+          "command": "dsh.installEditorCompanion",
+          "when": "false"
+        },
+        {
+          "command": "dsh.undoEditorEdit"
+        },
+        {
+          "command": "dsh.authorizeExternalConnection",
+          "when": "false"
+        },
+        {
+          "command": "dsh.clearExternalCredentials"
+        },
+        {
+          "command": "dsh.resetConnection"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "DeepSeek Harness",
+      "properties": {
+        "dsh.editor.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Automatically connect editor tools for trusted local/workspace-side DSH sessions. Turn off to stop access in this workspace."
+        },
+        "dsh.editor.autoSetup": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Automatically load the bundled editor tools when starting an extension-managed DSH in a trusted workspace, including F5. Existing external desktops must provide a compatible companion."
+        },
+        "dsh.editor.allowEdits": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Allow agent edits as unsaved, undoable editor changes. Turn off to retain read, language and navigation tools without editing."
+        },
+        "dsh.webUi.browser": {
+          "type": "string",
+          "enum": [
+            "internal",
+            "external"
+          ],
+          "enumDescriptions": [
+            "VS Code integrated browser",
+            "System default browser"
+          ],
+          "default": "internal",
+          "scope": "application",
+          "description": "Where the title-bar Open Web UI action opens DSH. Changes take effect on the next click."
+        },
+        "dsh.connection.mode": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "custom",
+            "attach-only",
+            "new-isolated"
+          ],
+          "default": "attach-only",
+          "markdownDescription": "Defaults to `attach-only` to share the running DSH Desktop host without starting another instance. `custom` uses one explicit endpoint. `auto` and `new-isolated` are opt-in modes for extension-managed runtimes."
+        },
+        "dsh.connection.managedPort": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535,
+          "default": 0,
+          "description": "Port for an extension-managed DSH. Zero asks DSH to select a free port."
+        },
+        "dsh.connection.serverUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Existing DSH HTTP(S) origin. In auto, attach-only or custom mode, connects only to this address; failure never falls back to another instance or automatic startup."
+        },
+        "dsh.connection.runtimeVersion": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Optional explicit DSH wire version for an external instance whose runtime version cannot be discovered (for example a containerized DSH such as `0.2.1-alpha.2`). Bypasses the compatibility-fallback probe and selects the exact matching adapter. Leave empty to auto-detect."
+        },
+        "dsh.connection.attachPorts": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "default": [
+            3080
+          ],
+          "description": "Explicit local attachment targets for auto and attach-only modes when no server URL is set. Setting this list disables fallback to other ports and automatic startup; reset the setting to restore automatic discovery."
+        },
+        "dsh.connection.discoveryTimeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 30000,
+          "default": 1500,
+          "description": "Maximum time for one local DSH discovery pass."
+        },
+        "dsh.connection.requestTimeoutMs": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 300000,
+          "default": 30000,
+          "description": "Default timeout for non-streaming DSH requests."
+        },
+        "dsh.runtime.executablePath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "description": "Optional absolute path to the DSH executable. Leave empty for automatic discovery."
+        },
+        "dsh.runtime.autoStart": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow starting an extension-owned DSH in auto mode. Disabled by default; desktop sharing attaches to the existing host."
+        },
+        "dsh.agent.defaultPreset": {
+          "type": "string",
+          "default": "standard",
+          "description": "Default DSH agent preset for new sessions; deployments may provide additional ids."
+        },
+        "dsh.agent.toolMode": {
+          "type": "string",
+          "enum": [
+            "native",
+            "ptc",
+            "code",
+            "both"
+          ],
+          "default": "native",
+          "description": "Default DSH tool mode for new sessions. Alpha runtimes use ptc; code is retained for published rc runtimes."
+        },
+        "dsh.agent.permissionPreset": {
+          "type": "string",
+          "default": "workspace-write",
+          "description": "Default permission preset supplied by the connected DSH permission plugin."
+        },
+        "dsh.agent.planMode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable DSH plan mode by default for new sessions."
+        },
+        "dsh.model.provider": {
+          "type": "string",
+          "default": "",
+          "description": "Optional default provider id. Leave empty to use DSH configuration."
+        },
+        "dsh.model.id": {
+          "type": "string",
+          "default": "",
+          "description": "Optional default model id. Leave empty to use DSH configuration."
+        },
+        "dsh.model.reasoningLevel": {
+          "type": "string",
+          "default": "",
+          "description": "Optional default reasoning level when supported by the selected model."
+        },
+        "dsh.checkpoints.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable explicit local checkpoint metadata. Restore requires content storage to be enabled separately."
+        },
+        "dsh.checkpoints.storeContent": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow explicit checkpoint content snapshots in extension global storage. Source code remains sensitive and is not encrypted by this setting."
+        },
+        "dsh.promptTemplates.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable local prompt templates. Templates are user-authored text and are inserted into the composer only after explicit user action."
+        },
+        "dsh.developer.logLevel": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warn",
+            "info",
+            "debug"
+          ],
+          "default": "info",
+          "description": "Extension diagnostics verbosity. Secrets and prompt bodies are always redacted."
+        }
+      }
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mcdottok/vscode-dsh.git"
+  },
+  "homepage": "https://github.com/mcdottok/vscode-dsh#readme",
+  "bugs": {
+    "url": "https://github.com/mcdottok/vscode-dsh/issues"
+  }
+}

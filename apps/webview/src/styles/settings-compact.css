@@ -1,0 +1,218 @@
+/* Settings share the compact, theme-aware surface used by the model menu. */
+.dsh-app .dsh-settings {
+  --dsh-font-size-2xs: 11px;
+  --dsh-font-size-xs: 12px;
+  --dsh-font-size-sm: 13px;
+  --dsh-font-size-md: 13px;
+  --dsh-font-size-lg: 15px;
+  --dsh-control-height: 28px;
+  --dsh-control-height-compact: 26px;
+  --dsh-surface-raised: var(--dsh-widget-bg);
+  --dsh-surface-soft: color-mix(in srgb, var(--dsh-text) 4%, var(--dsh-widget-bg));
+  --dsh-surface-hover: color-mix(in srgb, var(--dsh-text) 7%, var(--dsh-widget-bg));
+  width: min(100%, 46rem);
+  border: 1px solid color-mix(in srgb, var(--dsh-text) 12%, transparent);
+  border-radius: 12px;
+  background: var(--dsh-widget-bg);
+  color: var(--dsh-text);
+  font-size: 13px;
+  line-height: 1.5;
+  box-shadow: 0 8px 28px #00000030;
+}
+
+.dsh-app .dsh-settings .dsh-settings__header {
+  padding: 10px 14px;
+  border: 0;
+}
+
+.dsh-app .dsh-settings .dsh-settings__header h2 {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.dsh-app .dsh-settings .dsh-settings__tabs {
+  gap: 4px;
+  padding: 6px 10px;
+}
+
+.dsh-app .dsh-settings .dsh-settings__tab {
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.dsh-app .dsh-settings .dsh-settings__body {
+  gap: 18px;
+  padding: 12px 14px 18px;
+}
+
+.dsh-app
+  .dsh-settings
+  :is(
+    .dsh-setting-card,
+    .dsh-settings__runtime-update,
+    .dsh-settings__provider,
+    .dsh-plugin-configuration__card,
+    .dsh-plugin-inventory__card,
+    .dsh-preset-card
+  ) {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.dsh-app
+  .dsh-settings
+  .dsh-settings__body
+  > :is(.dsh-setting-card, .dsh-settings__runtime-update, .dsh-editor-integration) {
+  padding-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--dsh-text) 9%, transparent);
+}
+
+.dsh-app .dsh-settings .dsh-setting-card__header {
+  padding: 0;
+  gap: 4px;
+}
+
+.dsh-app .dsh-settings .dsh-setting-card__body {
+  padding: 10px 0 0;
+  gap: 10px;
+}
+
+.dsh-app .dsh-settings :is(h3, .dsh-setting-card__title) {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dsh-app
+  .dsh-settings
+  :is(
+    .dsh-settings__note,
+    .dsh-settings__connection-notice,
+    .dsh-settings__description,
+    .dsh-setting-card__description,
+    .dsh-setting-row__description,
+    .dsh-settings__summary,
+    .dsh-settings__empty
+  ) {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.dsh-app .dsh-settings .dsh-setting-row {
+  padding: 8px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.dsh-app .dsh-settings .dsh-setting-row__layout {
+  gap: 8px 12px;
+}
+
+.dsh-app .dsh-settings .dsh-setting-row__title {
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.dsh-app .dsh-settings :is(.dsh-settings__connection-options, .dsh-settings__rows, .dsh-settings__providers) {
+  gap: 6px;
+}
+
+.dsh-app .dsh-settings .dsh-settings__connection-option {
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  gap: 8px;
+}
+
+.dsh-app .dsh-settings .dsh-settings__connection-option--active {
+  background: color-mix(in srgb, var(--dsh-text) 4%, transparent);
+}
+
+.dsh-app .dsh-settings .dsh-settings__connection-option strong {
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.dsh-app .dsh-settings .dsh-settings__connection-option small {
+  font-size: 11px;
+}
+
+.dsh-app .dsh-settings .dsh-settings__connection-option input {
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+  accent-color: var(--dsh-accent-line);
+}
+
+.dsh-app .dsh-settings :is(.dsh-button, .dsh-settings__segment-item, .dsh-select-menu__trigger) {
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.dsh-app .dsh-settings .dsh-button--primary {
+  color: var(--dsh-text);
+  border-color: color-mix(in srgb, var(--dsh-text) 18%, transparent);
+  background: var(--dsh-surface-hover);
+}
+
+.dsh-app .dsh-settings .dsh-button--primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--dsh-text) 12%, var(--dsh-widget-bg));
+}
+
+.dsh-app .dsh-settings :is(input:not([type='radio']):not([type='checkbox']), textarea, select) {
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--dsh-text);
+  background: var(--dsh-surface-soft);
+  border-color: color-mix(in srgb, var(--dsh-text) 12%, transparent);
+}
+
+.dsh-app
+  .dsh-settings
+  :is(
+    .dsh-settings__runtime-update-head,
+    .dsh-settings__runtime-update-controls,
+    .dsh-settings__connection-actions
+  ) {
+  gap: 8px;
+}
+
+.dsh-app .dsh-settings .dsh-settings__runtime-update-facts {
+  gap: 5px 16px;
+  margin: 10px 0;
+  font-size: 11px;
+}
+
+.dsh-app .dsh-settings .dsh-settings__environment {
+  font-size: 11px;
+}
+
+.dsh-app .dsh-settings :is(.dsh-icon-button, .dsh-button) svg {
+  width: 14px;
+  height: 14px;
+}
+
+@media (forced-colors: active) {
+  .dsh-app .dsh-settings {
+    border-color: CanvasText;
+    box-shadow: none;
+  }
+  .dsh-app .dsh-settings .dsh-settings__connection-option--active {
+    border-color: Highlight;
+  }
+}

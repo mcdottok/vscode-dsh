@@ -1,0 +1,261 @@
+// @vitest-environment jsdom
+
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { PromptTemplate, PromptTemplateInsertion, PromptTemplateSummary } from '@dsh-vscode/domain'
+
+import { I18nProvider } from '../../i18n.js'
+import { PromptTemplatesDrawer } from './PromptTemplatesDrawer.js'
+import { ConversationLayoutProvider } from '../../app/ConversationLayoutProvider.js'
+
+const summary: PromptTemplateSummary = {
+  templateId: 'dsh-template-1',
+  title: 'Review current change',
+  description: 'Review the active editor selection.',
+  scope: 'global',
+  updatedAt: 1_000,
+  variables: ['selection'],
+  enabled: true,
+}
+
+const template: PromptTemplate = {
+  ...summary,
+  templateText: '# Review\n\n{{selection}}',
+}
+
+function renderDrawer(
+  overrides: Partial<React.ComponentProps<typeof PromptTemplatesDrawer>> = {},
+  focused = false,
+): React.ComponentProps<typeof PromptTemplatesDrawer> {
+  const props: React.ComponentProps<typeof PromptTemplatesDrawer> = {
+    templates: [summary],
+    loading: false,
+    onRefresh: vi.fn().mockResolvedValue(undefined),
+    onRead: vi.fn().mockResolvedValue(template),
+    onInsert: vi.fn().mockResolvedValue({
+      templateId: summary.templateId,
+      text: template.templateText,
+      unresolvedVariables: ['selection'],
+    } satisfies PromptTemplateInsertion),
+    onCreate: vi.fn().mockResolvedValue(summary),
+    onUpdate: vi.fn().mockResolvedValue(summary),
+    onDelete: vi.fn().mockResolvedValue(undefined),
+    onApply: vi.fn(),
+    ...overrides,
+  }
+  render(
+    <I18nProvider>
+      {focused ? (
+        <ConversationLayoutProvider>
+          <PromptTemplatesDrawer {...props} />
+        </ConversationLayoutProvider>
+      ) : (
+        <PromptTemplatesDrawer {...props} />
+      )}
+    </I18nProvider>,
+  )
+  fireEvent.click(screen.getByRole('button', { name: `${props.templates.length} templates` }))
+  return props
+}
+
+describe('PromptTemplatesDrawer', () => {
+  afterEach(() => cleanup())
+
+  it.each([false, true])('keeps editor failures outside the clipped list (focused: %s)', async (focused) => {
+    renderDrawer({ onCreate: vi.fn().mockRejectedValue(new Error('retry save')) }, focused)
+    const create = screen.getByRole('button', { name: 'Create' })
+    fireEvent.click(create)
+    const editor = screen.getByRole('dialog', { name: 'Create prompt template' })
+    expect(editor.closest('.dsh-prompt-templates-popover__menu')).toBeNull()
+    fireEvent.change(within(editor).getByLabelText('Title'), { target: { value: 'Keep title' } })
+    fireEvent.change(within(editor).getByLabelText('Template text'), { target: { value: 'Keep body' } })
+    fireEvent.submit(editor)
+    await waitFor(() => expect(within(editor).getByRole('alert').textContent).toBe('retry save'))
+    expect(within(editor).getByRole('alert').closest('[inert]')).toBeNull()
+    expect(within(editor).getByLabelText<HTMLInputElement>('Title').value).toBe('Keep title')
+    fireEvent.keyDown(editor, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'Create prompt template' })).toBeNull()
+    expect(document.activeElement).toBe(create)
+    expect(screen.getByRole('dialog', { name: 'Prompt template library' })).toBeDefined()
+  })
+
+  it('previews safely and requires an explicit decision for missing variables', async () => {
+    const onApply = vi.fn()
+    const props = renderDrawer({ onApply })
+    fireEvent.click(screen.getByRole('button', { name: /^Review current change/u }))
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Template preview' })).toBeDefined())
+    expect(screen.getByRole('heading', { name: 'Review' })).toBeDefined()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Insert' }))
+    await waitFor(() => expect(screen.getByRole('alertdialog')).toBeDefined())
+    expect(screen.getByText('Fill in template variables')).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: 'Keep placeholders' }))
+    expect(onApply).toHaveBeenCalledWith(template.templateText)
+    expect(props.onInsert).toHaveBeenCalledWith(summary.templateId, undefined)
+  })
+
+  it('omits empty description placeholders and retains the complete selected template', async () => {
+    const complete = {
+      ...template,
+      description: '',
+      templateText: `${'Detailed template content.\n\n'.repeat(80)}END_OF_COMPLETE_TEMPLATE`,
+    }
+    renderDrawer({
+      templates: [{ ...summary, description: '' }],
+      onRead: vi.fn().mockResolvedValue(complete),
+    })
+    expect(screen.queryByText('No description')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /^Review current change/u }))
+    const preview = await screen.findByRole('region', { name: 'Template preview' })
+    expect(preview.textContent).toContain('END_OF_COMPLETE_TEMPLATE')
+    expect(preview.querySelector('p:empty')).toBeNull()
+  })
+
+  it('creates a user template through the form and never sends it automatically', async () => {
+    const onCreate = vi.fn().mockResolvedValue(summary)
+    renderDrawer({ templates: [], onCreate })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: '  New template  ' },
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Description' }), {
+      target: { value: 'Description' },
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Template text' }), {
+      target: { value: 'Explain {{selection}}' },
+    })
+    fireEvent.click(screen.getByRole('checkbox', { name: '{{selection}}' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save template' }))
+    await waitFor(() => expect(onCreate).toHaveBeenCalled())
+    expect(onCreate.mock.calls[0]?.[0]).toMatchObject({
+      title: '  New template  ',
+      templateText: 'Explain {{selection}}',
+      variables: ['selection'],
+    })
+  })
+
+  it('keeps deletion behind a separate confirmation', async () => {
+    const onDelete = vi.fn().mockResolvedValue(undefined)
+    renderDrawer({ onDelete })
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Review current change' }))
+    expect(onDelete).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Delete template' }))
+    await waitFor(() => expect(onDelete).toHaveBeenCalledWith(summary.templateId))
+  })
+
+  it('keeps the editor open when Escape only dismisses the nested scope menu', () => {
+    renderDrawer()
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'Draft title' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Scope: Global' }))
+    expect(screen.getByRole('listbox', { name: 'Scope' })).toBeDefined()
+
+    fireEvent.keyDown(screen.getByRole('option', { name: 'Global' }), { key: 'Escape' })
+
+    expect(screen.queryByRole('listbox', { name: 'Scope' })).toBeNull()
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveProperty('value', 'Draft title')
+  })
+
+  it('still closes the editor on Escape when no inner layer consumed it', () => {
+    renderDrawer()
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Title' }), { key: 'Escape' })
+    expect(screen.queryByRole('textbox', { name: 'Title' })).toBeNull()
+    expect(screen.getByRole('dialog', { name: 'Prompt template library' })).toBeDefined()
+  })
+
+  it('keeps a pending save visible on Escape and preserves the draft after failure', async () => {
+    let rejectSave!: (reason: Error) => void
+    renderDrawer({
+      onCreate: vi.fn(
+        () =>
+          new Promise<PromptTemplateSummary | undefined>((_, reject) => {
+            rejectSave = reject
+          }),
+      ),
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    const editor = screen.getByRole('dialog', { name: 'Create prompt template' })
+    fireEvent.change(within(editor).getByLabelText('Title'), { target: { value: 'Keep draft' } })
+    fireEvent.change(within(editor).getByLabelText('Template text'), { target: { value: 'Keep body' } })
+    fireEvent.submit(editor)
+    fireEvent.keyDown(within(editor).getByLabelText('Title'), { key: 'Escape' })
+    expect(screen.getByRole('dialog', { name: 'Create prompt template' })).toBe(editor)
+    rejectSave(new Error('Save failed'))
+    await waitFor(() => expect(within(editor).getByRole('alert').textContent).toBe('Save failed'))
+    expect(within(editor).getByLabelText('Title')).toHaveProperty('value', 'Keep draft')
+    expect(within(editor).getByLabelText('Template text')).toHaveProperty('value', 'Keep body')
+  })
+
+  it('still closes the popover on Escape when no dialog is open', () => {
+    renderDrawer()
+    fireEvent.keyDown(screen.getByRole('button', { name: '1 templates' }), { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'Prompt template library' })).toBeNull()
+  })
+
+  it('takes focus into the delete confirmation and gives it back to the row', () => {
+    renderDrawer()
+
+    const trigger = screen.getByRole('button', { name: 'Delete Review current change' })
+    trigger.focus()
+    fireEvent.click(trigger)
+
+    const dialog = screen.getByRole('alertdialog')
+    expect(dialog.contains(document.activeElement)).toBe(true)
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('takes focus into the missing-variables dialog and gives it back to the insert action', async () => {
+    renderDrawer()
+
+    fireEvent.click(screen.getByRole('button', { name: /^Review current change/u }))
+    const insert = await screen.findByRole('button', { name: 'Insert' })
+    insert.focus()
+    fireEvent.click(insert)
+
+    const dialog = await screen.findByRole('alertdialog')
+    expect(dialog.contains(document.activeElement)).toBe(true)
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Keep placeholders' }))
+
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(document.activeElement).toBe(insert)
+  })
+
+  it('keeps an in-progress editor when the pointer goes down outside the popover', () => {
+    renderDrawer()
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'Draft title' },
+    })
+
+    fireEvent.pointerDown(document.body)
+
+    // An accidental press elsewhere must not discard the draft the dialog
+    // claims to own while it is `aria-modal`.
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveProperty('value', 'Draft title')
+    expect(screen.getByRole('dialog', { name: 'Prompt template library' })).toBeDefined()
+  })
+
+  it('cycles Tab inside the delete confirmation and names it for assistive tech', () => {
+    renderDrawer()
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Review current change' }))
+    const dialog = screen.getByRole('alertdialog', { name: 'Delete prompt template?' })
+    const cancel = within(dialog).getByRole('button', { name: 'Cancel' })
+    const confirm = within(dialog).getByRole('button', { name: 'Delete template' })
+    expect(document.activeElement).toBe(cancel)
+
+    fireEvent.keyDown(document, { key: 'Tab' })
+    expect(document.activeElement).toBe(confirm)
+    fireEvent.keyDown(document, { key: 'Tab' })
+    expect(document.activeElement).toBe(cancel)
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(confirm)
+  })
+})

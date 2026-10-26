@@ -1,0 +1,154 @@
+import { useLayoutEffect, useState, type CSSProperties, type RefObject } from 'react'
+
+export interface ViewportMenuPositionOptions {
+  readonly open: boolean
+  readonly anchorRef: RefObject<HTMLElement | null>
+  readonly menuRef: RefObject<HTMLElement | null>
+  readonly placement?: 'above' | 'below'
+  readonly align?: 'start' | 'end'
+  readonly refreshKey?: unknown
+  /**
+   * Dynamic menu content may change height after opening. Most popovers need
+   * to remeasure, but a menu that contains an inline picker must keep its
+   * anchor stable while that picker expands.
+   */
+  readonly observeMenuResize?: boolean
+  readonly gap?: number
+  readonly margin?: number
+}
+
+/**
+ * Positions a menu against its trigger without letting the menu escape the
+ * Webview viewport. The menu remains in the feature's React tree, so outside
+ * pointer handling and ownership stay local while the geometry is shared.
+ */
+export function useViewportMenuPosition({
+  open,
+  anchorRef,
+  menuRef,
+  placement = 'above',
+  align = 'end',
+  refreshKey,
+  observeMenuResize = true,
+  gap = 8,
+  margin = 8,
+}: ViewportMenuPositionOptions): CSSProperties | undefined {
+  const [style, setStyle] = useState<CSSProperties | undefined>()
+
+  useLayoutEffect(() => {
+    if (!open) return
+
+    const update = (): void => {
+      const anchor = anchorRef.current
+      const menu = menuRef.current
+      if (anchor === null || menu === null) return
+
+      const viewportWidth = document.documentElement.clientWidth || window.innerWidth
+      const viewportHeight = document.documentElement.clientHeight || window.innerHeight
+      const anchorRect = anchor.getBoundingClientRect()
+      const availableWidth = Math.max(0, viewportWidth - margin * 2)
+      const availableHeight = Math.max(0, viewportHeight - margin * 2)
+      // The menu's entry animation scales the visual box, so
+      // getBoundingClientRect() would read the mid-animation size and fold
+      // it into the inline width — every reopen would then shrink the menu
+      // again on top of the previous open. offsetWidth/offsetHeight are
+      // layout sizes and ignore transforms entirely.
+      // Measure with the previously written inline width cleared: this hook
+      // feeds its measurement back as that width, so once a narrow viewport
+      // clamped the menu, offsetWidth would keep reporting the clamped value
+      // and the menu could never grow back to its stylesheet width when the
+      // viewport widened again.
+      menu.style.width = ''
+      menu.style.minWidth = ''
+      const width = Math.min(Math.max(menu.offsetWidth, 1), availableWidth)
+      // Applied here, not only through React state, so a re-measure that
+      // produces the current style (a scroll with unchanged geometry) still
+      // leaves the correct inline width on the element.
+      // A feature's CSS minimum is a preferred size, not permission to escape
+      // the viewport. Lift it only after measuring that preferred width.
+      menu.style.minWidth = '0'
+      menu.style.width = `${width}px`
+      const height = Math.min(Math.max(menu.offsetHeight, 1), availableHeight)
+      const direction = getComputedStyle(anchor).direction
+      const alignedLeft =
+        align === 'start'
+          ? direction === 'rtl'
+            ? anchorRect.right - width
+            : anchorRect.left
+          : direction === 'rtl'
+            ? anchorRect.left
+            : anchorRect.right - width
+      const left = clamp(alignedLeft, margin, viewportWidth - width - margin)
+      const aboveTop = anchorRect.top - gap - height
+      const belowTop = anchorRect.bottom + gap
+      const top =
+        placement === 'below'
+          ? belowTop + height <= viewportHeight - margin
+            ? belowTop
+            : Math.max(margin, aboveTop)
+          : aboveTop >= margin
+            ? aboveTop
+            : belowTop + height <= viewportHeight - margin
+              ? belowTop
+              : Math.max(margin, Math.min(aboveTop, viewportHeight - height - margin))
+
+      const nextStyle: CSSProperties = {
+        position: 'fixed',
+        top: `${Math.max(margin, top)}px`,
+        right: 'auto',
+        bottom: 'auto',
+        left: `${left}px`,
+        width: `${width}px`,
+        minWidth: 0,
+        maxWidth: 'none',
+        visibility: 'visible',
+      }
+
+      // Keep the shared popover origin close to the trigger. The positioning
+      // hook owns this geometry so every anchored surface gets the same
+      // direction without feature-specific animation state.
+      menu.dataset.flipX = String(
+        Math.abs(left + width - anchorRect.right) <= Math.abs(left - anchorRect.left),
+      )
+      menu.dataset.flipY = String(top < anchorRect.top)
+
+      setStyle((current) => (sameStyle(current, nextStyle) ? current : nextStyle))
+    }
+
+    update()
+    window.addEventListener('resize', update)
+    window.addEventListener('scroll', update, true)
+    const menu = menuRef.current
+
+    let resizeObserver: ResizeObserver | undefined
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(update)
+      if (anchorRef.current !== null) resizeObserver.observe(anchorRef.current)
+      if (observeMenuResize && menuRef.current !== null) resizeObserver.observe(menuRef.current)
+    }
+
+    return () => {
+      window.removeEventListener('resize', update)
+      window.removeEventListener('scroll', update, true)
+      resizeObserver?.disconnect()
+      menu?.removeAttribute('data-flip-x')
+      menu?.removeAttribute('data-flip-y')
+    }
+  }, [align, anchorRef, gap, margin, menuRef, observeMenuResize, open, placement, refreshKey])
+
+  return open ? (style ?? { position: 'fixed', visibility: 'hidden' }) : undefined
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  if (maximum < minimum) return minimum
+  return Math.min(maximum, Math.max(minimum, value))
+}
+
+function sameStyle(current: CSSProperties | undefined, next: CSSProperties): boolean {
+  return (
+    current?.top === next.top &&
+    current?.left === next.left &&
+    current?.width === next.width &&
+    current?.visibility === next.visibility
+  )
+}

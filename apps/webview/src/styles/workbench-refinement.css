@@ -1,0 +1,442 @@
+/* A quiet command surface: frequent actions first, diagnostic tools on demand. */
+.dsh-app .dsh-app-toolbar { min-height: 38px; padding: 4px 6px; gap: 10px; }
+.dsh-app .dsh-app-toolbar__title { font-size: 13px; font-weight: 500; }
+.dsh-app-toolbar__divider { width: 1px; height: 14px; margin: 0 5px; background: color-mix(in srgb, var(--dsh-text) 10%, transparent); }
+.dsh-app-toolbar .dsh-runtime-status__trigger { width: auto; min-width: 0; height: 28px; padding: 4px 7px; gap: 6px; font-size: 11px; color: var(--dsh-muted); }
+.dsh-app-toolbar .dsh-runtime-status__trigger::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--dsh-muted); flex-shrink: 0; }
+.dsh-app-toolbar .dsh-runtime-status__icon { display: none; }
+.dsh-app-toolbar .dsh-runtime-status__label { display: inline; font-size: 11px; }
+.dsh-app-toolbar .dsh-runtime-status__panel .dsh-icon-button { width: 24px; min-width: 24px; height: 24px; }
+.dsh-app[data-conversation-layout] .dsh-conversation__actions-panel { width: min(224px, calc(100vw - 24px)); padding: 6px; border-radius: 10px; }
+.dsh-app .dsh-conversation__actions-grid { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.dsh-app[data-conversation-layout] .dsh-conversation__actions-grid > .dsh-conversation__navigation-trigger {
+  display: flex; align-items: center; justify-content: flex-start; gap: 8px;
+  min-height: 30px; padding: 5px 8px; font-size: 12px; line-height: 1.4;
+  font-weight: 400; color: var(--dsh-text); border: 0; border-radius: 6px; background: transparent;
+}
+.dsh-app[data-conversation-layout] .dsh-conversation__actions-grid > button:disabled { opacity: .4; }
+.dsh-app .dsh-conversation__navigation-trigger > .dsh-icon { width: 14px; height: 14px; color: var(--dsh-muted); flex: 0 0 auto; }
+.dsh-toolbar-menu__label { padding: 4px 8px; color: var(--dsh-muted); font-size: 10px; line-height: 1.4; }
+.dsh-toolbar-menu__label--separated { margin-top: 4px; padding-top: 8px; border-top: var(--dsh-border); }
+
+.dsh-app .dsh-runtime-connection--refined {
+  box-sizing: border-box; width: min(100%, 380px); max-width: 380px;
+  padding: 24px 18px; gap: 16px; margin-inline: auto; font-size: 12px;
+}
+.dsh-runtime-connection--refined .dsh-runtime-connection__header { padding: 0; gap: 12px; }
+.dsh-runtime-connection--refined h2 { font-size: 18px; line-height: 1.4; font-weight: 500; }
+.dsh-runtime-connection__emblem { display: grid; place-items: center; width: 48px; height: 48px; margin-bottom: 4px; border: var(--dsh-border); border-radius: 14px; background: color-mix(in srgb, var(--dsh-text) 3%, transparent); color: var(--dsh-muted); }
+.dsh-runtime-connection__emblem .dsh-icon { width: 24px; height: 24px; }
+.dsh-runtime-connection__emblem[data-loading='true'] .dsh-icon { animation: dsh-spin var(--dsh-motion-duration-loop-shimmer) linear infinite; }
+.dsh-runtime-connection__subtitle { color: var(--dsh-muted); font-size: 12px; line-height: 1.6; text-align: center; }
+.dsh-runtime-connection--refined .dsh-runtime-connection__actions { justify-content: center; gap: 8px; }
+.dsh-runtime-connection--refined .dsh-button { min-height: 30px; padding: 5px 12px; gap: 6px; border-radius: 7px; font-size: 12px; font-weight: 400; line-height: 1.4; }
+.dsh-runtime-connection--refined .dsh-button > .dsh-icon { width: 14px; height: 14px; }
+.dsh-runtime-connection__hint { color: var(--dsh-muted); text-align: center; font-size: 11px; line-height: 1.65; }
+.dsh-runtime-connection__diagnostics { min-width: 0; margin-top: 8px; padding-top: 12px; border-top: var(--dsh-border); }
+.dsh-runtime-connection__details-trigger { display: flex; align-items: center; justify-content: center; gap: 5px; width: 100%; padding: 4px; border: 0; background: transparent; color: var(--dsh-muted); font: inherit; font-size: 11px; cursor: pointer; }
+.dsh-runtime-connection__details-trigger:hover { color: var(--dsh-text); }
+.dsh-runtime-connection__details-trigger .dsh-icon { width: 12px; height: 12px; }
+.dsh-runtime-connection__details { display: grid; gap: 10px; min-width: 0; padding-top: 10px; }
+.dsh-runtime-connection__technical { color: var(--dsh-muted); font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.dsh-runtime-connection--refined .dsh-runtime-connection__output { height: auto; max-height: min(200px, 30vh); padding: 8px; font-size: 10px; line-height: 1.6; border-radius: 6px; background: color-mix(in srgb, var(--dsh-text) 3%, transparent); }
+.dsh-runtime-connection--refined .dsh-runtime-connection__error { font-size: 11px; }
+.dsh-runtime-connection__details > .dsh-button { justify-self: start; min-height: 24px; padding: 3px 0; color: var(--dsh-muted); }
+@media (max-width: 380px) {
+  .dsh-app-toolbar .dsh-runtime-status__label { display: none; }
+  .dsh-app-toolbar .dsh-runtime-status__trigger { padding-inline: 5px; }
+  .dsh-app .dsh-runtime-connection--refined { padding-inline: 12px; }
+}
+
+.dsh-app-toolbar :is(.dsh-runtime-status--failed, .dsh-runtime-status--port-conflict) .dsh-runtime-status__trigger::before { background: var(--dsh-danger); }
+.dsh-app-toolbar :is(.dsh-runtime-status--connecting, .dsh-runtime-status--discovering, .dsh-runtime-status--starting, .dsh-runtime-status--locating-runtime) .dsh-runtime-status__trigger::before { background: var(--dsh-warning); }
+
+.dsh-new-chat {
+  display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column;
+  align-items: center; justify-content: center; gap: 10px; padding: 28px 20px;
+  text-align: center;
+}
+.dsh-new-chat h2 { margin: 0; font-size: 20px; font-weight: 500; line-height: 1.5; color: var(--dsh-text); }
+.dsh-new-chat p { margin: 0; font-size: 12px; line-height: 1.6; color: var(--dsh-muted); }
+.dsh-new-chat__workspace { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; overflow-wrap: anywhere; font-size: 11px; color: var(--dsh-muted); margin-top: 4px; }
+.dsh-new-chat__workspace .dsh-icon { width: 13px; height: 13px; flex-shrink: 0; }
+
+/* Keep the complete composer border and focus ring inside the Webview frame. */
+.dsh-app[data-conversation-layout] {
+  box-sizing: border-box;
+  max-height: 100dvh;
+  padding-block-end: max(10px, env(safe-area-inset-bottom));
+}
+.dsh-app[data-conversation-layout] .dsh-app__body {
+  min-height: 0;
+  flex: 1 1 0%;
+}
+.dsh-app[data-conversation-layout] .dsh-compose-area {
+  flex: 0 0 auto;
+  padding-block-end: 2px;
+}
+.dsh-app[data-conversation-layout] .dsh-unified-composer {
+  flex-shrink: 0;
+}
+
+/* Consistent content rails and compact message actions. */
+.dsh-app[data-conversation-layout] .dsh-timeline__message-stack { gap: 4px; }
+.dsh-app[data-conversation-layout] .dsh-message-actions { gap: 3px; margin-top: 0; min-height: 26px; }
+.dsh-app[data-conversation-layout] .dsh-message-actions__button { width: 26px; min-width: 26px; height: 26px; padding: 5px; border-radius: 6px; }
+.dsh-app[data-conversation-layout] .dsh-message-actions__button .dsh-icon { width: 14px; height: 14px; }
+
+/* Connection details need a real footer inset, even with only one fact row. */
+.dsh-app[data-conversation-layout] .dsh-runtime-status__panel { gap: 0; border-radius: 12px; }
+.dsh-app .dsh-runtime-status__panel-header { padding: 12px 14px; }
+.dsh-app .dsh-runtime-status__details { padding: 12px 14px 16px; gap: 8px; }
+.dsh-app .dsh-runtime-status__details > div { gap: 20px; }
+.dsh-app .dsh-runtime-status__panel > :is(.dsh-runtime-status__message, .dsh-runtime-status__warning, .dsh-runtime-status__empty, .dsh-runtime-status__actions) { margin: 0; padding: 10px 14px 14px; }
+
+/* Session browser: a search rail and quiet rows, with active work highlighted. */
+.dsh-app[data-conversation-layout] .dsh-session-switcher__panel:not(.dsh-session-switcher__panel--docked) { border-radius: 12px; max-height: min(68vh, 440px); }
+.dsh-app[data-conversation-layout] .dsh-session-switcher__panel-header { padding: 10px 12px; gap: 8px; }
+.dsh-app[data-conversation-layout] .dsh-session-switcher__panel-title { font-size: 12px; font-weight: 500; }
+.dsh-app[data-conversation-layout] .dsh-session-switcher__search { padding: 8px 10px; gap: 8px; }
+.dsh-app[data-conversation-layout] .dsh-session-switcher__search :is(input, .dsh-select-menu__trigger) { min-height: 28px; padding: 4px 8px; border-radius: 6px; font-size: 12px; }
+.dsh-app[data-conversation-layout] .dsh-session-switcher__results { padding: 6px; }
+.dsh-app[data-conversation-layout] .dsh-session-switcher__list { gap: 2px; }
+.dsh-app[data-conversation-layout] .dsh-session-switcher__results .dsh-session-switcher__list > li { margin-inline-start: 0; border-radius: 6px; }
+.dsh-app[data-conversation-layout] .dsh-session-switcher__panel .dsh-session-item__button { min-height: 32px; padding: 5px 8px; gap: 8px; }
+.dsh-app[data-conversation-layout] .dsh-session-switcher__panel .dsh-session-item__copy strong { font-size: 12px; line-height: 1.5; font-weight: 400; }
+.dsh-app[data-conversation-layout] .dsh-session-switcher__panel :is(.dsh-session-item__icon .dsh-icon, .dsh-session-switcher__workspace-icon .dsh-icon) { width: 14px; height: 14px; }
+.dsh-app[data-conversation-layout] .dsh-session-switcher__panel .dsh-session-item__button[data-session-status='idle'] .dsh-session-item__status { display: none; }
+.dsh-app[data-conversation-layout] .dsh-session-switcher__panel .dsh-session-item__status { font-size: 10px; }
+.dsh-app[data-conversation-layout] .dsh-session-switcher__panel .dsh-session-switcher__list > li:has(> .dsh-session-item__button[aria-current='page']) { color: var(--dsh-text); background: color-mix(in srgb, var(--dsh-accent-line) 10%, var(--dsh-widget-bg)); box-shadow: inset 2px 0 var(--dsh-accent-line); }
+.dsh-app[data-conversation-layout] .dsh-session-switcher__panel .dsh-session-item__button[aria-current='page'] { color: var(--dsh-text); }
+.dsh-app[data-conversation-layout] .dsh-session-switcher__panel .dsh-session-switcher__workspace-name { font-size: 11px; font-weight: 500; }
+.dsh-app[data-conversation-layout] .dsh-session-switcher__panel .dsh-session-switcher__workspace-count { font-size: 10px; }
+
+/* One detail scrollport, separate from the ledger and the composer. */
+.dsh-trajectory__viewport { position: relative; display: flex; flex: 1 1 0%; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
+.dsh-app[data-conversation-layout] .dsh-trajectory-inspector { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 0; max-height: min(48%, 360px); margin: 8px 6px 10px; width: auto; padding: 0; gap: 0; overflow: hidden; border: var(--dsh-border); border-top: 2px solid var(--dsh-accent-line); border-radius: 8px; background: var(--dsh-widget-bg); box-shadow: none; }
+.dsh-trajectory-inspector__body { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: auto; padding: 12px; overscroll-behavior: contain; }
+.dsh-app .dsh-trajectory-inspector__header { flex: 0 0 auto; padding: 8px 12px; border-bottom: var(--dsh-border); }
+.dsh-app .dsh-trajectory-inspector__header h4 { font-size: 12px; font-weight: 500; }
+.dsh-app .dsh-trajectory-inspector__header .dsh-icon-button { width: 24px; min-height: 24px; height: 24px; padding: 4px; }
+.dsh-app .dsh-trajectory-inspector__facts { padding: 0 0 10px; border-bottom: var(--dsh-border); font-size: 11px; gap: 6px 12px; }
+.dsh-app .dsh-trajectory-inspector__block { flex: 0 0 auto; border: 0; padding: 0; }
+.dsh-app .dsh-trajectory-inspector__block summary { padding: 2px 0 6px; color: var(--dsh-text); font-size: 11px; font-weight: 500; }
+.dsh-app .dsh-trajectory-inspector__block pre { max-height: none; margin: 0; padding: 10px; overflow: visible; border: 0; border-radius: 6px; background: color-mix(in srgb, var(--dsh-text) 3%, transparent); color: var(--dsh-text); font-size: 11px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Plugin hierarchy: the skin lives in settings-surface.css; this layer only
+ * fixes the structure of the section headers and lists. */
+.dsh-app[data-conversation-layout] #dsh-settings-panel-plugins
+  :is(.dsh-plugin-inventory__heading, .dsh-plugin-configuration__heading) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.dsh-app[data-conversation-layout] #dsh-settings-panel-plugins
+  :is(.dsh-plugin-configuration__section-count, .dsh-plugin-inventory__count, .dsh-optional-bundles__entry-count) {
+  color: var(--dsh-muted);
+  font-size: var(--dsh-font-size-2xs);
+  font-variant-numeric: tabular-nums;
+}
+.dsh-app[data-conversation-layout] #dsh-settings-panel-plugins .dsh-optional-bundles__heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  border: 0;
+  padding: 0;
+  gap: 8px;
+}
+.dsh-app[data-conversation-layout] #dsh-settings-panel-plugins .dsh-optional-bundles__heading-actions[hidden] { display: none; }
+.dsh-app[data-conversation-layout] #dsh-settings-panel-plugins .dsh-plugin-inventory__cards { display: grid; grid-template-columns: minmax(0, 1fr); padding-left: 0; }
+.dsh-app .dsh-settings__document-action > .dsh-settings__note { flex-basis: 100%; }
+@media (max-width: 360px) {
+  .dsh-app .dsh-trajectory-inspector__facts { grid-template-columns: auto minmax(0, 1fr); }
+}
+
+/* Keep the session browser neutral, with one quiet surface and clear selection. */
+.dsh-app[data-conversation-layout] .dsh-session-switcher__panel {
+  --dsh-session-surface: var(--dsh-widget-bg);
+  background: var(--dsh-session-surface);
+}
+html[data-dsh-theme='dark'] .dsh-app[data-conversation-layout] .dsh-session-switcher__panel,
+html[data-dsh-theme='system']:has(body.vscode-dark) .dsh-app[data-conversation-layout] .dsh-session-switcher__panel {
+  --dsh-session-surface: #202020;
+}
+.dsh-app[data-conversation-layout] .dsh-session-switcher__panel :is(.dsh-session-switcher__panel-header, .dsh-session-switcher__search, .dsh-session-switcher__results, .dsh-session-switcher__workspaces, .dsh-session-switcher__workspace, .dsh-session-switcher__workspace-button) {
+  background: transparent;
+}
+.dsh-app[data-conversation-layout] .dsh-session-switcher__panel :is(.dsh-session-switcher__search input, .dsh-session-switcher__archive-filter .dsh-select-menu__trigger) {
+  background: color-mix(in srgb, var(--dsh-text) 4%, var(--dsh-session-surface));
+  border: 1px solid color-mix(in srgb, var(--dsh-text) 9%, transparent);
+}
+.dsh-app[data-conversation-layout] .dsh-session-switcher__panel :is(.dsh-session-switcher__workspace:hover, .dsh-session-switcher__list > li:hover) {
+  background: color-mix(in srgb, var(--dsh-text) 5%, var(--dsh-session-surface));
+}
+.dsh-app[data-conversation-layout] .dsh-session-switcher__panel .dsh-session-switcher__list > li:has(> .dsh-session-item__button[aria-current='page']) {
+  background: color-mix(in srgb, var(--dsh-accent-line) 9%, var(--dsh-session-surface));
+}
+
+/* Align all plugin sections and use compact rows instead of large filled cards. */
+.dsh-app[data-conversation-layout] #dsh-settings-panel-plugins .dsh-optional-bundles__heading {
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  text-align: start;
+}
+/* One row, always: the actions appear on demand, so a full-width title would
+ * push them onto a second line and shove the whole section down on expand. */
+.dsh-app[data-conversation-layout] #dsh-settings-panel-plugins .dsh-optional-bundles__heading h2 {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  margin: 0;
+  justify-content: flex-start;
+  text-align: start;
+}
+.dsh-app[data-conversation-layout] #dsh-settings-panel-plugins .dsh-optional-bundles__heading-actions {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+}
+.dsh-app[data-conversation-layout] #dsh-settings-panel-plugins .dsh-optional-bundles__section-toggle {
+  width: 100%; justify-content: flex-start; text-align: start;
+}
+.dsh-app[data-conversation-layout] #dsh-settings-panel-plugins :is(.dsh-optional-bundles__list, .dsh-optional-bundles__plugins) { gap: 0; }
+.dsh-app[data-conversation-layout] #dsh-settings-panel-plugins .dsh-optional-bundles__item {
+  padding: 9px 0; border: 0; border-bottom: var(--dsh-border); border-radius: 0; background: transparent;
+}
+.dsh-app[data-conversation-layout] #dsh-settings-panel-plugins .dsh-optional-bundles__item:last-child {
+  border-bottom: 0;
+}
+.dsh-app[data-conversation-layout] #dsh-settings-panel-plugins .dsh-optional-bundles__head {
+  gap: 6px 12px; align-items: center;
+}
+.dsh-app[data-conversation-layout] #dsh-settings-panel-plugins .dsh-optional-bundles__toggle {
+  min-height: 28px; padding: 2px 0; gap: 8px; font-size: 12px;
+}
+.dsh-app[data-conversation-layout] #dsh-settings-panel-plugins .dsh-optional-bundles__toggle > .dsh-icon { width: 13px; height: 13px; flex-shrink: 0; }
+.dsh-app[data-conversation-layout] #dsh-settings-panel-plugins .dsh-optional-bundles__title-row { gap: 4px 8px; align-items: center; }
+.dsh-app[data-conversation-layout] #dsh-settings-panel-plugins .dsh-optional-bundles__state {
+  min-height: 0; padding: 1px 5px; border: 0; border-radius: 4px;
+  background: color-mix(in srgb, var(--dsh-text) 5%, transparent); color: var(--dsh-muted); font-size: 10px; line-height: 1.5;
+}
+.dsh-app[data-conversation-layout] #dsh-settings-panel-plugins .dsh-optional-bundles__state--enabled { background: color-mix(in srgb, var(--dsh-success) 12%, transparent); color: var(--dsh-success); }
+.dsh-app[data-conversation-layout] #dsh-settings-panel-plugins .dsh-optional-bundles__actions { gap: 5px; }
+.dsh-app[data-conversation-layout] #dsh-settings-panel-plugins :is(.dsh-optional-bundles__actions, .dsh-optional-bundles__plugin) .dsh-button {
+  min-height: 24px; padding: 2px 8px; border-radius: 5px; background: transparent; font-size: 11px; line-height: 1.5;
+}
+.dsh-app[data-conversation-layout] #dsh-settings-panel-plugins :is(.dsh-optional-bundles__actions, .dsh-optional-bundles__plugin) .dsh-button:hover:not(:disabled) { background: var(--dsh-control-hover); }
+.dsh-app[data-conversation-layout] #dsh-settings-panel-plugins .dsh-optional-bundles__readonly {
+  margin: 3px 0 0 21px; padding: 0; color: var(--dsh-muted); font-size: 11px; line-height: 1.5;
+}
+.dsh-app[data-conversation-layout] #dsh-settings-panel-plugins .dsh-optional-bundles__body { gap: 8px; padding: 8px 0 0 21px; font-size: 12px; }
+
+/* A pending draft keeps its composer while connection recovery owns the empty area. */
+.dsh-new-chat--connection { justify-content: flex-start; overflow-y: auto; padding: 16px; }
+.dsh-new-chat--connection > .dsh-runtime-connection { flex: 0 0 auto; margin-block: auto; }
+
+/* Explicit connection sources share a compact, neutral selection rail. */
+.dsh-app .dsh-settings .dsh-settings__connection-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.dsh-app .dsh-settings .dsh-settings__connection-option { display: flex; align-items: flex-start; gap: 8px; min-width: 0; padding: 10px; border: var(--dsh-border); border-radius: 7px; background: transparent; }
+.dsh-app .dsh-settings .dsh-settings__connection-option--active { border-color: var(--dsh-focus); background: color-mix(in srgb, var(--dsh-text) 3%, transparent); }
+.dsh-app .dsh-settings .dsh-settings__connection-option input { flex: 0 0 auto; margin-top: 2px; }
+.dsh-app .dsh-settings .dsh-settings__connection-option strong { font-size: 12px; font-weight: 500; }
+.dsh-app .dsh-settings .dsh-settings__connection-option small { display: block; margin-top: 4px; color: var(--dsh-muted); font-size: 11px; line-height: 1.5; }
+.dsh-app .dsh-settings .dsh-settings__connection-endpoint input { width: 100%; min-width: 0; }
+@media (max-width: 420px) { .dsh-app .dsh-settings .dsh-settings__connection-options { grid-template-columns: minmax(0, 1fr); } }
+
+/* Quick tools own a real column, so focus/hover expansion cannot cover text. */
+.dsh-app[data-conversation-layout] .dsh-unified-composer .dsh-composer__input-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 6px;
+}
+.dsh-app[data-conversation-layout] .dsh-unified-composer .dsh-composer__input-shell .dsh-composer__textarea {
+  grid-column: 1;
+  grid-row: 1;
+  box-sizing: border-box;
+  padding-inline-end: 4px;
+}
+.dsh-app[data-conversation-layout] .dsh-unified-composer .dsh-composer__quick-tools {
+  position: relative;
+  inset: auto;
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+  justify-self: end;
+  max-width: none;
+  margin-block-start: var(--dsh-space-1);
+  background: transparent;
+}
+
+/* Workspace navigation is grouped; only current roots expose editing controls. */
+.dsh-workspace-browser {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.dsh-workspace-browser__group {
+  min-width: 0;
+}
+.dsh-workspace-browser__current-header {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.dsh-workspace-browser__current-header > div {
+  flex: 1;
+  min-width: 0;
+}
+.dsh-workspace-browser__current-header > small {
+  flex: 0 0 auto;
+  color: var(--dsh-muted);
+  font-size: 10px;
+  padding-inline: 5px;
+}
+.dsh-workspace-browser__current-header > .dsh-icon-button {
+  width: 22px;
+  min-width: 22px;
+  height: 28px;
+  padding: 3px;
+}
+.dsh-workspace-browser__current-header .dsh-session-switcher__workspace {
+  border: 0;
+  margin: 0;
+  padding-inline: 3px;
+}
+.dsh-workspace-browser__label {
+  color: var(--dsh-muted);
+  font-size: 10px;
+  margin: 8px 6px 2px;
+  padding-top: 10px;
+  border-top: var(--dsh-border);
+}
+.dsh-workspace-browser__heading,
+.dsh-workspace-browser__row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--dsh-text);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  text-align: start;
+  cursor: pointer;
+}
+.dsh-workspace-browser__heading:hover,
+.dsh-workspace-browser__row:hover {
+  background: var(--dsh-control-hover);
+}
+.dsh-workspace-browser__heading strong,
+.dsh-workspace-browser__row span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+}
+.dsh-workspace-browser :is(.dsh-workspace-browser__heading, .dsh-workspace-browser__row) .dsh-icon {
+  flex: 0 0 13px;
+  width: 13px;
+  height: 13px;
+  color: var(--dsh-muted);
+}
+.dsh-workspace-browser small {
+  font-size: 10px;
+  color: var(--dsh-muted);
+}
+.dsh-workspace-browser__sessions {
+  padding-inline-start: 20px;
+}
+.dsh-workspace-browser__sessions > p {
+  padding: 5px;
+  font-size: 11px;
+  color: var(--dsh-muted);
+}
+.dsh-project-preview__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: #0008;
+}
+.dsh-project-preview {
+  display: flex;
+  flex-direction: column;
+  width: min(900px, 100%);
+  height: min(85dvh, 900px);
+  min-height: 0;
+  overflow: hidden;
+  border: var(--dsh-border);
+  border-radius: 12px;
+  background: var(--dsh-widget-bg);
+  color: var(--dsh-text);
+  box-shadow: var(--dsh-shadow);
+  font-size: var(--dsh-font-size-sm);
+}
+.dsh-project-preview > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: var(--dsh-border);
+}
+.dsh-project-preview > header > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dsh-project-preview > header strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.dsh-project-preview small {
+  color: var(--dsh-muted);
+  font-size: 11px;
+}
+.dsh-project-preview__notice {
+  padding: 8px 16px;
+  margin: 0;
+  color: var(--dsh-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.dsh-project-preview__messages {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 16px 16px;
+  overscroll-behavior: contain;
+}
+.dsh-project-preview > footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: var(--dsh-border);
+}
+.dsh-empty-workspace__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-block: 12px 2px;
+}
+
+.dsh-app-toolbar .dsh-runtime-status--connected .dsh-runtime-status__trigger::before { background: var(--dsh-success); }
+
+.dsh-session-startup > p { max-width: 360px; }
+.dsh-session-startup .dsh-session-startup__title { max-width: 100%; overflow-wrap: anywhere; color: var(--dsh-text); }

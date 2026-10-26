@@ -1,0 +1,1189 @@
+import { describe, expect, it, vi } from 'vitest'
+import { AppError } from '@dsh-vscode/domain'
+import { Rc6CredentialRepository, type DshTransport } from '@dsh-vscode/dsh-adapter'
+import { featureResponseSchema, hostEnvelopeSchema } from '@dsh-vscode/webview-protocol'
+
+import { WebviewMessageRouter } from './message-router.js'
+
+describe('WebviewMessageRouter custom provider validation', () => {
+  it.each([
+    ['unsupported input type', { input: ['audio'] }],
+    ['non-array input modalities', { inputModalities: 'image' }],
+    ['empty explicit input modalities', { inputModalities: [] }],
+  ])('rejects %s before invoking the Host route', async (_name, modelMetadata) => {
+    const handleRequest = vi.fn().mockResolvedValue({ profileCommitted: true })
+    const postMessage = vi.fn().mockResolvedValue(true)
+    const router = new WebviewMessageRouter({ postMessage, handleRequest })
+
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'provider.custom.create',
+        requestId: 'provider-create-1',
+        payload: {
+          settingsNamespace: 'llm-pi-ai',
+          collectionPath: ['providers'],
+          providerId: 'gateway',
+          api: 'openai-completions',
+          baseUrl: 'http://127.0.0.1:9000/v1',
+          models: [{ id: 'gateway-chat', ...modelMetadata }],
+          expectedRevision: 7,
+        },
+      },
+    })
+
+    expect(handleRequest).not.toHaveBeenCalled()
+    expect(postMessage).not.toHaveBeenCalled()
+  })
+})
+
+describe('WebviewMessageRouter command diagnostics', () => {
+  it.each([
+    ['provider.secret.configure', 'store'],
+    ['provider.secret.remove', 'remove'],
+  ])('keeps raw credential details out of serialized %s errors', async (requestType, operation) => {
+    const posted: unknown[] = []
+    const password = 'password=credential-secret-value'
+    const rejection = new AppError({
+      code: 'PERMISSION_DENIED',
+      message: `credential provider rejected ${password}`,
+      retryable: false,
+      cause: new Error(`credential backend detail ${password}`),
+      context: { diagnostic: password },
+    })
+    const transport: DshTransport = {
+      request: <TResponse>(method: string): Promise<TResponse> => {
+        if (method === 'credentials.set' || method === 'credentials.unset') return Promise.reject(rejection)
+        const value = {
+          'llm.providers': {
+            providers: [
+              {
+                provider: 'openai',
+                displayName: 'OpenAI',
+                settingsNs: 'llm-pi-ai',
+                settingsPath: [],
+                active: true,
+              },
+            ],
+          },
+          'settings.describe': {
+            writable: true,
+            hasDocument: true,
+            namespaces: [
+              {
+                ns: 'llm-pi-ai',
+                schema: {
+                  uid: 1,
+                  refs: {
+                    1: { type: 'object', dict: { apiKeyEnv: 2 } },
+                    2: { type: 'string', meta: { role: 'credential-ref' } },
+                  },
+                },
+                value: { apiKeyEnv: 'OPENAI_API_KEY' },
+                applies: 'live',
+                secrets: [],
+                revision: 0,
+              },
+            ],
+          },
+          'credentials.describe': {
+            credentials: { OPENAI_API_KEY: { configured: false, writable: true } },
+          },
+        }[method]
+        return Promise.resolve({ result: { ok: true, value } } as TResponse)
+      },
+      remoteRequest: <TResponse>() => Promise.reject<TResponse>(new Error('unexpected Remote request')),
+      openEventStream: async function* () {},
+      close: () => Promise.resolve(),
+    }
+    const credentials = new Rc6CredentialRepository(transport)
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        return Promise.resolve(true)
+      },
+      handleRequest: () =>
+        operation === 'store'
+          ? credentials.setSecret('openai', 'apiKeyEnv', password)
+          : credentials.removeSecret('openai', 'apiKeyEnv'),
+    })
+
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: requestType,
+        requestId: `credential-${operation}-error`,
+        payload: { providerId: 'openai', field: 'apiKeyEnv' },
+      },
+    })
+
+    const response = posted[0] as {
+      readonly type?: string
+      readonly requestId?: string
+      readonly ok?: boolean
+      readonly error?: { readonly code?: string; readonly message?: string; readonly retryable?: boolean }
+    }
+    expect(response).toMatchObject({
+      type: 'response',
+      requestId: `credential-${operation}-error`,
+      ok: false,
+      error: { code: 'PERMISSION_DENIED', retryable: false },
+    })
+    expect(response.error?.message).not.toContain(password)
+    expect(response.error?.message).not.toContain('password')
+    expect(JSON.stringify(posted[0])).not.toContain(password)
+    expect(JSON.stringify(posted[0])).not.toContain('password')
+    expect(hostEnvelopeSchema.safeParse({ protocolVersion: 1, message: response }).success).toBe(true)
+  })
+
+  it('routes a strict feature request to the feature handler', async () => {
+    const posted: unknown[] = []
+    const handleFeatureRequest = vi.fn().mockResolvedValue({ kind: 'empty' })
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        return Promise.resolve(true)
+      },
+      handleFeatureRequest,
+    })
+
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'editor.context.list',
+        requestId: 'feature-route-1',
+        payload: { workspaceFolderId: 'workspace-1' },
+      },
+    })
+
+    expect(handleFeatureRequest).toHaveBeenCalledOnce()
+    expect(posted[0]).toMatchObject({
+      type: 'feature.response',
+      requestId: 'feature-route-1',
+      ok: true,
+      payload: { kind: 'empty' },
+    })
+  })
+
+  it('preserves the retryable plugin-install-not-started classification in feature responses', async () => {
+    const posted: unknown[] = []
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        return Promise.resolve(true)
+      },
+      handleFeatureRequest: () =>
+        Promise.reject(
+          new AppError({
+            code: 'PLUGIN_INSTALL_NOT_STARTED',
+            message: 'private preflight detail',
+            retryable: true,
+          }),
+        ),
+    })
+
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'plugin.bundle.install',
+        requestId: 'plugin-install-not-started-response',
+        payload: { spec: '@dsh-community/review', installRequestId: 'install-not-started' },
+      },
+    })
+
+    expect(posted[0]).toMatchObject({
+      type: 'feature.response',
+      requestId: 'plugin-install-not-started-response',
+      ok: false,
+      error: {
+        code: 'PLUGIN_INSTALL_NOT_STARTED',
+        retryable: true,
+        message: 'The DSH plugin installation did not start. Review the package source and try again.',
+      },
+    })
+    expect(featureResponseSchema.safeParse(posted[0]).success).toBe(true)
+    expect(JSON.stringify(posted[0])).not.toContain('private preflight detail')
+  })
+
+  it('keeps an active requestId owned by its original request across duplicate requests and cancellation collisions', async () => {
+    const posted: unknown[] = []
+    let resolveRequest!: (value: unknown) => void
+    let requestSignal: AbortSignal | undefined
+    const handleRequest = vi.fn((_request, signal: AbortSignal) => {
+      requestSignal = signal
+      return new Promise<unknown>((resolve) => {
+        resolveRequest = resolve
+      })
+    })
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        return Promise.resolve(true)
+      },
+      handleRequest,
+    })
+    const original = {
+      protocolVersion: 1,
+      message: { type: 'session.list', requestId: 'shared-request', payload: {} },
+    }
+
+    const pending = router.handle(original)
+    await vi.waitFor(() => expect(handleRequest).toHaveBeenCalledOnce())
+    await router.handle(original)
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'feature.request.cancel',
+        requestId: 'shared-request',
+        payload: { targetRequestId: 'shared-request' },
+      },
+    })
+
+    expect(requestSignal?.aborted).toBe(false)
+    expect(posted).toEqual([])
+
+    resolveRequest({ owner: 'original' })
+    await pending
+
+    expect(handleRequest).toHaveBeenCalledOnce()
+    expect(posted).toHaveLength(1)
+    expect(posted[0]).toMatchObject({
+      type: 'response',
+      requestId: 'shared-request',
+      ok: true,
+      payload: { owner: 'original' },
+    })
+  })
+
+  it('keeps a requestId reserved until its terminal response is accepted by the Webview', async () => {
+    const posted: unknown[] = []
+    let acceptResponse!: (accepted: boolean) => void
+    const responseDelivery = new Promise<boolean>((resolve) => {
+      acceptResponse = resolve
+    })
+    const handleRequest = vi.fn().mockResolvedValue({ owner: 'first' })
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        return responseDelivery
+      },
+      handleRequest,
+    })
+    const request = {
+      protocolVersion: 1,
+      message: { type: 'session.list', requestId: 'response-window', payload: {} },
+    }
+
+    const pending = router.handle(request)
+    await vi.waitFor(() => expect(posted).toHaveLength(1))
+    await router.handle(request)
+
+    expect(handleRequest).toHaveBeenCalledOnce()
+    expect(posted).toHaveLength(1)
+
+    acceptResponse(true)
+    await pending
+    expect(posted).toHaveLength(1)
+  })
+
+  it('accepts only the first concurrent cancellation and emits one terminal response per id', async () => {
+    const posted: unknown[] = []
+    let resolveRequest!: (value: unknown) => void
+    let acceptFirstCancellation!: (accepted: boolean) => void
+    const firstCancellationDelivery = new Promise<boolean>((resolve) => {
+      acceptFirstCancellation = resolve
+    })
+    const requestResult = new Promise<unknown>((resolve) => {
+      resolveRequest = resolve
+    })
+    const handleRequest = vi.fn(() => requestResult)
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        if (message.type === 'feature.response' && message.requestId === 'cancel-first')
+          return firstCancellationDelivery
+        return Promise.resolve(true)
+      },
+      handleRequest,
+    })
+    const original = router.handle({
+      protocolVersion: 1,
+      message: { type: 'session.list', requestId: 'cancel-target', payload: {} },
+    })
+    await vi.waitFor(() => expect(handleRequest).toHaveBeenCalledOnce())
+
+    const firstCancellation = router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'feature.request.cancel',
+        requestId: 'cancel-first',
+        payload: { targetRequestId: 'cancel-target' },
+      },
+    })
+    await vi.waitFor(() => expect(posted).toHaveLength(1))
+
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'feature.request.cancel',
+        requestId: 'cancel-first',
+        payload: { targetRequestId: 'cancel-target' },
+      },
+    })
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'feature.request.cancel',
+        requestId: 'cancel-second',
+        payload: { targetRequestId: 'cancel-target' },
+      },
+    })
+
+    expect(posted).toHaveLength(2)
+    expect(
+      posted.find((message) => (message as { requestId?: string }).requestId === 'cancel-first'),
+    ).toMatchObject({
+      type: 'feature.response',
+      requestId: 'cancel-first',
+      ok: true,
+      payload: { kind: 'operation', operationId: 'cancel-target', state: 'accepted' },
+    })
+    expect(
+      posted.find((message) => (message as { requestId?: string }).requestId === 'cancel-second'),
+    ).toMatchObject({
+      type: 'feature.response',
+      requestId: 'cancel-second',
+      ok: true,
+      payload: { kind: 'operation', operationId: 'cancel-target', state: 'rejected' },
+    })
+
+    acceptFirstCancellation(true)
+    await firstCancellation
+    resolveRequest({ settled: true })
+    await original
+
+    expect(posted).toHaveLength(3)
+    expect(
+      posted.filter((message) => (message as { requestId?: string }).requestId === 'cancel-first'),
+    ).toHaveLength(1)
+    expect(
+      posted.filter((message) => (message as { requestId?: string }).requestId === 'cancel-second'),
+    ).toHaveLength(1)
+    expect(
+      posted.filter((message) => (message as { requestId?: string }).requestId === 'cancel-target'),
+    ).toHaveLength(1)
+    expect(
+      posted.find((message) => (message as { requestId?: string }).requestId === 'cancel-target'),
+    ).toMatchObject({
+      type: 'response',
+      requestId: 'cancel-target',
+      ok: true,
+      payload: { settled: true },
+    })
+  })
+
+  it('rejects cancellation after the target entered terminal response delivery', async () => {
+    const posted: unknown[] = []
+    let acceptTargetResponse!: (accepted: boolean) => void
+    const targetResponseDelivery = new Promise<boolean>((resolve) => {
+      acceptTargetResponse = resolve
+    })
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        if (message.type === 'response' && message.requestId === 'responding-target')
+          return targetResponseDelivery
+        return Promise.resolve(true)
+      },
+      handleRequest: () => Promise.resolve({ settled: true }),
+    })
+
+    const target = router.handle({
+      protocolVersion: 1,
+      message: { type: 'session.list', requestId: 'responding-target', payload: {} },
+    })
+    await vi.waitFor(() => expect(posted).toHaveLength(1))
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'feature.request.cancel',
+        requestId: 'cancel-responding-target',
+        payload: { targetRequestId: 'responding-target' },
+      },
+    })
+
+    expect(
+      posted.find((message) => (message as { requestId?: string }).requestId === 'cancel-responding-target'),
+    ).toMatchObject({
+      type: 'feature.response',
+      requestId: 'cancel-responding-target',
+      payload: { kind: 'operation', state: 'rejected' },
+    })
+    expect(
+      posted.filter((message) => (message as { requestId?: string }).requestId === 'responding-target'),
+    ).toHaveLength(1)
+
+    acceptTargetResponse(true)
+    await target
+    expect(posted).toHaveLength(2)
+  })
+
+  it('rejects a cancellation that targets its own requestId', async () => {
+    const posted: unknown[] = []
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        return Promise.resolve(true)
+      },
+    })
+
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'feature.request.cancel',
+        requestId: 'self-cancel',
+        payload: { targetRequestId: 'self-cancel' },
+      },
+    })
+
+    expect(posted).toHaveLength(1)
+    expect(posted[0]).toMatchObject({
+      type: 'feature.response',
+      requestId: 'self-cancel',
+      ok: true,
+      payload: { kind: 'operation', operationId: 'self-cancel', state: 'rejected' },
+    })
+  })
+
+  it('does not answer an invalid envelope with a synthetic id that could settle a live request', async () => {
+    const posted: unknown[] = []
+    let resolveRequest!: (value: unknown) => void
+    const handleRequest = vi.fn(
+      () =>
+        new Promise<unknown>((resolve) => {
+          resolveRequest = resolve
+        }),
+    )
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        return Promise.resolve(true)
+      },
+      handleRequest,
+    })
+    const pending = router.handle({
+      protocolVersion: 1,
+      message: { type: 'session.list', requestId: 'invalid', payload: {} },
+    })
+    await vi.waitFor(() => expect(handleRequest).toHaveBeenCalledOnce())
+
+    await router.handle({ protocolVersion: 1, message: { type: 'not.a.request', requestId: 'other-id' } })
+    expect(posted).toEqual([])
+
+    resolveRequest({ owner: 'original' })
+    await pending
+    expect(posted).toHaveLength(1)
+    expect(posted[0]).toMatchObject({
+      type: 'response',
+      requestId: 'invalid',
+      ok: true,
+      payload: { owner: 'original' },
+    })
+  })
+
+  it('keeps an unconfigured feature route explicitly disabled', async () => {
+    const posted: unknown[] = []
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        return Promise.resolve(true)
+      },
+    })
+
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'editor.context.list',
+        requestId: 'feature-disabled-1',
+        payload: {},
+      },
+    })
+
+    expect(posted[0]).toMatchObject({
+      type: 'feature.response',
+      requestId: 'feature-disabled-1',
+      ok: false,
+      error: { code: 'FEATURE_DISABLED' },
+    })
+  })
+
+  it('keeps an unconfigured request route explicitly disabled', async () => {
+    const posted: unknown[] = []
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        return Promise.resolve(true)
+      },
+    })
+
+    await router.handle({
+      protocolVersion: 1,
+      message: { type: 'session.list', requestId: 'request-disabled-1', payload: {} },
+    })
+
+    expect(posted[0]).toMatchObject({
+      type: 'response',
+      requestId: 'request-disabled-1',
+      ok: false,
+      error: { code: 'FEATURE_DISABLED' },
+    })
+  })
+
+  it('keeps the DSH command failure reason visible without exposing credential values', async () => {
+    const posted: unknown[] = []
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        return Promise.resolve(true)
+      },
+      handleRequest: () =>
+        Promise.reject(
+          new AppError({
+            code: 'INVALID_CONFIGURATION',
+            message: 'The DSH configuration is invalid. Details: expected images array; token=super-secret',
+            retryable: false,
+            context: { rpcMethod: 'commands/execute', rpcCode: 'internal' },
+          }),
+        ),
+    })
+
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'command.execute',
+        requestId: 'command-diagnostic-1',
+        payload: { sessionId: 'session-1', command: '/plan' },
+      },
+    })
+
+    const response = posted[0] as { readonly error?: { readonly message?: string } }
+    const message = response.error?.message ?? ''
+    expect(message).toContain('commands/execute')
+    expect(message).toContain('expected images array')
+    expect(message).toContain('DSH code: internal')
+    expect(message).not.toContain('super-secret')
+  })
+
+  it('keeps settings RPC diagnostics visible for native document and schema failures', async () => {
+    const posted: unknown[] = []
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        return Promise.resolve(true)
+      },
+      handleRequest: () =>
+        Promise.reject(
+          new AppError({
+            code: 'INTERNAL_ERROR',
+            message:
+              'DSH returned an internal error. Details: spawn powershell.exe ENOENT; token=super-secret',
+            retryable: true,
+            context: { rpcMethod: 'settings.openDocument', rpcCode: 'internal' },
+          }),
+        ),
+    })
+
+    await router.handle({
+      protocolVersion: 1,
+      message: { type: 'settings.openDocument', requestId: 'settings-diagnostic-1' },
+    })
+
+    const response = posted[0] as { readonly error?: { readonly message?: string } }
+    const message = response.error?.message ?? ''
+    expect(message).toContain('settings.openDocument')
+    expect(message).toContain('DSH code: internal')
+    expect(message).toContain('spawn powershell.exe ENOENT')
+    expect(message).not.toContain('super-secret')
+  })
+
+  it('scrubs an absolute path out of the diagnostic before the Webview sees it', async () => {
+    // A transport failure quotes the socket the OS refused, so the raw message
+    // names the user's home directory. `docs/architecture.md` keeps an absolute
+    // workspace path off the Webview, and this route is how it would arrive.
+    const posted: unknown[] = []
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        return Promise.resolve(true)
+      },
+      handleRequest: () =>
+        Promise.reject(
+          new AppError({
+            code: 'BACKEND_UNREACHABLE',
+            message: String.raw`The DSH request command.execute failed: connect EACCES D:\Users\Ada\.dsh\run\agent.sock`,
+            retryable: true,
+            context: { rpcMethod: 'command.execute' },
+          }),
+        ),
+    })
+
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'command.execute',
+        requestId: 'command-path-1',
+        payload: { sessionId: 'session-1', command: '/plan' },
+      },
+    })
+
+    const response = posted[0] as { readonly error?: { readonly message?: string } }
+    const message = response.error?.message ?? ''
+    // The actionable part of the failure survives; the path does not.
+    expect(message).toContain('command.execute')
+    expect(message).toContain('connect EACCES')
+    expect(message).not.toContain('Users')
+    expect(message).not.toContain('Ada')
+    expect(message).not.toMatch(/[A-Za-z]:\\/u)
+  })
+})
+
+describe('WebviewMessageRouter timed question wait ownership', () => {
+  it('releases a refused attach response without cancelling a successfully delivered sibling', async () => {
+    const attachedSignals: AbortSignal[] = []
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => Promise.resolve(!('requestId' in message && message.requestId === 'refused')),
+      handleFeatureRequest: (_request, signal) => {
+        attachedSignals.push(signal)
+        return Promise.resolve({ kind: 'question.wait', remainingMs: 2_000 })
+      },
+    })
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'user-question.wait.attach',
+        requestId: 'held',
+        payload: { sessionId: 's', callId: 'c' },
+      },
+    })
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'user-question.wait.attach',
+        requestId: 'refused',
+        payload: { sessionId: 's', callId: 'c' },
+      },
+    })
+    expect(attachedSignals[0]?.aborted).toBe(false)
+    expect(attachedSignals[1]?.aborted).toBe(true)
+    router.cancelAll()
+    expect(attachedSignals[0]?.aborted).toBe(true)
+  })
+
+  it('cancels only the requested pending attach while another UI holds the same question', async () => {
+    const attachedSignals: AbortSignal[] = []
+    let rejectPending!: (reason: unknown) => void
+    const posted: unknown[] = []
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        return Promise.resolve(true)
+      },
+      handleFeatureRequest: (request, signal) => {
+        if (request.type !== 'user-question.wait.attach') return Promise.resolve({ kind: 'empty' })
+        attachedSignals.push(signal)
+        if (request.requestId === 'attach-pending')
+          return new Promise((_resolve, reject) => {
+            rejectPending = reject
+            signal.addEventListener(
+              'abort',
+              () =>
+                reject(
+                  new AppError({
+                    code: 'REQUEST_CANCELLED',
+                    message: 'Cancelled',
+                    retryable: false,
+                  }),
+                ),
+              { once: true },
+            )
+          })
+        return Promise.resolve({ kind: 'question.wait', remainingMs: 2_000 })
+      },
+    })
+    const pending = router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'user-question.wait.attach',
+        requestId: 'attach-pending',
+        payload: { sessionId: 's', callId: 'c' },
+      },
+    })
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'user-question.wait.attach',
+        requestId: 'attach-held',
+        payload: { sessionId: 's', callId: 'c' },
+      },
+    })
+    try {
+      await router.handle({
+        protocolVersion: 1,
+        message: {
+          type: 'feature.request.cancel',
+          requestId: 'cancel-one',
+          payload: { targetRequestId: 'attach-pending' },
+        },
+      })
+      await pending
+      expect(posted).toContainEqual(expect.objectContaining({ requestId: 'attach-pending', ok: false }))
+      expect(attachedSignals[0]?.aborted).toBe(true)
+      expect(attachedSignals[1]?.aborted).toBe(false)
+      await router.handle({
+        protocolVersion: 1,
+        message: {
+          type: 'user-question.wait.release',
+          requestId: 'release-all',
+          payload: { sessionId: 's', callId: 'c' },
+        },
+      })
+      expect(attachedSignals[1]?.aborted).toBe(true)
+    } finally {
+      rejectPending(new AppError({ code: 'REQUEST_CANCELLED', message: 'Disposed', retryable: false }))
+      router.cancelAll()
+      await pending
+    }
+  })
+
+  it('keeps the remote claim alive after the attach response and releases it on route or view disposal', async () => {
+    const attachedSignals: AbortSignal[] = []
+    const router = new WebviewMessageRouter({
+      postMessage: () => Promise.resolve(true),
+      handleFeatureRequest: (request, signal) => {
+        if (request.type === 'user-question.wait.attach') {
+          attachedSignals.push(signal)
+          return Promise.resolve({ kind: 'question.wait', remainingMs: 2_000 })
+        }
+        return Promise.resolve({ kind: 'empty' })
+      },
+    })
+
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'user-question.wait.attach',
+        requestId: 'question-wait-attach-1',
+        payload: { sessionId: 'session-1', callId: 'call-1' },
+      },
+    })
+    expect(attachedSignals[0]?.aborted).toBe(false)
+
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'user-question.wait.release',
+        requestId: 'question-wait-release-1',
+        payload: { sessionId: 'session-1', callId: 'call-1' },
+      },
+    })
+    expect(attachedSignals[0]?.aborted).toBe(true)
+
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'user-question.wait.attach',
+        requestId: 'question-wait-attach-2',
+        payload: { sessionId: 'session-1', callId: 'call-2' },
+      },
+    })
+    expect(attachedSignals[1]?.aborted).toBe(false)
+    router.cancelAll()
+    expect(attachedSignals[1]?.aborted).toBe(true)
+  })
+})
+
+describe('WebviewMessageRouter attachment diagnostics', () => {
+  function routerRejecting(error: AppError, posted: unknown[]): WebviewMessageRouter {
+    return new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        return Promise.resolve(true)
+      },
+      handleRequest: () => Promise.reject(error),
+    })
+  }
+
+  it('keeps a local attachment rejection reason visible instead of blaming the DSH configuration', async () => {
+    const posted: unknown[] = []
+    const router = routerRejecting(
+      new AppError({
+        code: 'INVALID_CONFIGURATION',
+        message: 'The selected file is too large.',
+        retryable: false,
+      }),
+      posted,
+    )
+
+    await router.handle({
+      protocolVersion: 1,
+      message: { type: 'attachment.pick', requestId: 'attachment-diagnostic-1' },
+    })
+
+    const response = posted[0] as { readonly error?: { readonly message?: string } }
+    expect(response.error?.message).toContain('too large')
+  })
+
+  it('keeps the DSH attachment limit reason visible when a prompt is rejected', async () => {
+    const posted: unknown[] = []
+    const router = routerRejecting(
+      new AppError({
+        code: 'INVALID_CONFIGURATION',
+        message: 'The attachment is too large. token=super-secret',
+        retryable: false,
+      }),
+      posted,
+    )
+
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'session.sendPrompt',
+        requestId: 'attachment-diagnostic-2',
+        payload: { sessionId: 'session-1', text: 'hi', attachments: [] },
+      },
+    })
+
+    const response = posted[0] as { readonly error?: { readonly message?: string } }
+    const message = response.error?.message ?? ''
+    expect(message).toContain('too large')
+    expect(message).not.toContain('super-secret')
+  })
+})
+
+describe('WebviewMessageRouter timed question answer diagnostics', () => {
+  it('tells the user a duplicate reply was not recorded instead of only "no longer pending"', async () => {
+    const posted: unknown[] = []
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        return Promise.resolve(true)
+      },
+      handleFeatureRequest: () =>
+        Promise.reject(
+          new AppError({
+            code: 'STALE_INTERACTION',
+            message: 'DSH already holds a reply for this question, so this answer was not recorded.',
+            retryable: false,
+            context: { rpcCode: 'REPLY_QUEUED', rpcMethod: 'userQuestions/answer' },
+          }),
+        ),
+    })
+
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'user-question.answer',
+        requestId: 'question-answer-diagnostic-1',
+        payload: {
+          sessionId: 'session-1',
+          callId: 'call-1',
+          answer: { answers: [{ id: 'scope', selected: ['workspace'] }] },
+        },
+      },
+    })
+
+    const response = posted[0] as { readonly error?: { readonly code?: string; readonly message?: string } }
+    // The composed batch was discarded, so the card must say so rather than
+    // claim the interaction merely stopped being pending.
+    expect(response.error?.code).toBe('STALE_INTERACTION')
+    expect(response.error?.message).toContain('was not recorded')
+  })
+})
+
+describe('WebviewMessageRouter prompt template diagnostics', () => {
+  it('keeps a template validation reason visible instead of blaming the DSH configuration', async () => {
+    const posted: unknown[] = []
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        return Promise.resolve(true)
+      },
+      handleFeatureRequest: () =>
+        Promise.reject(
+          new AppError({
+            code: 'INVALID_CONFIGURATION',
+            message: 'Template variable {{name}} must be explicitly declared. token=super-secret',
+            retryable: false,
+          }),
+        ),
+    })
+
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'prompt.template.create',
+        requestId: 'template-diagnostic-1',
+        payload: {
+          sessionId: 'session-1',
+          workspaceFolderId: 'workspace-1',
+          title: 'Review',
+          description: '',
+          templateText: 'Review {{name}}.',
+          scope: 'workspace',
+          variables: [],
+        },
+      },
+    })
+
+    const response = posted[0] as { readonly error?: { readonly message?: string } }
+    const message = response.error?.message ?? ''
+    expect(message).toContain('must be explicitly declared')
+    expect(message).not.toContain('super-secret')
+  })
+
+  it('names the checkpoint file that is too large instead of only the quota', async () => {
+    const posted: unknown[] = []
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        return Promise.resolve(true)
+      },
+      handleFeatureRequest: () =>
+        Promise.reject(
+          new AppError({
+            code: 'CHECKPOINT_QUOTA',
+            message: 'The file src/bundle.js is too large for a checkpoint.',
+            retryable: false,
+          }),
+        ),
+    })
+
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'checkpoint.create',
+        requestId: 'checkpoint-diagnostic-1',
+        payload: { sessionId: 'session-1', workspaceFolderId: 'workspace-1' },
+      },
+    })
+
+    const response = posted[0] as { readonly error?: { readonly message?: string } }
+    expect(response.error?.message).toContain('src/bundle.js is too large')
+  })
+})
+
+describe('WebviewMessageRouter attachment size budget', () => {
+  // `attachment.ingest` admits the exact Base64 envelope of a 20 MiB rc.2 image,
+  // so a budget that rejects a shorter string turns a supported paste into a
+  // protocol error before the handler ever sees it.
+  const encodedLength = Math.ceil((20 * 1024 * 1024) / 3) * 4
+
+  it('routes the largest attachment the ingest schema admits', async () => {
+    const posted: unknown[] = []
+    const handleRequest = vi.fn().mockResolvedValue({ cancelled: true })
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        return Promise.resolve(true)
+      },
+      handleRequest,
+    })
+
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'attachment.ingest',
+        requestId: 'attachment-budget-1',
+        payload: { name: 'maximum.png', mimeType: 'image/png', dataBase64: 'A'.repeat(encodedLength) },
+      },
+    })
+
+    expect(handleRequest).toHaveBeenCalledOnce()
+    expect(posted[0]).toMatchObject({
+      type: 'response',
+      requestId: 'attachment-budget-1',
+      ok: true,
+    })
+  })
+
+  it('returns a maximum-size attachment preview instead of a protocol error', async () => {
+    const posted: unknown[] = []
+    const dataUri = `data:image/png;base64,${'A'.repeat(encodedLength)}`
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        return Promise.resolve(true)
+      },
+      handleRequest: () => Promise.resolve({ cancelled: false, dataUri }),
+    })
+
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'attachment.preview',
+        requestId: 'attachment-budget-2',
+        payload: { uri: `dsh-attachment:${'a'.repeat(16)}` },
+      },
+    })
+
+    const response = posted[0] as {
+      readonly ok?: boolean
+      readonly payload?: { readonly dataUri?: string }
+      readonly error?: { readonly message?: string }
+    }
+    expect(response.error).toBeUndefined()
+    expect(response.ok).toBe(true)
+    expect(response.payload?.dataUri).toBe(dataUri)
+  })
+})
+
+describe('WebviewMessageRouter unexpected failure diagnostics', () => {
+  it('answers an unrepresentable host error inside the wire budget instead of throwing', async () => {
+    const posted: unknown[] = []
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        return Promise.resolve(true)
+      },
+      // The host owns the RPC error code, so it can be arbitrarily long; the
+      // message builder appends it verbatim to the public failure text.
+      handleRequest: () =>
+        Promise.reject(
+          new AppError({
+            code: 'INTERNAL_ERROR',
+            message: 'The DSH command failed.',
+            retryable: true,
+            context: { rpcMethod: 'commands/execute', rpcCode: 'x'.repeat(4_000) },
+          }),
+        ),
+    })
+
+    await expect(
+      router.handle({
+        protocolVersion: 1,
+        message: {
+          type: 'command.execute',
+          requestId: 'oversize-error-1',
+          payload: { sessionId: 'session-1', command: '/plan' },
+        },
+      }),
+    ).resolves.toBeUndefined()
+
+    const response = posted[0] as {
+      readonly ok?: boolean
+      readonly error?: { readonly code?: string; readonly message?: string }
+    }
+    expect(response.ok).toBe(false)
+    expect(response.error?.code).toBe('INTERNAL_ERROR')
+    expect((response.error?.message ?? '').length).toBeLessThanOrEqual(1_024)
+    expect(
+      hostEnvelopeSchema.safeParse({ protocolVersion: 1, message: response }).success,
+      'the Webview must be able to parse the failure it is sent',
+    ).toBe(true)
+  })
+
+  it('reports non-AppError failures to the host diagnostics hook, bounded and redacted', async () => {
+    const posted: unknown[] = []
+    const entries: unknown[] = []
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        return Promise.resolve(true)
+      },
+      handleRequest: () => Promise.reject(new Error(`boom password=hunter2 ${'x'.repeat(400)}`)),
+      logUnexpectedError: (entry) => entries.push(entry),
+    })
+
+    await router.handle({
+      protocolVersion: 1,
+      message: { type: 'session.list', requestId: 'unexpected-1', payload: {} },
+    })
+
+    expect(entries).toHaveLength(1)
+    const entry = entries[0] as { requestType: string; name: string; message: string }
+    expect(entry.requestType).toBe('session.list')
+    expect(entry.name).toBe('Error')
+    expect(entry.message).not.toContain('hunter2')
+    // The value is replaced and the separator it matched is kept.
+    expect(entry.message).toContain('password=[redacted]')
+    expect(entry.message.length).toBeLessThanOrEqual(320)
+    const response = posted[0] as { readonly error?: { readonly code?: string } }
+    expect(response.error?.code).toBe('INTERNAL_ERROR')
+  })
+
+  it('does not route expected AppError failures through the diagnostics hook', async () => {
+    const entries: unknown[] = []
+    const router = new WebviewMessageRouter({
+      postMessage: () => Promise.resolve(true),
+      handleRequest: () =>
+        Promise.reject(new AppError({ code: 'BACKEND_UNREACHABLE', message: 'down', retryable: true })),
+      logUnexpectedError: (entry) => entries.push(entry),
+    })
+
+    await router.handle({
+      protocolVersion: 1,
+      message: { type: 'session.list', requestId: 'expected-1', payload: {} },
+    })
+
+    expect(entries).toHaveLength(0)
+  })
+
+  it('contains a rejected response post and reports it through diagnostics', async () => {
+    const entries: unknown[] = []
+    const router = new WebviewMessageRouter({
+      postMessage: () => Promise.reject(new Error('webview disposed')),
+      handleRequest: () => Promise.resolve(undefined),
+      logUnexpectedError: (entry) => entries.push(entry),
+    })
+
+    await expect(
+      router.handle({
+        protocolVersion: 1,
+        message: { type: 'session.list', requestId: 'post-failure-1', payload: {} },
+      }),
+    ).resolves.toBeUndefined()
+    await vi.waitFor(() => expect(entries).toHaveLength(1))
+    expect(entries[0]).toMatchObject({ requestType: 'session.list', message: 'webview disposed' })
+  })
+
+  it('does not let a failing diagnostics hook suppress the error response', async () => {
+    const posted: unknown[] = []
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        posted.push(message)
+        return Promise.resolve(true)
+      },
+      handleRequest: () => Promise.reject(new Error('handler failed')),
+      logUnexpectedError: () => {
+        throw new Error('diagnostics unavailable')
+      },
+    })
+
+    await expect(
+      router.handle({
+        protocolVersion: 1,
+        message: { type: 'session.list', requestId: 'diagnostics-failure-1', payload: {} },
+      }),
+    ).resolves.toBeUndefined()
+    expect(posted[0]).toMatchObject({
+      type: 'response',
+      requestId: 'diagnostics-failure-1',
+      ok: false,
+      error: { code: 'INTERNAL_ERROR' },
+    })
+  })
+})
+
+it('records a refused Webview delivery instead of treating false as delivered', async () => {
+  const logUnexpectedError = vi.fn()
+  const router = new WebviewMessageRouter({
+    postMessage: () => Promise.resolve(false),
+    handleFeatureRequest: () => Promise.resolve({ kind: 'empty' }),
+    logUnexpectedError,
+  })
+  await router.handle({
+    protocolVersion: 1,
+    message: { type: 'editor.context.list', requestId: 'undelivered', payload: {} },
+  })
+  await vi.waitFor(() => expect(logUnexpectedError).toHaveBeenCalled())
+})

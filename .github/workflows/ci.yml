@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NODE_COMPILE_CACHE: ${{ github.workspace }}/node_modules/.cache/node-compile
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/eslint
+          key: eslint-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'eslint.config.mjs') }}
+      - run: pnpm lint
+
+  static:
+    name: Format & typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/prettier
+          key: prettier-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', '**/.prettierrc*', 'prettier.config.*') }}
+      - run: pnpm format:check
+      - name: Check documentation links, version drift, and the capability matrix
+        run: pnpm docs:check
+      - name: Check the Webview message catalogues
+        run: pnpm i18n:check
+      - run: pnpm typecheck
+
+  test:
+    name: Tests (pull request, affected only)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `--changed` needs the base branch history to compute the diff.
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@v4
+        with:
+          path: |
+            node_modules/.cache/vitest
+            node_modules/.cache/node-compile
+          key: tests-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'vitest*.ts') }}-${{ github.sha }}
+          restore-keys: tests-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'vitest*.ts') }}-
+      - name: Run affected tests and filesystem contracts once
+        run: pnpm test:changed origin/${{ github.base_ref }}
+
+  test-full:
+    name: Tests (full suite, shard ${{ matrix.shard }}/3)
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@v4
+        with:
+          path: |
+            node_modules/.cache/vitest
+            node_modules/.cache/node-compile
+          key: tests-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'vitest*.ts') }}-${{ github.sha }}
+          restore-keys: tests-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'vitest*.ts') }}-
+      - run: pnpm exec vitest run --passWithNoTests --shard=${{ matrix.shard }}/3
+
+  build:
+    name: Build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [22.19.0]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build

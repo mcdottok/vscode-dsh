@@ -1,0 +1,138 @@
+import type { ModelSelection, SessionDetail, TodoView } from '@dsh-vscode/domain'
+
+import { recordOrUndefined } from '../repositories/shared/guards.js'
+
+/** Projection of the host's permissions face into the settings UI contract. */
+export function permissionPresetIds(value: unknown): readonly string[] | undefined {
+  const projectionValues = recordOrUndefined(value)
+  if (
+    projectionValues === undefined ||
+    !Object.prototype.hasOwnProperty.call(projectionValues, 'permissions')
+  )
+    return undefined
+  const permissions = recordOrUndefined(projectionValues.permissions)
+  if (permissions === undefined || !Array.isArray(permissions.options)) return []
+  // Do not turn a partially malformed authoritative roster into a smaller
+  // allowlist. An empty result is still present (and therefore fail-closed),
+  // while `undefined` means that the host did not compose this capability.
+  if (
+    permissions.options.some((entry) => {
+      const option = recordOrUndefined(entry)
+      return typeof option?.value !== 'string' || option.value.trim() === ''
+    })
+  )
+    return []
+  return [
+    ...new Set(
+      permissions.options
+        .map((entry) => (recordOrUndefined(entry) as { readonly value: string }).value)
+        .filter((value) => value !== 'custom'),
+    ),
+  ]
+}
+
+export function mapConfiguration(value: unknown): SessionDetail['configuration'] {
+  const record = recordOrUndefined(value) ?? {}
+  return {
+    preset: stringOr(record.preset, 'standard'),
+    toolMode: enumValue(record.toolMode, ['native', 'ptc', 'code', 'both'] as const, 'native'),
+    permissionPreset: stringOr(record.permissionPreset, 'workspace-write'),
+    planMode: boolean(record.planMode, false),
+    ...(typeof record.sandboxMode === 'string' ? { sandboxMode: record.sandboxMode } : {}),
+    ...(typeof record.approvalPolicy === 'string' ? { approvalPolicy: record.approvalPolicy } : {}),
+    model: {
+      providerId: stringOr(recordOrUndefined(record.model)?.providerId, ''),
+      modelId: stringOr(recordOrUndefined(record.model)?.modelId, ''),
+      ...(recordOrUndefined(record.model)?.reasoningLevel === undefined
+        ? {}
+        : { reasoningLevel: stringOr(recordOrUndefined(record.model)?.reasoningLevel, '') }),
+    },
+  }
+}
+
+export function mapModelPatch(data: Record<string, unknown>): Partial<ModelSelection> {
+  const header = recordOrUndefined(data.header)
+  const config = recordOrUndefined(header?.config) ?? recordOrUndefined(data.config)
+  const provider = firstString(data.provider, data.providerId, config?.provider, config?.providerId)
+  const model = firstString(data.model, data.modelId, config?.model, config?.modelId)
+  const reasoningLevel = firstString(
+    data.reasoningEffort,
+    data.reasoningLevel,
+    config?.reasoningEffort,
+    config?.reasoningLevel,
+  )
+  return {
+    ...(provider === undefined ? {} : { providerId: provider }),
+    ...(model === undefined ? {} : { modelId: model }),
+    ...(reasoningLevel === undefined ? {} : { reasoningLevel }),
+  }
+}
+
+/**
+ * The durable `modelSelection` projection: the route the session's next
+ * request will take. It is the only statement of a session's *own* selection
+ * — a model catalog answers the deployment default and the providers the host
+ * serves, never which of them this session uses — so both the configuration
+ * read and the model directory compose from here.
+ *
+ * Wire families spell the members differently (`provider`/`providerId`,
+ * `reasoningEffort`/`reasoningLevel`) and both publish the projection as an
+ * object even when the session never selected, so an unstated selection
+ * arrives as empty members rather than as an absent projection.
+ */
+export interface ProjectedModelSelection {
+  readonly providerId: string
+  readonly modelId: string
+  readonly reasoningLevel: string | undefined
+}
+
+export function projectedModelSelection(
+  projectionValues: Readonly<Record<string, unknown>> | undefined,
+): ProjectedModelSelection {
+  const state = recordOrUndefined(projectionValues?.modelSelection)
+  const selected = recordOrUndefined(state?.next) ?? recordOrUndefined(state?.lastUsed)
+  return {
+    providerId: firstString(selected?.provider, selected?.providerId) ?? '',
+    modelId: firstString(selected?.model, selected?.modelId) ?? '',
+    reasoningLevel: firstString(selected?.reasoningEffort, selected?.reasoningLevel),
+  }
+}
+
+export function mapTodo(value: unknown, index: number): TodoView {
+  const record = recordOrUndefined(value)
+  if (record === undefined) throw new Error('Malformed todo')
+  const content = firstString(record.content, record.title, record.text)
+  if (content === undefined) throw new Error('Malformed todo content')
+  if (record.status !== 'pending' && record.status !== 'in_progress' && record.status !== 'completed')
+    throw new Error('Malformed todo status')
+  return {
+    id: stringOr(record.id, `todo:${index}`),
+    content,
+    status:
+      record.status === 'completed'
+        ? 'completed'
+        : record.status === 'in_progress'
+          ? 'in-progress'
+          : 'pending',
+  }
+}
+
+function stringOr(value: unknown, fallback: string): string {
+  return typeof value === 'string' ? value : fallback
+}
+
+function firstString(...values: readonly unknown[]): string | undefined {
+  return values.find((value): value is string => typeof value === 'string' && value.trim() !== '')
+}
+
+function boolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback
+}
+
+function enumValue<const T extends readonly string[]>(
+  value: unknown,
+  values: T,
+  fallback: T[number],
+): T[number] {
+  return typeof value === 'string' && values.includes(value) ? value : fallback
+}

@@ -1,0 +1,233 @@
+import { memo, useEffect, useRef, useState, type ReactElement } from 'react'
+import type { GoalView } from '@dsh-vscode/domain'
+import { useI18n } from '../../i18n.js'
+import { Icon } from '../../ui/Icon.js'
+
+export interface GoalBarProps {
+  readonly goals: readonly GoalView[]
+  readonly onUpdate?: (
+    goalId: string,
+    update: Partial<Pick<GoalView, 'title' | 'status' | 'maxGoalRounds'>>,
+  ) => Promise<void>
+  readonly onClear?: (goalId: string) => Promise<void>
+}
+
+/** Docked live-goal strip. Creation remains the host `/goal` command; this
+ * surface owns only edit, pause/resume and clear mutations. */
+export const GoalBar = memo(function GoalBar(props: GoalBarProps): ReactElement | null {
+  const { t } = useI18n()
+  const goal = props.goals.find((entry) => entry.status !== 'completed')
+  const [editingGoalId, setEditingGoalId] = useState<string | undefined>()
+  const [draft, setDraft] = useState('')
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | undefined>()
+  const [confirmingClearGoalId, setConfirmingClearGoalId] = useState<string | undefined>()
+  const pendingRef = useRef(false)
+  // The title the current draft was seeded from, so an untouched draft can
+  // follow a host-side rename while an edited one is preserved.
+  const seedRef = useRef<string | undefined>(undefined)
+  const goalId = goal?.id
+  const goalTitle = goal?.title
+  const confirmingClear = confirmingClearGoalId === goalId
+
+  useEffect(() => setConfirmingClearGoalId(undefined), [goalId])
+  // An open editor holds a copy of the objective, and the live goal list is
+  // re-read from the host on ordinary session events, so the host's title can
+  // change underneath the input. Re-seeding keeps Save from writing a value the
+  // host has already replaced. A draft the user is editing holds their own
+  // words, so it is left alone: only the untouched seed follows the host.
+  useEffect(() => {
+    setDraft((current) => (current === seedRef.current ? (goalTitle ?? current) : current))
+    seedRef.current = goalTitle
+  }, [goalTitle])
+
+  if (goal === undefined) return null
+
+  const editing = editingGoalId === goalId
+
+  const run = async (action: () => Promise<void>): Promise<void> => {
+    if (pendingRef.current) return
+    pendingRef.current = true
+    setPending(true)
+    setError(undefined)
+    try {
+      await action()
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : t('goals.actionFailed'))
+    } finally {
+      pendingRef.current = false
+      setPending(false)
+    }
+  }
+
+  const saveEdit = (): void => {
+    const title = draft.trim()
+    if (title === '' || props.onUpdate === undefined) return
+    void run(async () => {
+      await props.onUpdate!(goal.id, { title })
+      setEditingGoalId(undefined)
+    })
+  }
+
+  if (editing) {
+    return (
+      <div className="dsh-goal-bar" data-goal-bar>
+        <div className="dsh-goal-bar__edit">
+          <input
+            autoFocus
+            className="dsh-goal-bar__input"
+            type="text"
+            aria-label={t('goals.objective')}
+            value={draft}
+            onChange={(event) => setDraft(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              // An IME owns Enter and Escape while it is composing: the first
+              // confirms a candidate, the second cancels one. Acting on either
+              // would save a half-composed objective or drop the edit. 229 is
+              // the legacy composition signal engines emit without isComposing.
+              if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
+              if (event.key === 'Enter') saveEdit()
+              if (event.key === 'Escape') setEditingGoalId(undefined)
+            }}
+          />
+          <button
+            className="dsh-icon-button"
+            type="button"
+            aria-label={t('goals.save')}
+            title={t('goals.save')}
+            disabled={pending || draft.trim() === ''}
+            onClick={saveEdit}
+          >
+            <Icon name="check" />
+          </button>
+          <button
+            className="dsh-icon-button"
+            type="button"
+            aria-label={t('goals.cancelEdit')}
+            title={t('goals.cancelEdit')}
+            disabled={pending}
+            onClick={() => setEditingGoalId(undefined)}
+          >
+            <Icon name="close" />
+          </button>
+        </div>
+        {error === undefined ? null : (
+          <span className="dsh-goal-bar__error" role="alert">
+            {error}
+          </span>
+        )}
+      </div>
+    )
+  }
+
+  const canPause =
+    goal.status === 'in-progress' && goal.activation !== 'disarmed' && props.onUpdate !== undefined
+  const canResume =
+    (goal.status === 'pending' || (goal.status === 'in-progress' && goal.activation === 'disarmed')) &&
+    props.onUpdate !== undefined
+  // The host publishes a block reason as the only actionable detail of a
+  // blocked goal; the bar carries it so the state is explained on hover.
+  const blockedReason = goal.status === 'blocked' ? goal.blockedReason?.message : undefined
+  return (
+    <div className="dsh-goal-bar" data-goal-bar title={blockedReason}>
+      <div className="dsh-goal-bar__content">
+        <span className="dsh-goal-bar__glyph" aria-hidden="true">
+          <Icon name="target" />
+        </span>
+        <span className="dsh-goal-bar__phase">
+          {t(
+            goal.status === 'in-progress' && goal.activation === 'disarmed'
+              ? 'goals.disarmed'
+              : `goal.status.${goal.status}`,
+          )}
+        </span>
+        <span className="dsh-goal-bar__title" title={goal.title}>
+          {goal.title}
+        </span>
+        {blockedReason === undefined ? null : (
+          <span className="dsh-goal-bar__blocked" title={blockedReason}>
+            {blockedReason}
+          </span>
+        )}
+        <div className="dsh-goal-bar__actions">
+          {canPause ? (
+            <button
+              className="dsh-icon-button"
+              type="button"
+              aria-label={t('goals.pause')}
+              title={t('goals.pause')}
+              disabled={pending}
+              onClick={() => void run(() => props.onUpdate!(goal.id, { status: 'pending' }))}
+            >
+              <Icon name="stop" />
+            </button>
+          ) : null}
+          {canResume ? (
+            <button
+              className="dsh-icon-button"
+              type="button"
+              aria-label={t('goals.resume')}
+              title={t('goals.resume')}
+              disabled={pending}
+              onClick={() => void run(() => props.onUpdate!(goal.id, { status: 'in-progress' }))}
+            >
+              <Icon name="play" />
+            </button>
+          ) : null}
+          {props.onUpdate === undefined ? null : (
+            <button
+              className="dsh-icon-button"
+              type="button"
+              aria-label={t('goals.edit')}
+              title={t('goals.edit')}
+              disabled={pending}
+              onClick={() => {
+                setDraft(goal.title)
+                seedRef.current = goal.title
+                setError(undefined)
+                setEditingGoalId(goal.id)
+              }}
+            >
+              <Icon name="edit" />
+            </button>
+          )}
+          {props.onClear === undefined ? null : (
+            <button
+              className={`dsh-icon-button${confirmingClear ? ' dsh-goal-bar__clear--confirming' : ''}`}
+              type="button"
+              aria-label={confirmingClear ? t('goals.clearConfirm') : t('goals.clear')}
+              title={confirmingClear ? t('goals.clearConfirm') : t('goals.clear')}
+              disabled={pending}
+              onBlur={() => setConfirmingClearGoalId(undefined)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') setConfirmingClearGoalId(undefined)
+              }}
+              // Clearing discards the host-side goal, which only a `/goal`
+              // command can recreate: the first press asks, the second commits.
+              onClick={() => {
+                if (!confirmingClear) {
+                  setConfirmingClearGoalId(goal.id)
+                  return
+                }
+                setConfirmingClearGoalId(undefined)
+                void run(() => props.onClear!(goal.id))
+              }}
+            >
+              <Icon name={confirmingClear ? 'alert' : 'trash'} />
+            </button>
+          )}
+        </div>
+      </div>
+      {confirmingClear ? (
+        <span className="dsh-goal-bar__confirmation" role="status">
+          {t('goals.clearConfirm')}
+        </span>
+      ) : null}
+      {error === undefined ? null : (
+        <span className="dsh-goal-bar__error" role="alert">
+          {error}
+        </span>
+      )}
+    </div>
+  )
+})

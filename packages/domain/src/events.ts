@@ -1,0 +1,507 @@
+import type { WorkflowSummary } from './advanced.js'
+import type { AgentConfiguration, ModelSelection, TokenUsage, ToolMode } from './models.js'
+import type { PromptAttachment, QueuedInput, SessionProjectionSnapshot } from './sessions.js'
+import type { PermissionRequest, ToolCallView, UserQuestion } from './tools.js'
+import type { UserQuestionReplyView } from './user-questions.js'
+
+export interface GoalView {
+  /** Process-local continuation authority, independent of durable status. */
+  readonly activation?: 'armed' | 'disarmed'
+  readonly id: string
+  readonly title: string
+  readonly status: 'pending' | 'in-progress' | 'completed' | 'blocked'
+  /** Upstream goal round budget, when the connected host advertises it. */
+  readonly maxGoalRounds?: number
+  /**
+   * Why the host blocked the goal. The host publishes this as the only
+   * actionable detail of a blocked goal, so it must survive to the surface.
+   */
+  readonly blockedReason?: { readonly code: string; readonly message: string }
+}
+
+export interface JobView {
+  readonly id: string
+  /** Registry-issued `<kind>-N` producer kind; bare string because producers extend the set. */
+  readonly kind: string
+  readonly label: string
+  readonly status: 'running' | 'stopping' | 'completed' | 'failed' | 'killed'
+  /** Kind-specific status detail ('exit code: 3'), once the producer supplied one. */
+  readonly detail?: string
+  /** Producer-owned live progress line. Cleared by DSH when the job settles. */
+  readonly progress?: string
+  /** Epoch ms marks the row's duration; live rows tick against the clock. */
+  readonly startedAt: number
+  readonly finishedAt?: number
+  /** Safe output offsets; host spill-file paths never cross the adapter boundary. */
+  readonly output?: { readonly total: number; readonly earliest: number }
+}
+
+export interface JobOutputChunk {
+  readonly at: number
+  readonly text: string
+  readonly channel?: 'stdout' | 'stderr' | 'log'
+  readonly gapBefore?: true
+}
+
+export type JobFollowFrame =
+  | { readonly type: 'opened'; readonly job: JobView; readonly from: number }
+  | {
+      readonly type: 'output'
+      readonly chunks: readonly JobOutputChunk[]
+      readonly next: number
+      readonly lossy?: true
+    }
+  | { readonly type: 'status'; readonly job: JobView }
+
+export interface SubagentView {
+  readonly kind: 'child'
+  readonly id: string
+  readonly label?: string
+  readonly activity: 'running' | 'inactive'
+  readonly parentSessionId: string
+  /** Delegation mode; only continuable children accept follow-up prompts. */
+  readonly mode: 'one-shot' | 'continuable' | 'external'
+  /** Whether the catalog knows this child to have children of its own. */
+  readonly hasChildren: boolean
+}
+
+export interface SubagentDiagnosticView {
+  readonly kind: 'diagnostic'
+  readonly id: string
+  readonly parentSessionId: string
+  readonly reason: 'corrupt' | 'unsupported' | 'unavailable'
+}
+
+export interface SubagentCatalog {
+  readonly entries: readonly (SubagentView | SubagentDiagnosticView)[]
+  readonly parentAvailable: boolean
+}
+
+/** Durable parent-owned child discovery fact from DSH `subagent/catalog`. */
+export interface SubagentCatalogEntryFact {
+  readonly id: string
+  readonly createdAt: number
+  readonly mode: 'one-shot' | 'continuable' | 'external' | 'unknown'
+  readonly label?: string
+}
+
+/** A filesystem reference explicitly declared by DSH's `present` tool. */
+export interface PresentedFileView {
+  readonly path: string
+  readonly description?: string
+}
+
+export interface TodoView {
+  readonly id: string
+  readonly content: string
+  readonly status: 'pending' | 'in-progress' | 'completed'
+}
+
+export interface SessionConfigurationPatch {
+  readonly preset?: AgentConfiguration['preset']
+  readonly toolMode?: ToolMode
+  readonly permissionPreset?: AgentConfiguration['permissionPreset']
+  readonly planMode?: boolean
+  readonly sandboxMode?: string
+  readonly approvalPolicy?: string
+  readonly model?: Partial<ModelSelection>
+}
+
+export interface CompactionView {
+  readonly id: string
+  readonly phase: 'start' | 'summary' | 'prune' | 'end'
+  readonly summary?: string
+  readonly replacedCount?: number
+  readonly estimatedTokens?: number
+}
+
+export type TeamMemberPhase = 'provisioning' | 'active' | 'failed'
+export type TeamTaskStatus = 'pending' | 'in_progress' | 'completed' | 'deleted'
+
+/** Safe, read-only projection of the experimental rc.8 Agent Teams events. */
+export type TeamActivityView =
+  | {
+      readonly kind: 'member'
+      readonly id: string
+      readonly teamId: string
+      readonly memberId: string
+      readonly name: string
+      readonly phase: TeamMemberPhase
+      readonly error?: string
+    }
+  | {
+      readonly kind: 'task'
+      readonly id: string
+      readonly teamId: string
+      readonly taskId: string
+      readonly subject: string
+      readonly status: TeamTaskStatus
+      readonly ownerId?: string
+      readonly blockedByCount: number
+      readonly writeScopeCount: number
+    }
+  | {
+      readonly kind: 'message.queued' | 'message.delivered'
+      readonly id: string
+      readonly teamId: string
+      readonly messageId: string
+      readonly senderName?: string
+      readonly targetId: string
+      readonly delivery?: 'quiet' | 'wakeup'
+      readonly content?: string
+    }
+
+/**
+ * Structured model-retry signal. The official Web UI aggregates consecutive
+ * retries into one silent status row with a countdown instead of surfacing
+ * each retry as a separate warning.
+ */
+export interface ModelRetrySignal {
+  readonly sessionId: string
+  /** Producer-owned identity shared by one retry chain. */
+  readonly id: string
+  readonly turn: number
+  readonly step: number
+  readonly attempt: number
+  readonly state: 'scheduled' | 'started'
+  readonly delayMs?: number
+  readonly maxRetries?: number
+  readonly message?: string
+}
+
+/** Safe, presentation-only metadata for a file represented in a user turn. */
+export type MessageAttachment = Pick<PromptAttachment, 'name' | 'mimeType'>
+
+/** Durable image reference used by the upstream conversation image surface. */
+export type MessageImageMediaType = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'
+
+export interface MessageImageReference {
+  readonly attachmentId: string
+  readonly mediaType: MessageImageMediaType
+  readonly bytes: number
+  readonly width: number
+  readonly height: number
+  readonly name?: string
+}
+
+/** Terminal boundary reported by the durable DSH turn lifecycle. */
+export type TurnEndReasonKind =
+  'completed' | 'aborted' | 'blocked' | 'error' | 'max-tokens' | 'interrupted' | 'unknown'
+
+/**
+ * Display-safe failure facts carried by an error turn/end reason.
+ *
+ * The message is the provider's own failure text, kept whole: the host bounds
+ * it nowhere and the reference client renders all of it. What the adapter
+ * strips is provider-owned metadata such as request ids and status details,
+ * which must not cross into the Webview projection.
+ */
+export interface TurnEndFailure {
+  readonly message: string
+  readonly code?: string
+}
+
+type BackendEventPayload =
+  | { readonly type: 'session.status'; readonly sessionId: string; readonly status: string }
+  /** Alpha Session Controller list activity notification. */
+  | { readonly type: 'session.activity'; readonly sessionId: string; readonly updatedAt: number }
+  | { readonly type: 'session.title'; readonly sessionId: string; readonly title: string }
+  | {
+      readonly type: 'session.configuration'
+      readonly sessionId: string
+      readonly patch: SessionConfigurationPatch
+    }
+  | {
+      readonly type: 'turn.started'
+      readonly sessionId: string
+      readonly turn: number
+      readonly time?: number
+    }
+  | {
+      readonly type: 'turn.ended'
+      readonly sessionId: string
+      readonly turn: number
+      readonly reason: TurnEndReasonKind
+      readonly failure?: TurnEndFailure
+    }
+  | {
+      readonly type: 'session.added'
+      readonly sessionId: string
+      readonly blank?: boolean
+      readonly agentAvailable?: boolean
+      readonly parentSessionId?: string
+      readonly origin?: 'subagent'
+      /** Session working directory from the Host creation increment. */
+      readonly cwd?: string
+      /** Resolved agent preset used to compose the new session. */
+      readonly agentPreset?: string
+    }
+  | { readonly type: 'session.removed'; readonly sessionId: string }
+  | {
+      readonly type: 'message.user'
+      readonly sessionId: string
+      readonly messageId: string
+      readonly markdown: string
+      readonly attachments?: readonly MessageAttachment[]
+      readonly images?: readonly MessageImageReference[]
+      readonly rpcId?: string
+      readonly source?: string
+      readonly sourceForm?: string
+      readonly sourceSummary?: string
+      /** Structured late question reply; machine-readable JSON stays host-side. */
+      readonly questionReply?: UserQuestionReplyView
+      /** Session labels projected from a structured DSH session-reference source. */
+      readonly sessionReferenceLabels?: readonly string[]
+    }
+  | {
+      readonly type: 'message.delta'
+      readonly sessionId: string
+      readonly messageId: string
+      readonly delta: string
+      readonly turn?: number
+      readonly step?: number
+      /** Epoch milliseconds from the durable DSH event. */
+      readonly time?: number
+      /** Local-only ordering for versioned Session process-local assistant frames. */
+      readonly transientSequence?: number
+      /** Agent attempt identity used to make reconnect baselines idempotent. */
+      readonly transientAttemptId?: string
+      /** Dense process-local frame position within the attempt. */
+      readonly transientIndex?: number
+      /** Durable DSH cursor immediately before this attempt started. */
+      readonly transientStartedAfterSequence?: number
+    }
+  | {
+      readonly type: 'reasoning.delta'
+      readonly sessionId: string
+      readonly messageId: string
+      readonly delta: string
+      readonly turn?: number
+      readonly step?: number
+      /** Epoch milliseconds from the durable DSH event. */
+      readonly time?: number
+      /** Local-only ordering for versioned Session process-local assistant frames. */
+      readonly transientSequence?: number
+      /** Agent attempt identity used to make reconnect baselines idempotent. */
+      readonly transientAttemptId?: string
+      /** Dense process-local frame position within the attempt. */
+      readonly transientIndex?: number
+      /** Durable DSH cursor immediately before this attempt started. */
+      readonly transientStartedAfterSequence?: number
+    }
+  | {
+      readonly type: 'message.completed'
+      readonly sessionId: string
+      readonly messageId: string
+      readonly markdown?: string
+      readonly reasoning?: string
+      readonly modelLabel?: string
+      readonly images?: readonly MessageImageReference[]
+      readonly usage?: TokenUsage
+      readonly turn?: number
+      readonly step?: number
+      /** Epoch milliseconds from the durable DSH event. */
+      readonly time?: number
+      /** rc.8 finalizes a delivered prefix when cancellation interrupts a step. */
+      readonly interrupted?: true
+    }
+  | {
+      /** DSH `assistant/attempt`; settles a non-visible retry attempt. */
+      readonly type: 'assistant.attempt'
+      readonly sessionId: string
+      readonly turn: number
+      readonly step: number
+      /** Last structured usage sample embedded in this attempt's durable stream. */
+      readonly usage?: TokenUsage
+      /** Epoch milliseconds from the durable DSH event. */
+      readonly time?: number
+    }
+  | {
+      /** DSH `deliverables/presented`; source files remain at their current workspace paths. */
+      readonly type: 'deliverables.presented'
+      readonly sessionId: string
+      readonly turn: number
+      readonly callId: string
+      readonly files: readonly PresentedFileView[]
+    }
+  | {
+      /** DSH `step/start`; opens the assistant timing boundary. */
+      readonly type: 'step.started'
+      readonly sessionId: string
+      readonly turn: number
+      readonly step: number
+      /** Epoch milliseconds from the durable DSH event. */
+      readonly time?: number
+    }
+  | {
+      /** DSH `step/end`; closes an interrupted timing boundary. */
+      readonly type: 'step.ended'
+      readonly sessionId: string
+      readonly turn: number
+      readonly step: number
+      /** Epoch milliseconds from the durable DSH event. */
+      readonly time?: number
+    }
+  | { readonly type: 'tool.updated'; readonly sessionId: string; readonly tool: ToolCallView }
+  | {
+      readonly type: 'tool.preparing'
+      readonly sessionId: string
+      readonly callId: string
+      readonly toolName: string
+      readonly turn: number
+      readonly step: number
+      readonly attemptId: string
+      readonly updateIndex: number
+      readonly description?: string
+      /** Host converts this to an owned workspace-relative display path. */
+      readonly filePath?: string
+      readonly contentCharacters?: number
+    }
+  | { readonly type: 'permission.requested'; readonly request: PermissionRequest }
+  | { readonly type: 'question.requested'; readonly question: UserQuestion }
+  | {
+      readonly type: 'permission.resolved'
+      readonly sessionId: string
+      readonly requestId: string
+      readonly outcome?: string
+    }
+  | {
+      readonly type: 'question.resolved'
+      readonly sessionId: string
+      readonly questionRpcId?: string
+      readonly questionId?: string
+      readonly outcome?: string
+    }
+  | { readonly type: 'goal.updated'; readonly sessionId: string; readonly goals: readonly GoalView[] }
+  | { readonly type: 'todo.updated'; readonly sessionId: string; readonly todos: readonly TodoView[] }
+  | {
+      readonly type: 'compaction.updated'
+      readonly sessionId: string
+      readonly compaction: CompactionView
+    }
+  | { readonly type: 'model.retry'; readonly retry: ModelRetrySignal }
+  | { readonly type: 'jobs.updated'; readonly sessionId: string; readonly jobs: readonly JobView[] }
+  | {
+      readonly type: 'job.follow.updated'
+      readonly sessionId: string
+      readonly jobId: string
+      readonly followId: string
+      readonly frame: JobFollowFrame
+    }
+  | {
+      readonly type: 'job.follow.failed'
+      readonly sessionId: string
+      readonly jobId: string
+      readonly followId: string
+      /** Static, non-sensitive cause category; raw adapter errors stay Host-local. */
+      readonly reason: 'stream-failed'
+    }
+  | {
+      readonly type: 'queue.updated'
+      readonly sessionId: string
+      readonly items: readonly QueuedInput[]
+      /** Complete queue projection cut, present on DSH alpha171+ wires. */
+      readonly asOfSequence?: number
+    }
+  | { readonly type: 'workflow.started'; readonly sessionId: string; readonly workflow: WorkflowSummary }
+  | {
+      readonly type: 'workflow.member.started'
+      readonly sessionId: string
+      readonly runId: string
+      readonly phase: string | null
+      readonly member: WorkflowSummary['stages'][number]['members'][number]
+    }
+  | {
+      readonly type: 'workflow.member.ended'
+      readonly sessionId: string
+      readonly runId: string
+      readonly seq: number
+      readonly outcome: 'completed' | 'failed' | 'cancelled'
+    }
+  | {
+      readonly type: 'workflow.ended'
+      readonly sessionId: string
+      readonly runId: string
+      readonly stopReason: 'completed' | 'cancelled' | 'error'
+    }
+  | { readonly type: 'team.updated'; readonly sessionId: string; readonly activity: TeamActivityView }
+  | {
+      /** Parent-owned durable subagent discovery fact; the full catalog is read separately. */
+      readonly type: 'subagent.catalog.updated'
+      readonly sessionId: string
+      readonly entry: SubagentCatalogEntryFact
+    }
+  | {
+      readonly type: 'session.subscribed'
+      readonly sessionId: string
+      readonly lastSequence: number
+      /**
+       * Whether this subscription also reset the process-local control-plane
+       * baseline. Alpha follows Session history separately from queue/jobs and
+       * interaction streams, so its follow subscription must not clear those
+       * live values in the Webview.
+       */
+      readonly controlBaseline?: boolean
+      readonly projection?: SessionProjectionSnapshot
+    }
+  /**
+   * Internal durable watermark for an upstream row that must not enter the
+   * human transcript: a `system/message` prompt, or a surface replacement copy
+   * that restates a shadowed range for the model alone. The sequence stays
+   * visible to gap detection; the content never leaves the Host.
+   */
+  | { readonly type: 'session.system'; readonly sessionId: string }
+  /** Complete process-local projection set from one alpha171 control generation. */
+  | {
+      readonly type: 'session.projection.baseline'
+      readonly projections: Readonly<Record<string, SessionProjectionSnapshot>>
+    }
+  | {
+      readonly type: 'session.projection'
+      readonly sessionId: string
+      readonly key: string
+      readonly value: unknown
+    }
+  | {
+      readonly type: 'session.gap'
+      readonly sessionId: string
+      readonly fromSequence: number
+      readonly toSequence: number
+    }
+  | { readonly type: 'workspace.changed'; readonly workspaceId?: string }
+  | { readonly type: 'workspace.removed'; readonly workspaceId?: string }
+  | { readonly type: 'workspace.order.changed'; readonly workspaceIds: readonly string[] }
+  | { readonly type: 'archived.sessions.changed'; readonly sessionIds: readonly string[] }
+  | { readonly type: 'remote.event'; readonly name: string; readonly args: readonly unknown[] }
+  | { readonly type: 'connection.lost'; readonly reason: string }
+  | { readonly type: 'connection.restored' }
+  | {
+      readonly type: 'notice'
+      /** Host-generated transport reminder, cleared when its session resubscribes. */
+      readonly transient?: 'connection'
+      readonly sessionId?: string
+      readonly level: 'info' | 'warning' | 'error'
+      readonly text: string
+      /** Structured `/command` input from a DSH command/run lifecycle. */
+      readonly commandInput?: string
+      /** Structured command name; keeps control-plane filtering out of text parsing. */
+      readonly commandName?: string
+      /** DSH command lifecycle identity shared by command/run and command/done. */
+      readonly commandId?: string
+      readonly commandPhase?: 'run' | 'done'
+    }
+  | {
+      readonly type: 'unknown'
+      readonly sessionId?: string
+      readonly name: string
+      readonly payload: unknown
+    }
+
+/** Transport sequence metadata is optional for host-level notices but is
+ * mandatory at runtime for sequenced session frames. Keeping it outside the
+ * payload union lets older consumers continue handling the same event kinds. */
+export type BackendEvent = BackendEventPayload & {
+  readonly sequence?: number
+  /** Historical rows from an authoritative follow snapshot, rather than live activity. */
+  readonly replayed?: true
+}

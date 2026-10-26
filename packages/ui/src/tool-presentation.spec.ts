@@ -1,0 +1,231 @@
+import { describe, expect, it } from 'vitest'
+import type { ToolCallView } from '@dsh-vscode/domain'
+import { formatToolText, toolPresentation } from './tool-presentation.js'
+
+function tool(overrides: Partial<ToolCallView> = {}): ToolCallView {
+  return {
+    id: 'call-1',
+    name: 'subagent',
+    category: 'tool',
+    title: 'Tool',
+    status: 'completed',
+    metadata: {},
+    ...overrides,
+  }
+}
+
+describe('toolPresentation', () => {
+  it('turns a subagent request and transport result into user-facing sections', () => {
+    const presentation = toolPresentation(
+      tool({
+        inputSummary: JSON.stringify({
+          description: '子代理功能演示任务',
+          prompt: '列出喜欢的语言并完成计算。',
+        }),
+        outputSummary: JSON.stringify({
+          source: { kind: 'tool', callId: 'call-secret' },
+          content: [
+            {
+              type: 'tool-result',
+              toolCallId: 'call-secret',
+              content: [{ type: 'text', text: 'started subagent child-secret-id' }],
+              isError: false,
+            },
+          ],
+          role: 'user',
+          id: 'message-secret-id',
+        }),
+      }),
+    )
+
+    expect(presentation).toEqual({
+      title: 'Subagent',
+      summary: 'Task · 子代理功能演示任务',
+      request: [
+        { label: 'Task', content: '子代理功能演示任务' },
+        { label: 'Instructions', content: '列出喜欢的语言并完成计算。' },
+      ],
+      response: [{ label: 'Result', content: 'Subagent started successfully.' }],
+    })
+    expect(JSON.stringify(presentation)).not.toContain('call-secret')
+    expect(JSON.stringify(presentation)).not.toContain('message-secret-id')
+  })
+
+  it('formats unknown tool objects without exposing protocol identifiers or raw JSON', () => {
+    const presentation = toolPresentation(
+      tool({
+        name: 'workspace_search',
+        title: 'Search workspace',
+        inputSummary: JSON.stringify({
+          query: 'ToolCard',
+          requestId: 'request-secret',
+          options: { caseSensitive: true, sessionId: 'session-secret' },
+        }),
+        outputSummary: JSON.stringify({
+          content: [{ type: 'text', text: '3 matches' }],
+          role: 'user',
+        }),
+      }),
+    )
+
+    expect(presentation.title).toBe('Search workspace')
+    expect(presentation.request).toEqual([
+      { label: 'Query', content: 'ToolCard' },
+      { label: 'Options · Case sensitive', content: 'true' },
+    ])
+    expect(presentation.response).toEqual([{ label: 'Result', content: '3 matches' }])
+    expect(JSON.stringify(presentation)).not.toContain('request-secret')
+    expect(JSON.stringify(presentation)).not.toContain('session-secret')
+  })
+
+  it('wraps Python-style question payloads instead of exposing native object reprs', () => {
+    const presentation = toolPresentation(
+      tool({
+        name: 'ask_user_question',
+        title: 'Question',
+        inputSummary: "{'questions': [{'id': 'today_temperature', 'question': 'How warm?'}]}",
+        outputSummary: "{'answers': [{'id': 'today_temperature', 'selected': ['温和 (15-25°C)']}]} ",
+      }),
+    )
+
+    expect(presentation.request).toEqual([{ label: 'Questions', content: '• Question: How warm?' }])
+    expect(presentation.response).toEqual([{ label: 'Answers', content: '• Selected: • 温和 (15-25°C)' }])
+    expect(JSON.stringify(presentation)).not.toContain("{'answers'")
+  })
+
+  it('localizes built-in question names and payload fields when the host supplies a locale', () => {
+    const zh: Readonly<Record<string, string>> = {
+      'presentation.tool.askUserQuestion': '询问用户',
+      'presentation.field.questions': '问题',
+      'presentation.field.question': '问题',
+      'presentation.field.options': '选项',
+      'presentation.field.label': '标签',
+    }
+    const presentation = toolPresentation(
+      tool({
+        name: 'ask_user_question',
+        title: 'ask_user_question',
+        inputSummary: JSON.stringify({
+          questions: [{ question: '你喜欢什么？', options: [{ label: '茶' }] }],
+        }),
+      }),
+      (key) => zh[key] ?? key,
+    )
+
+    expect(presentation.title).toBe('询问用户')
+    expect(presentation.request[0]?.label).toBe('问题')
+    expect(presentation.request[0]?.content).toContain('问题:')
+    expect(presentation.request[0]?.content).toContain('标签:')
+  })
+
+  it('formats the double-quoted result emitted by the question tool', () => {
+    const presentation = toolPresentation(
+      tool({
+        name: 'question',
+        title: '问题',
+        outputSummary: '{"answers":[{"id":"today_temperature","selected":["温和 (15-25°C)"]}]}',
+      }),
+    )
+
+    expect(presentation.response[0]?.label).toBe('Answers')
+    expect(presentation.response[0]?.content).toContain('温和 (15-25°C)')
+    // Assert on the rendered string: `JSON.stringify` escapes the quotes, so a
+    // raw payload would slip past a `not.toContain('{"answers"')` check there.
+    expect(presentation.response[0]?.content).not.toContain('{"answers"')
+  })
+
+  it('does not leak a structured payload nested inside a tool-result text block', () => {
+    const presentation = toolPresentation(
+      tool({
+        name: 'question',
+        title: 'question',
+        outputSummary: JSON.stringify({
+          content: [{ type: 'text', text: '{"answers":[{"selected":["yes"]}]}' }],
+        }),
+      }),
+    )
+
+    expect(presentation.response[0]?.content).toContain('yes')
+    expect(presentation.response[0]?.content).not.toContain('{"answers"')
+  })
+
+  it('formats a structured result even when a bridge prepends a status line', () => {
+    const presentation = toolPresentation(
+      tool({
+        name: 'question',
+        title: '问题',
+        outputSummary: 'Tool completed: {"answers":[{"selected":["yes"]}]}',
+      }),
+    )
+
+    expect(presentation.response[0]?.content).toContain('Tool completed:')
+    expect(presentation.response[0]?.content).toContain('Answers')
+    expect(presentation.response[0]?.content).not.toContain('{"answers"')
+  })
+})
+
+describe('formatToolText', () => {
+  it('keeps the trailing text that follows an embedded structured literal', () => {
+    // A tool error whose actionable tail sits after a bracketed list must not
+    // lose that tail: the reader needs to know which value was rejected.
+    expect(formatToolText('Expected one of [read, write] but got "x"')).toBe(
+      'Expected one of\n• read\n• write\nbut got "x"',
+    )
+  })
+
+  it('keeps a status suffix that follows a prefixed JSON result', () => {
+    const formatted = formatToolText('Tool completed: {"answers":[{"selected":["yes"]}]} — 12 ms')
+    expect(formatted).toContain('Tool completed:')
+    expect(formatted).toContain('Answers')
+    expect(formatted).toContain('12 ms')
+  })
+
+  it('returns exactly the formatted value when the whole text is structured', () => {
+    expect(formatToolText('{"answers":[{"selected":["yes"]}]}')).toBe('Answers: • Selected: • yes')
+  })
+
+  it('leaves prose with an unbalanced bracket untouched', () => {
+    const source = 'Use [Ctrl+C to copy'
+    expect(formatToolText(source)).toBe(source)
+  })
+
+  it('returns undefined for an empty or blank value', () => {
+    expect(formatToolText(undefined)).toBeUndefined()
+    expect(formatToolText('   ')).toBeUndefined()
+  })
+
+  it('keeps a tool result and a tool failure the host sent whole', () => {
+    // DSH caps neither a tool result nor a tool failure before the protocol
+    // layer, and the error section is the only surface for the failure text, so
+    // anything this boundary shortened would be the reader's whole diagnosis.
+    const result = Array.from(
+      { length: 80 },
+      (_, index) => `row ${index + 1}: the tool returned this line to the caller`,
+    ).join('\n')
+    const failure = `Exit code 1: 120 compile errors\n${'compile-error detail\n'.repeat(120)}`.trimEnd()
+    expect(result.length).toBeGreaterThan(2_000)
+    expect(failure.length).toBeGreaterThan(2_000)
+
+    const presentation = toolPresentation(
+      tool({ name: 'workspace_search', title: 'Search', outputSummary: result }),
+    )
+
+    expect(presentation.response).toEqual([{ label: 'Result', content: result }])
+    expect(formatToolText(failure)).toBe(failure)
+  })
+
+  it('marks a list the formatter capped instead of dropping its tail silently', () => {
+    const presentation = toolPresentation(
+      tool({
+        name: 'workspace_search',
+        title: 'Search',
+        outputSummary: JSON.stringify({ rows: Array.from({ length: 100 }, (_, index) => ({ index })) }),
+      }),
+    )
+
+    const content = presentation.response[0]?.content ?? ''
+    expect(content).toContain('• Index: 63')
+    expect(content).not.toContain('• Index: 64')
+    expect(content).toContain('… (36 more)')
+  })
+})

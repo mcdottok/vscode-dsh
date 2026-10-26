@@ -1,0 +1,11 @@
+@import './compatibility.css';
+/* Ordered cascade entry. Keep fragment order stable; feature refinements follow their base rules. */
+@import './app/01-foundation.css';
+@import './app/02-conversation.css';
+@import './app/03-trajectory-and-messages.css';
+@import './app/04-tool-timeline.css';
+@import './app/05-goals-and-interactions.css';
+@import './app/06-composer.css';
+@import './app/07-overlays-and-settings.css';
+@import './app/08-responsive-surfaces.css';
+@import './app/09-plugins.css';

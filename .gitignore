@@ -1,0 +1,70 @@
+node_modules/
+dist/
+coverage/
+*.vsix
+*.log
+*.tsbuildinfo
+artifacts/
+.DS_Store
+Thumbs.db
+.env
+.env.*
+!.env.example
+
+# Generated Webview assets copied into the extension package by Vite.
+apps/extension/media/
+apps/extension/resources/editor-companion.tgz
+apps/extension/resources/editor-companion-runtime.mjs
+apps/extension/resources/editor-companion-build.json
+
+# VS Code test/download caches.
+.vscode-test/
+.test-workspace/
+
+# Local working notes that must never be committed (see AGENTS.md).
+LOCAL_*.md
+.dsh
+.dsh/agents/
+.github/agents
+.github/agents/dsh-maintainer.agent.md
+scripts/build.sh
+
+# Local caches, diagnostics, and temporary archives.
+.cache/
+.pnpm-store/
+.codegraph/
+playwright-report/
+test-results/
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*.swp
+*.swo
+*.bundle
+
+# Local verification notes and implementation plans (not distributable docs).
+/V1_VALIDATION.md
+/DSH_VSCODE_IMPLEMENTATION_PLAN.md
+
+# Local credentials and signing material.
+*.pem
+*.key
+*.p12
+*.pfx
+.envrc
+
+# Private environment and local investigation material
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+coverage/
+.cache/
+.DS_Store
+Thumbs.db
+LOCAL_*.md

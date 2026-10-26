@@ -1,0 +1,322 @@
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactElement } from 'react'
+import type { ChangeDetail, ChangeReviewState, ChangeSetFile } from '@dsh-vscode/domain'
+
+import { useI18n } from '../../i18n.js'
+import { useViewportMenuPosition } from '../../components/common/useViewportMenuPosition.js'
+import { Icon } from '../../ui/Icon.js'
+
+export interface ChangesDrawerProps {
+  readonly changes: readonly ChangeSetFile[]
+  readonly loading: boolean
+  readonly refreshFailed?: boolean
+  readonly onRefresh: () => Promise<void>
+  readonly onOpen: (changeId: string) => Promise<void>
+  readonly onDetail: (changeId: string) => Promise<ChangeDetail | undefined>
+  readonly onMarkReviewed: (
+    changeId: string,
+    reviewState: ChangeReviewState,
+  ) => Promise<ChangeSetFile | undefined>
+}
+
+/** Session-scoped structured change review popover. It never renders model text as change evidence. */
+export function ChangesDrawer(props: ChangesDrawerProps): ReactElement | null {
+  const { t } = useI18n()
+  const [open, setOpen] = useState(false)
+  const [detail, setDetail] = useState<ChangeDetail | undefined>()
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [reviewing, setReviewing] = useState<ChangeReviewState | undefined>()
+  const [reviewError, setReviewError] = useState(false)
+  const [openError, setOpenError] = useState(false)
+  const [refreshError, setRefreshError] = useState(false)
+  const [detailError, setDetailError] = useState(false)
+  const detailRequestGeneration = useRef(0)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  // Anchored to the trigger, not the viewport top: the narrow-sidebar topbar
+  // may wrap to several lines under the 52rem rule.
+  const menuRef = useRef<HTMLDivElement>(null)
+  const menuPosition = useViewportMenuPosition({
+    open,
+    anchorRef: triggerRef,
+    menuRef,
+    placement: 'below',
+    align: 'end',
+  })
+  /** The row control that opened the detail takes the keyboard back from it. */
+  const detailTriggerRef = useRef<HTMLElement | null>(null)
+  const detailWasOpen = useRef(false)
+  const closePopover = useCallback((): void => {
+    detailRequestGeneration.current += 1
+    setDetailLoading(false)
+    setDetail(undefined)
+    setDetailError(false)
+    setOpen(false)
+  }, [])
+
+  useEffect(() => {
+    if (!open) return
+    const closeOutside = (event: PointerEvent): void => {
+      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) closePopover()
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    return () => document.removeEventListener('pointerdown', closeOutside)
+  }, [closePopover, open])
+
+  useEffect(() => {
+    if (detailWasOpen.current && detail === undefined) {
+      const target = detailTriggerRef.current
+      detailTriggerRef.current = null
+      if (target !== null && target.isConnected) target.focus()
+    }
+    detailWasOpen.current = detail !== undefined
+  }, [detail])
+
+  const refresh = (): void => {
+    if (refreshing) return
+    setRefreshing(true)
+    setRefreshError(false)
+    void props
+      .onRefresh()
+      .catch(() => setRefreshError(true))
+      .finally(() => setRefreshing(false))
+  }
+  const openDetail = (changeId: string): void => {
+    const generation = ++detailRequestGeneration.current
+    setDetailLoading(true)
+    setDetailError(false)
+    void props
+      .onDetail(changeId)
+      .then((next) => {
+        if (generation === detailRequestGeneration.current) {
+          setDetail(next)
+          setDetailError(next === undefined)
+        }
+      })
+      .catch(() => {
+        if (generation === detailRequestGeneration.current) {
+          setDetail(undefined)
+          setDetailError(true)
+        }
+      })
+      .finally(() => {
+        if (generation === detailRequestGeneration.current) setDetailLoading(false)
+      })
+  }
+  const markDetailReviewed = (
+    reviewState: Extract<ChangeReviewState, 'accepted' | 'rejected' | 'needs-attention'>,
+  ): void => {
+    if (detail === undefined || reviewing !== undefined) return
+    setReviewing(reviewState)
+    setReviewError(false)
+    void props
+      .onMarkReviewed(detail.changeId, reviewState)
+      .then((next) => {
+        if (next !== undefined)
+          setDetail((current) => (current === undefined ? current : { ...current, ...next }))
+        else setReviewError(true)
+      })
+      .catch(() => setReviewError(true))
+      .finally(() => setReviewing(undefined))
+  }
+  const closeDetail = (): void => {
+    // The generation bump keeps a late in-flight detail response from
+    // repopulating a preview the user has already dismissed.
+    detailRequestGeneration.current += 1
+    setDetail(undefined)
+    setDetailLoading(false)
+  }
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== 'Escape' || !open) return
+    event.preventDefault()
+    // The diff detail is the inner layer: the first Escape returns to the
+    // list with its scroll position intact, and only the next one dismisses
+    // the popover itself.
+    if (detail !== undefined || detailLoading) {
+      closeDetail()
+      return
+    }
+    closePopover()
+    triggerRef.current?.focus()
+  }
+
+  if (props.changes.length === 0 && !props.loading && !props.refreshFailed) return null
+  const countLabel = t('changes.count', { count: props.changes.length })
+  return (
+    <div ref={rootRef} className="dsh-changes-popover" onKeyDown={onKeyDown}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="dsh-changes-popover__trigger"
+        aria-expanded={open}
+        aria-label={countLabel}
+        onClick={() => {
+          setOpenError(false)
+          if (open) closePopover()
+          else setOpen(true)
+        }}
+      >
+        <Icon name="branch" />
+        <span>{countLabel}</span>
+        <Icon name="chevron-down" />
+      </button>
+      {props.refreshFailed ? (
+        <div className="dsh-changes-popover__error" role="alert">
+          {t('changes.stale')}
+        </div>
+      ) : null}
+      {open ? (
+        <div
+          ref={menuRef}
+          className="dsh-changes-popover__menu"
+          style={menuPosition}
+          role="dialog"
+          aria-label={t('changes.list.aria')}
+        >
+          <div className="dsh-changes-popover__header">
+            <strong>{t('changes.title')}</strong>
+            <button
+              className="dsh-icon-button"
+              type="button"
+              aria-label={t('changes.refresh')}
+              title={t('changes.refresh')}
+              disabled={refreshing || props.loading}
+              onClick={refresh}
+            >
+              <Icon name="refresh" />
+            </button>
+          </div>
+          {openError ? (
+            <div className="dsh-changes-popover__error" role="alert">
+              {t('changes.openFailed')}
+            </div>
+          ) : null}
+          {props.loading && props.changes.length === 0 ? (
+            <div className="dsh-changes-popover__status" role="status">
+              {t('changes.loading')}
+            </div>
+          ) : null}
+          {props.changes.length === 0 && !props.loading ? (
+            <div className="dsh-changes-popover__status">{t('changes.empty')}</div>
+          ) : null}
+          <ul className="dsh-changes-popover__rows">
+            {props.changes.map((change) => (
+              <li key={change.changeId} className="dsh-changes-popover__row">
+                <button
+                  type="button"
+                  className="dsh-changes-popover__row-main"
+                  title={change.relativePath}
+                  onClick={() => {
+                    setOpenError(false)
+                    setReviewError(false)
+                    void props.onOpen(change.changeId).catch(() => setOpenError(true))
+                    if (change.reviewState === 'unreviewed')
+                      void props.onMarkReviewed(change.changeId, 'viewed').catch(() => setReviewError(true))
+                  }}
+                >
+                  <Icon name={change.applicationState === 'failed' ? 'alert' : 'file'} />
+                  <span className="dsh-changes-popover__path">
+                    <span className="dsh-sr-only">{change.relativePath}</span>
+                    <strong aria-hidden="true">{change.relativePath.split(/[\\/]/u).at(-1)}</strong>
+                    <small aria-hidden="true">
+                      {change.relativePath.replace(/(?:^|[\\/])[^\\/]*$/u, '')}
+                    </small>
+                  </span>
+                  <span className="dsh-changes-popover__status-label">
+                    {t(`changes.status.${change.status}`)}
+                  </span>
+                  <span className="dsh-changes-popover__evidence">
+                    {t(`changes.evidence.${change.evidence}`)}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="dsh-icon-button"
+                  aria-label={t('changes.detail', { path: change.relativePath })}
+                  title={t('changes.detail', { path: change.relativePath })}
+                  onClick={(event) => {
+                    detailTriggerRef.current = event.currentTarget
+                    openDetail(change.changeId)
+                  }}
+                >
+                  <Icon name="search" />
+                </button>
+              </li>
+            ))}
+          </ul>
+          {detailLoading ? (
+            <div className="dsh-changes-popover__status" role="status">
+              {t('changes.detailLoading')}
+            </div>
+          ) : null}
+          {detailError ? (
+            <div className="dsh-changes-popover__error" role="alert">
+              {t('changes.detailFailed')}
+            </div>
+          ) : null}
+          {detail === undefined ? null : (
+            <section className="dsh-changes-popover__detail" aria-label={t('changes.detailTitle')}>
+              <div className="dsh-changes-popover__detail-header">
+                <strong>{detail.relativePath}</strong>
+                <button
+                  className="dsh-icon-button"
+                  type="button"
+                  aria-label={t('changes.closeDetail')}
+                  onClick={closeDetail}
+                >
+                  <Icon name="close" />
+                </button>
+              </div>
+              <div className="dsh-changes-popover__detail-meta">
+                <span>{t(`changes.evidence.${detail.evidence}`)}</span>
+                <span>{t(`changes.application.${detail.applicationState}`)}</span>
+                <span>{t(`changes.review.${detail.reviewState}`)}</span>
+              </div>
+              <pre tabIndex={0}>{detail.redactedDiff ?? t('changes.noDiff')}</pre>
+              <div
+                className="dsh-changes-popover__review-actions"
+                role="group"
+                aria-label={t('changes.reviewActions')}
+              >
+                <button
+                  type="button"
+                  className="dsh-button dsh-button--primary dsh-button--compact"
+                  disabled={reviewing !== undefined}
+                  onClick={() => markDetailReviewed('accepted')}
+                >
+                  {reviewing === 'accepted' ? t('changes.reviewing') : t('changes.accept')}
+                </button>
+                <button
+                  type="button"
+                  className="dsh-button dsh-button--danger dsh-button--compact"
+                  disabled={reviewing !== undefined}
+                  onClick={() => markDetailReviewed('rejected')}
+                >
+                  {reviewing === 'rejected' ? t('changes.reviewing') : t('changes.reject')}
+                </button>
+                <button
+                  type="button"
+                  className="dsh-button dsh-button--secondary dsh-button--compact"
+                  disabled={reviewing !== undefined}
+                  onClick={() => markDetailReviewed('needs-attention')}
+                >
+                  {reviewing === 'needs-attention' ? t('changes.reviewing') : t('changes.needsAttention')}
+                </button>
+              </div>
+            </section>
+          )}
+          {reviewError ? (
+            <div className="dsh-changes-popover__error" role="alert">
+              {t('changes.reviewFailed')}
+            </div>
+          ) : null}
+          {refreshError ? (
+            <div className="dsh-changes-popover__error" role="alert">
+              {t('changes.refreshFailed')}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}

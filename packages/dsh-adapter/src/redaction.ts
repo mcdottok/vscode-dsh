@@ -1,0 +1,180 @@
+/**
+ * Version-neutral bounded redaction shared by transport diagnostics and
+ * unknown-event projections. The field set intentionally takes the union of
+ * the adapter and Extension Host deny lists so a newly forwarded payload does
+ * not become a secret leak merely because it came through another path.
+ */
+const SENSITIVE_FIELDS = new Set([
+  'key',
+  'apikey',
+  'api_key',
+  'authorization',
+  'accesstoken',
+  'access_token',
+  'refreshtoken',
+  'refresh_token',
+  'authtoken',
+  'auth_token',
+  'token',
+  'secret',
+  'secretkey',
+  'secret_key',
+  'privatekey',
+  'private_key',
+  'password',
+  'prompt',
+  'body',
+  'response',
+  'input',
+  'output',
+  'command',
+  'commandline',
+  'endpoint',
+  'baseurl',
+  'path',
+  'cwd',
+  'directory',
+  'executable',
+  'pid',
+  'stack',
+  'processid',
+  'process_id',
+  'executablepath',
+  'executable_path',
+  'managedport',
+  'managed_port',
+  'attachports',
+  'attach_ports',
+  'serverurl',
+  'server_url',
+])
+
+// A credential reaches a diagnostic in three shapes, and all three have to go:
+//
+//   `token=abc`, `api_key: abc`   -- a labelled pair, `:` or `=`
+//   `?key=abc`, `&key=abc`        -- a URL query, which the label pattern
+//                                    above misses because `key` alone is not
+//                                    in the keyword alternation (it would match
+//                                    far too much prose)
+//   `Bearer abc`, `Basic abc`     -- an auth scheme, which carries the secret
+//                                    with no label at all
+//
+// The replacement preserves the separator it matched. Rewriting `=` as `:`
+// would turn `?api_key=...` into `?api_key: ...`, inventing a URL the user
+// never configured; a redaction has to stay recognisable as the value it
+// replaced.
+const SENSITIVE_TEXT_PATTERN =
+  /\b((?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|auth[_ -]?token|authorization|password|secret(?:[_ -]?key)?|private[_ -]?key|token|prompt|body|response)\b["']?\s*[:=]\s*)(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;&]+)/giu
+
+/** `?key=…` / `&api_key=…`: a query parameter whose name is a bare credential word. */
+const QUERY_CREDENTIAL_PATTERN =
+  /([?&](?:key|apikey|api_key|access_token|refresh_token|auth_token|token|secret|password|auth)=)[^&\s]+/giu
+
+/**
+ * A labelled auth header: `Authorization: Bearer <token>`. The label pattern
+ * below would stop at the scheme and leave the token behind, so this pair is
+ * matched as one unit before it runs. No length gate here: the label already
+ * proves the value is a credential, and real tokens are often short.
+ */
+const LABELLED_AUTH_SCHEME_PATTERN = /\b(authorization\s*[:=]\s*)(?:bearer|basic|token)\s+\S+/giu
+
+const LABELLED_AUTH_SCHEME_REDACTION = '$1[redacted]'
+
+/**
+ * A bare scheme: `Bearer <token>` with no label at all. `bearer` and `basic`
+ * are auth-scheme names and never appear as prose directly before a word, so
+ * no length gate is needed; `token` is excluded precisely because it reads as
+ * ordinary English ("the token is missing") and would over-redact.
+ */
+const AUTH_SCHEME_PATTERN = /\b(bearer|basic)\s+\S+/giu
+
+const AUTH_SCHEME_REDACTION = '$1 [redacted]'
+
+// A transport failure quotes the socket, lock file or executable the OS refused,
+// so the raw message names the user's home directory and drive layout. Absolute
+// paths are on the Webview's deny list, and this scrubber is the shared gate the
+// Adapter and the Extension Host both rely on, so it has to drop them too.
+//
+// Only an absolute path is matched, and each alternative needs a real path start
+// (the string start, or a character that cannot continue an identifier or a
+// URL). That keeps a relative identifier such as `src/bundle.js` — what cards are
+// documented to show — and leaves `https://host/...` readable, because the
+// origin is what makes an endpoint failure actionable and the credential rule
+// below already handles its userinfo. The cost is that a path inside a URL is
+// not rewritten; endpoint values are separately on the deny list, so that path
+// is not the route that carries a directory layout to the Webview.
+const ABSOLUTE_PATH_PATTERN =
+  /(?<![A-Za-z0-9_.~%:/-])(?:[A-Za-z]:[\\/]|\\\\|\/)(?:[^\s\\/"'<>|:*?]+[\\/])*[^\s\\/"'<>|:*?]*/gu
+
+// OS errors quote paths containing spaces. Match the entire quoted value
+// before the unquoted rule, and include file URIs that its URL guard excludes.
+const QUOTED_ABSOLUTE_PATH_PATTERN =
+  /"(?:[A-Za-z]:[\\/]|\\\\|\/|file:\/\/)[^"\r\n]*"|'(?:[A-Za-z]:[\\/]|\\\\|\/|file:\/\/)[^'\r\n]*'/giu
+const FILE_URI_PATTERN = /\bfile:\/\/[^\s"'<>]+/giu
+
+const PATH_REDACTION = '[path]'
+
+const MAX_SAFE_PAYLOAD_DEPTH = 4
+const MAX_SAFE_PAYLOAD_ITEMS = 32
+const MAX_SAFE_PAYLOAD_KEYS = 64
+const MAX_SAFE_PAYLOAD_STRING = 512
+
+/** Redact credentials embedded in URLs and sensitive key/value text. */
+export function redactText(value: string, maximumLength: number): string {
+  const compact = value.replace(/\s+/gu, ' ').trim()
+  if (compact === '') return ''
+  return redactLine(compact).slice(0, maximumLength)
+}
+
+/**
+ * Redact multi-line content (unified diffs, editor previews) without changing
+ * its shape: `redactText` folds every run of whitespace into one space, which
+ * turns a diff or a code excerpt into a single unreadable line. Indentation is
+ * content here, so only credentials and sensitive key/value text are replaced.
+ */
+export function redactMultilineText(value: string, maximumLength: number): string {
+  return value
+    .replace(/\r\n?/gu, '\n')
+    .split('\n')
+    .map((line) => redactLine(line))
+    .join('\n')
+    .slice(0, maximumLength)
+}
+
+function redactLine(line: string): string {
+  return line
+    .replace(QUOTED_ABSOLUTE_PATH_PATTERN, PATH_REDACTION)
+    .replace(FILE_URI_PATTERN, PATH_REDACTION)
+    .replace(ABSOLUTE_PATH_PATTERN, PATH_REDACTION)
+    .replace(/(https?:\/\/)([^/\s:@]+(?::[^/\s@]*)?@)/giu, '$1[redacted]@')
+    .replace(LABELLED_AUTH_SCHEME_PATTERN, LABELLED_AUTH_SCHEME_REDACTION)
+    .replace(AUTH_SCHEME_PATTERN, AUTH_SCHEME_REDACTION)
+    .replace(QUERY_CREDENTIAL_PATTERN, '$1[redacted]')
+    .replace(SENSITIVE_TEXT_PATTERN, '$1[redacted]')
+}
+
+/** Remove sensitive fields and bound recursive unknown protocol payloads. */
+export function safePayload(value: unknown, depth = 0): unknown {
+  if (depth >= MAX_SAFE_PAYLOAD_DEPTH) return '[truncated]'
+  if (typeof value === 'string') return redactText(value, MAX_SAFE_PAYLOAD_STRING)
+  if (Array.isArray(value))
+    return value.slice(0, MAX_SAFE_PAYLOAD_ITEMS).map((entry) => safePayload(entry, depth + 1))
+  const object = record(value)
+  if (object === undefined) return value
+  const result: Record<string, unknown> = {}
+  for (const [key, entry] of Object.entries(object).slice(0, MAX_SAFE_PAYLOAD_KEYS)) {
+    if (isSensitiveField(key)) continue
+    result[key] = safePayload(entry, depth + 1)
+  }
+  return result
+}
+
+export function isSensitiveField(key: string): boolean {
+  return SENSITIVE_FIELDS.has(key.toLocaleLowerCase())
+}
+
+function record(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined
+}
