@@ -69,13 +69,11 @@ describe('native session editor drop', () => {
       selector: [{ filenamePattern: '*.dsh-chat' }],
       priority: 'default',
     })
-    expect(manifest.activationEvents).toContain('onView:dsh.sessionList')
+    expect(manifest.activationEvents).not.toContain('onView:dsh.sessionList')
     expect(manifest.contributes.views['vscode-dsh']).toEqual([
       expect.objectContaining({ id: 'dsh.chatView', type: 'webview' }),
     ])
-    expect(manifest.contributes.views['explorer']).toContainEqual(
-      expect.objectContaining({ id: 'dsh.sessionList', visibility: 'hidden' }),
-    )
+    expect(manifest.contributes.views['explorer']).toBeUndefined()
   })
 
   it('opens the accepted session in the drop group and releases the temporary editor', async () => {

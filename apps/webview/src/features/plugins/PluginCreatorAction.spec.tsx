@@ -12,7 +12,7 @@ const ready: AgentPresetRoster = {
 }
 
 describe('plugin Creator shortcut', () => {
-  it('starts the existing draft flow from the collapsed plugin panel only once', async () => {
+  it('reveals the plugin panel and starts the draft flow only once', async () => {
     let settle!: () => void
     const start = vi.fn(
       () =>
@@ -29,6 +29,8 @@ describe('plugin Creator shortcut', () => {
         }
       />,
     )
+    expect(screen.queryByRole('button', { name: 'Create a plugin' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'DSH Plugin Manager' }))
     const button = screen.getByRole('button', { name: 'Create a plugin' })
     await waitFor(() => expect(button.hasAttribute('disabled')).toBe(false))
     fireEvent.click(button)

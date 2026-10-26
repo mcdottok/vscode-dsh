@@ -69,10 +69,16 @@ export function EditorContextChips(props: EditorContextChipsProps): ReactElement
         {props.items.map((item) => {
           const range = item.ref.kind === 'selection' ? item.ref.range : undefined
           const firstLine = range === undefined ? undefined : range.start.line + 1
-          const lastLine = range === undefined ? undefined : Math.max(range.start.line + 1, range.end.line + (range.end.column === 0 ? 0 : 1))
-          const label = range === undefined
-            ? (item.label.trim() === '' ? item.ref.relativePath : item.label)
-            : `selection: ${item.ref.relativePath}:${firstLine}–${lastLine}`
+          const lastLine =
+            range === undefined
+              ? undefined
+              : Math.max(range.start.line + 1, range.end.line + (range.end.column === 0 ? 0 : 1))
+          const label =
+            range === undefined
+              ? item.label.trim() === ''
+                ? item.ref.relativePath
+                : item.label
+              : `selection: ${item.ref.relativePath}:${firstLine}–${lastLine}`
           return (
             <span
               className={`dsh-composer__context-chip${item.stale ? ' dsh-composer__context-chip--stale' : ''}`}

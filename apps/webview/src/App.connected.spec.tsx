@@ -31,7 +31,6 @@ vi.mock('./features/chat/Timeline.js', () => ({
 }))
 
 import { App } from './App.js'
-import { ConversationLayoutProvider } from './app/ConversationLayoutProvider.js'
 import { CONVERSATION_FONT_SIZE_STORAGE_KEY, THEME_PREFERENCE_STORAGE_KEY } from './app/ui-preferences.js'
 import { I18nProvider, LOCALE_EXPLICIT_STORAGE_KEY, LOCALE_STORAGE_KEY, useI18n } from './i18n.js'
 
@@ -455,16 +454,6 @@ function presetSelectionState(enabled: boolean, defaultPresetId: string | undefi
   }
 }
 
-async function selectEmptySessionPreset(presetId: string): Promise<void> {
-  await waitFor(() =>
-    expect(document.querySelector('.dsh-empty-session__preset .dsh-select-menu__trigger')).not.toBeNull(),
-  )
-  const trigger = document.querySelector('.dsh-empty-session__preset .dsh-select-menu__trigger')
-  if (trigger === null) throw new Error('preset selection did not appear after DSH settings loaded')
-  fireEvent.click(trigger)
-  fireEvent.click(screen.getByRole('option', { name: presetId }))
-}
-
 describe('App connected rendering', () => {
   it.each(['ordinary', 'approval', 'question'] as const)(
     'delivers %s Stop through the real store, protocol and Host router despite a failed model catalog',
@@ -632,14 +621,12 @@ describe('App connected rendering', () => {
     expect(screen.getByRole('main')).toBeDefined()
   })
 
-  it('shows the create-session page when DSH is connected without an active session', () => {
+  it('shows the project landing before a draft or conversation is selected', () => {
     currentStore = storeFor(connectedState(false))
     render(<App />)
-
-    expect(screen.getByRole('heading', { name: 'Create a session to begin.' })).toBeDefined()
-    expect(screen.getByRole('button', { name: 'New session here' })).toBeDefined()
-    expect(screen.queryByText('Create a session to begin.')).toBeDefined()
-    expect(document.querySelector('.dsh-empty-state')).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Choose a project to start' })).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Open folder' })).toBeDefined()
+    expect(screen.queryByRole('button', { name: 'New session here' })).toBeNull()
   })
 
   it('keeps sidebar composition and new-session controls available beside editor chats', () => {
@@ -711,7 +698,11 @@ describe('App connected rendering', () => {
       await Promise.resolve()
     })
 
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('Unknown /moveto'))
+    await waitFor(() =>
+      expect(document.querySelector('.dsh-toolbar-notices [role="status"]')?.textContent).toContain(
+        'Unknown /moveto',
+      ),
+    )
     expect(executeCommand).not.toHaveBeenCalled()
     expect(sendPrompt).not.toHaveBeenCalled()
   })
@@ -973,77 +964,8 @@ describe('App connected rendering', () => {
     expect(sendPrompt).toHaveBeenCalledTimes(2)
   })
 
-  it('lets the Host resolve the default after preset selection is disabled', async () => {
-    const initialState = presetSelectionState(true, 'standard')
-    const { stageSessionCalls, updateState } = renderWithMutableState(initialState)
-    await selectEmptySessionPreset('alternate')
-
-    updateState(presetSelectionState(false, 'standard'))
-    fireEvent.click(screen.getByRole('button', { name: 'New session here' }))
-
-    expect(stageSessionCalls).toEqual([['w1', undefined]])
-  })
-
-  it('tracks the Host default while the new-session page is open', async () => {
-    const initialState = presetSelectionState(true, 'standard')
-    const { stageSessionCalls, updateState } = renderWithMutableState(initialState)
-    updateState(presetSelectionState(true, 'updated-default'))
-    await waitFor(() =>
-      expect(document.querySelector('.dsh-empty-session__preset .dsh-select-menu__trigger')).not.toBeNull(),
-    )
-    const presetPicker = document.querySelector('.dsh-empty-session__preset .dsh-select-menu__trigger')
-    expect(presetPicker?.textContent ?? '').toContain('updated-default')
-    fireEvent.click(screen.getByRole('button', { name: 'New session here' }))
-
-    expect(stageSessionCalls).toEqual([['w1', undefined]])
-  })
-
-  it('uses a manual preset for one new task, then returns to the latest Host default', async () => {
-    const { stageSessionCalls, updateState } = renderWithMutableState(presetSelectionState(true, 'standard'))
-    await selectEmptySessionPreset('alternate')
-    fireEvent.click(screen.getByRole('button', { name: 'New session here' }))
-
-    updateState(connectedState(true))
-    updateState(presetSelectionState(true, 'updated-default'))
-    await waitFor(() =>
-      expect(document.querySelector('.dsh-empty-session__preset .dsh-select-menu__trigger')).not.toBeNull(),
-    )
-    const presetPicker = document.querySelector('.dsh-empty-session__preset .dsh-select-menu__trigger')
-    expect(presetPicker?.textContent ?? '').toContain('updated-default')
-    fireEvent.click(screen.getByRole('button', { name: 'New session here' }))
-
-    expect(stageSessionCalls).toEqual([
-      ['w1', 'alternate'],
-      ['w1', undefined],
-    ])
-  })
-
-  it('creates through Host composition when the optional preset registry is empty', () => {
-    const state = { ...connectedState(false), presetSelectionEnabled: false, presets: [] }
-    const { stageSessionCalls } = renderWithMutableState(state)
-    const createButton = screen.getByRole('button', { name: 'New session here' })
-
-    expect((createButton as HTMLButtonElement).disabled).toBe(false)
-    fireEvent.click(createButton)
-
-    expect(stageSessionCalls).toEqual([['w1', undefined]])
-  })
-
-  it('blocks session creation when preset selection is disabled and the roster has no default', () => {
-    const { stageSessionCalls } = renderWithMutableState(presetSelectionState(false, undefined))
-    const createButton = screen.getByRole('button', { name: 'New session here' })
-
-    expect((createButton as HTMLButtonElement).disabled).toBe(true)
-    expect(
-      screen.getByText(/DSH did not provide a default preset, and preset selection is unavailable/),
-    ).toBeDefined()
-    fireEvent.click(createButton)
-
-    expect(stageSessionCalls).toEqual([])
-  })
-
   it.each([
-    ['idle', 'Preparing DSH connection'],
+    ['idle', 'DSH is not connected'],
     ['starting', 'Starting DSH'],
     ['connecting', 'Connecting to DSH'],
   ] as const)('shows connection progress instead of an empty-session message (%s)', (kind, title) => {
@@ -1056,10 +978,15 @@ describe('App connected rendering', () => {
   })
 
   it('shows catalog loading after DSH connects before workspace data arrives', () => {
-    currentStore = storeFor({ ...connectedState(false), workspaces: [] })
+    currentStore = storeFor({
+      ...connectedState(false),
+      workspaces: [],
+      sessionDirectoryStatus: 'loading',
+      sessionStartup: { kind: 'loading' },
+    })
     render(<App />)
 
-    expect(screen.getByRole('heading', { name: 'Loading sessions' })).toBeDefined()
+    expect(screen.getByRole('heading', { name: 'Loading workspaces and sessions…' })).toBeDefined()
     expect(screen.queryByText('No active session')).toBeNull()
   })
 
@@ -1292,7 +1219,10 @@ describe('App connected rendering', () => {
     // Coding Tools only removes the shipped PTC/Minimal presets upstream; it
     // never refuses a preset switch. The Host's own roster answer is the only
     // refusal that may withdraw the choice.
-    const state = presetSelectionState(true, 'standard')
+    const state = {
+      ...presetSelectionState(true, 'standard'),
+      pendingSession: { revision: 1, workspaceId: 'w1', configuration: connectedState(true).configuration! },
+    }
     const readDshSettings = vi.fn().mockResolvedValue(dshUiSettingsSnapshot(false))
     currentStore = {
       ...storeFor(state),
@@ -1302,7 +1232,7 @@ describe('App connected rendering', () => {
 
     await waitFor(() => expect(readDshSettings).toHaveBeenCalled())
     await waitFor(() =>
-      expect(document.querySelector('.dsh-empty-session__preset .dsh-select-menu__trigger')).not.toBeNull(),
+      expect(document.querySelector('.dsh-session-controls__mode .dsh-select-menu__trigger')).not.toBeNull(),
     )
   })
 
@@ -1347,12 +1277,11 @@ describe('App connected rendering', () => {
 
     render(<App />)
 
-    const updateNotice = screen.getByText('DSH update available').closest('.dsh-app__notice-summary')
-    const notices = document.querySelector('.dsh-app__notices')
-    expect(updateNotice?.parentElement).toBe(notices)
-    expect(document.querySelector('.dsh-app__notice-list')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Show notifications (2)' })).toBeDefined()
+    expect(screen.queryByRole('dialog', { name: 'Notifications' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Show notifications (2)' }))
-    expect(screen.getByText('Welcome to DSH').closest('article')?.parentElement?.parentElement).toBe(notices)
+    const notices = screen.getByRole('dialog', { name: 'Notifications' })
+    expect(within(notices).getByText('Welcome to DSH')).toBeDefined()
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss update notice' }))
     expect(screen.queryByText('DSH update available')).toBeNull()
     expect(window.localStorage.getItem('dsh-runtime-update-dismissed-version')).toBe('0.1.0-rc.9')
@@ -1374,7 +1303,9 @@ describe('App connected rendering', () => {
 
     render(<App />)
 
-    expect(screen.getByText('DSH update available').closest('.dsh-app__notice-summary')).not.toBeNull()
+    expect(document.querySelector('.dsh-toolbar-notices [role="status"]')?.textContent).toBe(
+      'DSH update available',
+    )
   })
 
   it('hides the top update notice once the latest version is installed globally', () => {
@@ -1430,88 +1361,18 @@ describe('App connected rendering', () => {
     expect(screen.queryByRole('button', { name: 'Open in Editor Area' })).toBeNull()
   })
 
-  it.each([
-    ['Sessions', 'sessions'],
-    ['Schedules', 'schedules'],
-    ['Settings', 'settings'],
-  ] as const)('opens %s from the compact conversation menu', (label, drawer) => {
-    const setDrawer = vi.fn()
-    currentStore = { ...storeFor(connectedState(true)), setDrawer }
-    render(<App />)
-
-    const tools = screen.getByRole('button', { name: 'Conversation tools' })
-    fireEvent.click(tools)
-    const menu = screen.getByRole('dialog', { name: 'Conversation tools' })
-    fireEvent.click(within(menu).getByRole('button', { name: label }))
-
-    expect(setDrawer).toHaveBeenCalledWith(drawer)
-    expect(screen.queryByRole('dialog', { name: 'Conversation tools' })).toBeNull()
-    expect(document.activeElement).toBe(tools)
-  })
-
-  it('starts a draft in the current workspace from the compact conversation menu', () => {
+  it('keeps navigation in the page header without the retired conversation tools menu', () => {
     const stageSession = vi.fn().mockResolvedValue(undefined)
-    currentStore = { ...storeFor(connectedState(true)), stageSession }
-    render(<App />)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Conversation tools' }))
-    const menu = screen.getByRole('dialog', { name: 'Conversation tools' })
-    fireEvent.click(within(menu).getByRole('button', { name: 'New Session' }))
-
-    expect(stageSession).toHaveBeenCalledWith('w1', undefined)
-    expect(screen.queryByRole('dialog', { name: 'Conversation tools' })).toBeNull()
-  })
-
-  it('keeps compact navigation available before the first draft message is sent', () => {
-    const state = connectedState(true)
     const setDrawer = vi.fn()
-    currentStore = {
-      ...storeFor({
-        ...state,
-        activeSessionId: undefined,
-        pendingSession: { revision: 1, workspaceId: 'w1', configuration: state.configuration! },
-      }),
-      setDrawer,
-    }
+    currentStore = { ...storeFor(connectedState(true)), stageSession, setDrawer }
     render(<App />)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Conversation tools' }))
-    const menu = screen.getByRole('dialog', { name: 'Conversation tools' })
-    fireEvent.click(within(menu).getByRole('button', { name: 'Sessions' }))
-
-    expect(setDrawer).toHaveBeenCalledWith('sessions')
-    expect(screen.queryByRole('dialog', { name: 'Conversation tools' })).toBeNull()
-  })
-
-  it('keeps the subagent catalog trigger visible when the host reports children', async () => {
-    const state = connectedState(true)
-    currentStore = storeFor({
-      ...state,
-      subagents: {
-        parentAvailable: true,
-        entries: [
-          {
-            kind: 'child',
-            id: 'child-1',
-            label: 'Researcher',
-            activity: 'inactive',
-            parentSessionId: 's1',
-            mode: 'continuable',
-            hasChildren: false,
-          },
-        ],
-      },
-    })
-
-    render(
-      <I18nProvider>
-        <App />
-      </I18nProvider>,
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Conversation tools' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Subagents: 1' })).toBeDefined())
-    expect(screen.getByText('Subagents')).toBeDefined()
+    expect(screen.queryByRole('button', { name: 'Conversation tools' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Export' })).toBeNull()
+    expect(screen.getByRole('tab', { name: 'Trajectory' })).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+    expect(setDrawer).toHaveBeenCalledWith('settings')
+    fireEvent.click(screen.getByRole('button', { name: 'New Session' }))
+    expect(stageSession).toHaveBeenCalledWith('w1', undefined)
   })
 
   it('renders one-shot subagent history as read-only', () => {
@@ -1610,52 +1471,6 @@ describe('App connected rendering', () => {
     expect(sendPrompt).toHaveBeenCalledWith('child-1', 'continue', [], 'queue', expect.any(AbortSignal))
   })
 
-  it('opens the named subagent task even when the current catalog does not list it', async () => {
-    const state = connectedState(true)
-    const openSession = vi.fn().mockResolvedValue(undefined)
-    const openSubagent = vi.fn().mockResolvedValue(undefined)
-    currentStore = {
-      ...storeFor({
-        ...state,
-        // Workspace-scoped task list: this child belongs to another parent, so
-        // the catalog of the session being viewed cannot name it.
-        tasks: [
-          {
-            taskId: 'subagent:other:child-2',
-            sourceId: 'child-2',
-            sessionId: 'other',
-            parentTaskId: 'session:other',
-            workspaceFolderId: 'w1',
-            kind: 'subagent',
-            title: 'Worker',
-            sessionTitle: 'Other parent',
-            status: 'running',
-            needsUserAction: false,
-            startedAt: 0,
-            updatedAt: 1,
-            childCount: 0,
-            canOpen: true,
-            canAnswer: false,
-            canSessionCancel: true,
-            ownerKind: 'unknown',
-            taskRevision: 1,
-          },
-        ],
-      }),
-      openSession,
-      openSubagent,
-    }
-
-    render(<App />)
-    fireEvent.click(screen.getByRole('button', { name: 'Conversation tools' }))
-    fireEvent.click(await screen.findByRole('button', { name: /active tasks/u }))
-    fireEvent.click(await screen.findByRole('button', { name: /Subagent/u }))
-
-    await waitFor(() => expect(openSession).toHaveBeenCalled())
-    expect(openSubagent).not.toHaveBeenCalled()
-    expect(openSession).toHaveBeenCalledWith('child-2')
-  })
-
   it('uses DSH context pressure instead of estimating tokens from rendered text', () => {
     const state = connectedState(true)
     currentStore = storeFor({
@@ -1751,7 +1566,9 @@ describe('App connected rendering', () => {
       clipboardData: { files: [file] },
     })
 
-    expect(screen.getByRole('alert').textContent).toContain('DSH image limit of 2 B')
+    expect(document.querySelector('.dsh-toolbar-notices [role="status"]')?.textContent).toContain(
+      'DSH image limit of 2 B',
+    )
     expect(ingestAttachment).not.toHaveBeenCalled()
   })
 
@@ -1784,7 +1601,9 @@ describe('App connected rendering', () => {
 
     // The unknown type only narrows what may be sent; the advertised byte
     // limit still applies to the types this Webview can produce.
-    expect(screen.getByRole('alert').textContent).toContain('DSH image limit of 2 B')
+    expect(document.querySelector('.dsh-toolbar-notices [role="status"]')?.textContent).toContain(
+      'DSH image limit of 2 B',
+    )
     expect(ingestAttachment).not.toHaveBeenCalled()
   })
 
@@ -1844,7 +1663,7 @@ describe('App connected rendering', () => {
 
     // The single image fits the per-image limit; only the message total
     // rejects it, so the adapter must never see the bytes first.
-    expect(screen.getByRole('alert').textContent).toContain(
+    expect(document.querySelector('.dsh-toolbar-notices [role="status"]')?.textContent).toContain(
       'The combined image size exceeds the DSH image limit of 15 B.',
     )
     expect(ingestAttachment).not.toHaveBeenCalled()
@@ -1885,7 +1704,9 @@ describe('App connected rendering', () => {
     fireEvent.paste(prompt, {
       clipboardData: { files: [new File(['second'], 'second.png', { type: 'image/png' })] },
     })
-    expect(screen.getByRole('alert').textContent).toContain('accepts at most 1 images')
+    expect(document.querySelector('.dsh-toolbar-notices [role="status"]')?.textContent).toContain(
+      'accepts at most 1 images',
+    )
     expect(ingestAttachment).toHaveBeenCalledTimes(1)
 
     await act(async () => {
@@ -2052,6 +1873,7 @@ describe('App connected rendering', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Attach file' }))
     await screen.findByText('Host refused the attachment')
 
+    fireEvent.click(screen.getByRole('button', { name: /^Show notifications/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss error' }))
 
     expect(screen.queryByText('Host refused the attachment')).toBeNull()
@@ -2352,7 +2174,7 @@ describe('App connected rendering', () => {
     expect(releaseAttachments).toHaveBeenCalledOnce()
   })
 
-  it('applies the selected interface language across the conversation and export surfaces', async () => {
+  it('applies the selected interface language from Settings across the conversation', async () => {
     let dshLocale = 'en'
     const readDshSettings = vi.fn(() => Promise.resolve(dshLocaleSettingsSnapshot(dshLocale)))
     const updateDshSetting = vi.fn((path: string, value: unknown) => {
@@ -2360,7 +2182,7 @@ describe('App connected rendering', () => {
       return Promise.resolve()
     })
     currentStore = {
-      ...storeFor(connectedState(true)),
+      ...storeFor({ ...connectedState(true), drawer: 'settings' }),
       readDshSettings,
       updateDshSetting,
     }
@@ -2372,170 +2194,14 @@ describe('App connected rendering', () => {
 
     await waitFor(() => expect(readDshSettings).toHaveBeenCalledTimes(1))
 
-    fireEvent.click(screen.getByRole('button', { name: 'Conversation tools' }))
-    fireEvent.click(screen.getByRole('button', { name: /^Interface language:/ }))
-    fireEvent.click(screen.getByRole('option', { name: '中文' }))
+    fireEvent.click(await screen.findByRole('button', { name: '中文' }))
 
     expect(screen.getByRole('toolbar', { name: 'DSH 工具栏' })).toBeDefined()
     expect(screen.getByPlaceholderText('输入消息…')).toBeDefined()
     expect(screen.getByRole('button', { name: '发送消息' })).toBeDefined()
     expect(document.documentElement.lang).toBe('zh-CN')
 
-    fireEvent.click(screen.getByRole('button', { name: '导出' }))
-    await waitFor(() => expect(screen.getByRole('heading', { name: '导出会话' })).toBeDefined())
-    expect(screen.getByText('包含附件')).toBeDefined()
-    expect(screen.getByRole('button', { name: '选择保存位置并导出' })).toBeDefined()
     await waitFor(() => expect(updateDshSetting).toHaveBeenCalledWith('locale.preference', 'zh', 1))
-  })
-
-  it('switches and restores layout from Settings without changing DSH or offering it in the conversation menu', async () => {
-    const updateDshSetting = vi.fn()
-    currentStore = { ...storeFor({ ...connectedState(true), drawer: 'settings' }), updateDshSetting }
-    const view = render(
-      <ConversationLayoutProvider>
-        <App />
-      </ConversationLayoutProvider>,
-    )
-    expect(document.querySelector('.dsh-app')?.getAttribute('data-conversation-layout')).toBe('focused')
-    fireEvent.click(await screen.findByRole('button', { name: /^Conversation layout:/ }))
-    fireEvent.click(screen.getByRole('option', { name: 'Classic' }))
-    expect(document.querySelector('.dsh-app')?.getAttribute('data-conversation-layout')).toBe('classic')
-    view.unmount()
-    expect(updateDshSetting).not.toHaveBeenCalled()
-    currentStore = storeFor(connectedState(true))
-    render(
-      <ConversationLayoutProvider>
-        <App />
-      </ConversationLayoutProvider>,
-    )
-    expect(document.querySelector('.dsh-app')?.getAttribute('data-conversation-layout')).toBe('classic')
-    fireEvent.click(screen.getByRole('button', { name: 'Conversation tools' }))
-    expect(screen.queryByRole('combobox', { name: 'Conversation layout' })).toBeNull()
-  })
-
-  it('opens the Inspector from conversation tools and restores focus after menu dismissal', () => {
-    currentStore = storeFor(connectedState(true))
-    render(<App />)
-
-    const tools = screen.getByRole('button', { name: 'Conversation tools' })
-    expect(screen.queryByRole('button', { name: 'Session Inspector' })).toBeNull()
-    fireEvent.click(tools)
-    fireEvent.click(screen.getByRole('button', { name: 'Session Inspector' }))
-    const inspector = screen.getByRole('dialog', { name: 'Session Inspector' })
-    expect(screen.queryByRole('dialog', { name: 'Conversation tools' })).toBeNull()
-    expect(document.activeElement).toBe(inspector)
-
-    fireEvent.keyDown(inspector, { key: 'Escape' })
-    expect(screen.queryByRole('dialog', { name: 'Session Inspector' })).toBeNull()
-    expect(document.activeElement).toBe(tools)
-
-    fireEvent.click(tools)
-    fireEvent.click(screen.getByRole('button', { name: 'Session Inspector' }))
-    expect(screen.getByRole('dialog', { name: 'Session Inspector' })).toBeDefined()
-  })
-
-  it('keeps the conversation tools panel open when Escape closes the interface-language menu', () => {
-    currentStore = storeFor(connectedState(true))
-    render(<App />)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Conversation tools' }))
-    fireEvent.click(screen.getByRole('button', { name: /^Interface language:/ }))
-    expect(screen.getByRole('listbox', { name: 'Interface language' })).toBeDefined()
-
-    fireEvent.keyDown(document, { key: 'Escape' })
-
-    expect(screen.queryByRole('listbox', { name: 'Interface language' })).toBeNull()
-    expect(screen.getByRole('dialog', { name: 'Conversation tools' })).toBeDefined()
-
-    // The listbox still dismisses on an outside press, and the panel stays
-    // reachable for the Escape that no nested surface consumes any more.
-    fireEvent.click(screen.getByRole('button', { name: /^Interface language:/ }))
-    expect(screen.getByRole('listbox', { name: 'Interface language' })).toBeDefined()
-    fireEvent.pointerDown(screen.getByRole('dialog', { name: 'Conversation tools' }))
-    expect(screen.queryByRole('listbox', { name: 'Interface language' })).toBeNull()
-    expect(screen.getByRole('dialog', { name: 'Conversation tools' })).toBeDefined()
-
-    fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.queryByRole('dialog', { name: 'Conversation tools' })).toBeNull()
-  })
-
-  it('opens export above the conversation, dismisses its parent and restores focus after nested Escape', async () => {
-    currentStore = storeFor(connectedState(true))
-    render(<App />)
-    const tools = screen.getByRole('button', { name: 'Conversation tools' })
-    fireEvent.click(tools)
-    fireEvent.click(screen.getByRole('button', { name: 'Export' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Export session' })
-    expect(screen.queryByRole('dialog', { name: 'Conversation tools' })).toBeNull()
-    expect(dialog.getAttribute('aria-modal')).toBe('true')
-    expect(dialog.contains(document.activeElement)).toBe(true)
-    fireEvent.pointerDown(screen.getByRole('checkbox', { name: 'Include attachments' }))
-    expect(screen.getByRole('dialog', { name: 'Export session' })).toBe(dialog)
-    fireEvent.click(screen.getByRole('button', { name: 'Format: Markdown' }))
-    fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.queryByRole('listbox', { name: 'Format' })).toBeNull()
-    expect(screen.getByRole('dialog', { name: 'Export session' })).toBe(dialog)
-    fireEvent.keyDown(document, { key: 'Escape' })
-    expect(screen.queryByRole('dialog', { name: 'Export session' })).toBeNull()
-    expect(document.activeElement).toBe(tools)
-  })
-
-  it('drops the export form when the conversation it was opened for is left', async () => {
-    const state = connectedState(true)
-    let live: AppState = {
-      ...state,
-      sessions: [
-        ...state.sessions,
-        {
-          id: 's2',
-          title: 'Other session',
-          workspaceId: 'w1',
-          blank: false,
-          status: 'idle',
-          createdAt: '2026-01-02T00:00:00.000Z',
-          updatedAt: '2026-01-02T00:00:00.000Z',
-        },
-      ],
-    }
-    const listeners = new Set<() => void>()
-    const exportSession = vi.fn().mockResolvedValue(undefined)
-    currentStore = {
-      ...storeFor(state),
-      exportSession,
-      getState: () => live,
-      subscribe: (listener: () => void) => {
-        listeners.add(listener)
-        return () => {
-          listeners.delete(listener)
-        }
-      },
-    }
-
-    render(<App />)
-    fireEvent.click(screen.getByRole('button', { name: 'Conversation tools' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Export' }))
-    await screen.findByRole('heading', { name: 'Export session' })
-
-    // The form names no session of its own, so carrying it into another
-    // conversation would export whichever one happens to be active.
-    await act(async () => {
-      live = { ...live, activeSessionId: 's2', timeline: { ...live.timeline, sessionId: 's2' } }
-      for (const listener of listeners) listener()
-      await Promise.resolve()
-    })
-
-    expect(screen.queryByRole('heading', { name: 'Export session' })).toBeNull()
-
-    // Reopening it targets the conversation the user is looking at now.
-    fireEvent.click(screen.getByRole('button', { name: 'Conversation tools' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Export' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Choose destination and export' }))
-    expect(exportSession).toHaveBeenCalledWith({
-      sessionId: 's2',
-      format: 'markdown',
-      includeAttachments: true,
-      includeReasoning: true,
-    })
   })
 
   it('uses the Settings language control for the shared extension and DSH preference', async () => {

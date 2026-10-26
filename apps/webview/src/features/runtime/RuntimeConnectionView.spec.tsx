@@ -21,6 +21,12 @@ const found: ConnectionLogEntry = {
   count: 2,
 }
 
+function diagnosticLog(): HTMLElement {
+  if (screen.queryByRole('log') === null)
+    fireEvent.click(screen.getByRole('button', { name: 'Diagnostic details' }))
+  return screen.getByRole('log')
+}
+
 describe('RuntimeConnectionView', () => {
   it('offers Desktop authorization directly on the disconnected screen and prevents duplicate prompts', async () => {
     let finish!: () => void
@@ -44,25 +50,25 @@ describe('RuntimeConnectionView', () => {
     finish()
     await waitFor(() => expect(button).toHaveProperty('disabled', false))
   })
-  it('previews four recent entries and expands the complete log on demand', () => {
+  it('keeps diagnostics collapsed and reveals the complete log on demand', () => {
     const output = [
       first,
       ...Array.from({ length: 7 }, (_, index) => ({ ...found, id: index + 2, count: index + 1 })),
     ]
     const { rerender } = render(<RuntimeConnectionView state={{ kind: 'starting' }} output={output} />)
-    const log = screen.getByRole('log')
-    expect(log.querySelectorAll('p')).toHaveLength(4)
-    expect(log.textContent).not.toContain('Starting DSH connection')
-    expect(screen.getByRole('button', { name: 'Expand logs' }).getAttribute('aria-controls')).toBe(log.id)
-    fireEvent.click(screen.getByRole('button', { name: 'Expand logs' }))
+    expect(screen.queryByRole('log')).toBeNull()
+    const toggle = screen.getByRole('button', { name: 'Diagnostic details' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(toggle)
+    const log = diagnosticLog()
+    expect(toggle.getAttribute('aria-controls')).toBe(log.parentElement?.id)
     expect(log.querySelectorAll('p')).toHaveLength(8)
     expect(log.textContent).toContain('Starting DSH connection')
-    expect(screen.getByRole('button', { name: 'Collapse logs' }).getAttribute('aria-expanded')).toBe('true')
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse logs' }))
-    expect(log.querySelectorAll('p')).toHaveLength(4)
+    fireEvent.click(toggle)
+    expect(screen.queryByRole('log')).toBeNull()
     rerender(<RuntimeConnectionView state={{ kind: 'connected' }} output={output} loadingSessionCatalog />)
-    expect(log.querySelectorAll('p')).toHaveLength(4)
-    expect(log.lastElementChild?.textContent).toContain('Loading workspaces and sessions')
+    expect(screen.getByRole('heading', { name: 'Loading sessions' })).toBeDefined()
+    expect(diagnosticLog().querySelectorAll('p')).toHaveLength(8)
   })
 
   it('distinguishes unavailable discovery candidates from actual errors', () => {
@@ -81,7 +87,7 @@ describe('RuntimeConnectionView', () => {
         ]}
       />,
     )
-    const log = screen.getByRole('log')
+    const log = diagnosticLog()
     expect(log.querySelector('[data-status="unavailable"]')?.textContent).toContain(
       'Candidate unavailable; continuing discovery',
     )
@@ -105,7 +111,8 @@ describe('RuntimeConnectionView', () => {
     render(<RuntimeConnectionView state={{ kind }} />)
     expect(screen.getByRole('heading', { name: title })).toBeDefined()
     expect(screen.getByRole('progressbar').hasAttribute('aria-valuenow')).toBe(false)
-    expect(screen.getByRole('log', { name: 'Connection output' })).toBeDefined()
+    expect(screen.queryByRole('log')).toBeNull()
+    expect(diagnosticLog()).toBeDefined()
     expect(screen.queryByRole('list')).toBeNull()
     expect(
       document.querySelector(
@@ -153,7 +160,7 @@ describe('RuntimeConnectionView', () => {
         ]}
       />,
     )
-    const text = screen.getByRole('log').textContent
+    const text = diagnosticLog().textContent
     expect(text).toContain('2 candidates')
     expect(text).toContain('candidate #1')
     expect(text).toContain('configured instance')
@@ -164,8 +171,8 @@ describe('RuntimeConnectionView', () => {
 
   it('appends stable log rows and respects scrolling back through earlier output', () => {
     const { rerender } = render(<RuntimeConnectionView state={{ kind: 'connecting' }} output={[first]} />)
-    fireEvent.click(screen.getByRole('button', { name: 'Expand logs' }))
-    const log = screen.getByRole('log')
+    fireEvent.click(screen.getByRole('button', { name: 'Diagnostic details' }))
+    const log = diagnosticLog()
     const row = log.firstElementChild
     Object.defineProperties(log, {
       scrollHeight: { configurable: true, value: 1000 },
@@ -195,9 +202,10 @@ describe('RuntimeConnectionView', () => {
         onOpenSettings={settings}
       />,
     )
-    expect(vi.getTimerCount()).toBe(0)
+    expect(vi.getTimerCount()).toBe(1) // One bounded phase timeout, no polling.
+    diagnosticLog()
     fireEvent.click(screen.getByRole('button', { name: 'Open Output' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Connection settings' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Choose connection source' }))
     expect(output).toHaveBeenCalledOnce()
     expect(settings).toHaveBeenCalledOnce()
   })
@@ -213,7 +221,7 @@ describe('RuntimeConnectionView', () => {
     )
     expect(screen.queryByRole('progressbar')).toBeNull()
     expect(screen.getByRole('alert').textContent).toBe('DSH did not respond.')
-    expect(screen.getByRole('log').textContent).toContain('2 candidates')
+    expect(diagnosticLog().textContent).toContain('2 candidates')
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(retry).toHaveBeenCalledOnce()
   })
@@ -228,7 +236,8 @@ describe('RuntimeConnectionView', () => {
       />,
     )
     expect(screen.getByRole('heading', { name: 'Loading sessions' })).toBeDefined()
-    expect(screen.getByRole('log').textContent).toContain('Loading workspaces and sessions')
+    expect(diagnosticLog().textContent).toContain('2 candidates')
+    diagnosticLog()
     fireEvent.click(screen.getByRole('button', { name: 'Open Output' }))
     await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Unable to open Output.'))
     expect(document.body.textContent).not.toContain('private')

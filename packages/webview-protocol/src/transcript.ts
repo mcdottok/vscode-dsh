@@ -376,7 +376,13 @@ export const transcriptNodeSchema = z.discriminatedUnion('kind', [
     })
     .strict(),
   z
-    .object({ kind: z.literal('notice'), ...base, level: z.enum(['info', 'warning', 'error']), text, transient: z.literal('connection').optional() })
+    .object({
+      kind: z.literal('notice'),
+      ...base,
+      level: z.enum(['info', 'warning', 'error']),
+      text,
+      transient: z.literal('connection').optional(),
+    })
     .strict(),
   z.object({ kind: z.literal('command-input'), ...base, text }).strict(),
   z

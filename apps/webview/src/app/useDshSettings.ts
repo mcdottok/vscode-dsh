@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import type { AppState, AppStore, DshSettingsSnapshot } from './store.js'
 import {
-  DSH_UI_SETTING_PATHS,
   dshUiPreferences,
   findDshSettingsField,
   readDshSettingValue,

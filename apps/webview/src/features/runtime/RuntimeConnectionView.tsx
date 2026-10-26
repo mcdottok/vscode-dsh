@@ -71,7 +71,13 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
       aria-busy={loading}
     >
       <div className="dsh-runtime-connection__header">
-        <span className="dsh-runtime-connection__emblem" data-loading={loading} aria-hidden="true">
+        <span
+          className="dsh-runtime-connection__emblem"
+          data-loading={loading}
+          role={loading ? 'progressbar' : undefined}
+          aria-label={loading ? title : undefined}
+          aria-hidden={loading ? undefined : true}
+        >
           <Icon name={loading ? 'refresh' : 'open-in-editor'} />
         </span>
         <h2 id="runtime-connection-title" aria-live="polite">
@@ -88,7 +94,8 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
         </p>
       </div>
       <div className="dsh-runtime-connection__actions">
-        {props.onConnectDesktop === undefined || (props.state.kind === 'connected' && !timedOut) ? null : (
+        {(props.onConnectDesktop === undefined && props.onOpenSettings === undefined) ||
+        (props.state.kind === 'connected' && !timedOut) ? null : (
           <button
             className="dsh-button dsh-button--primary"
             type="button"

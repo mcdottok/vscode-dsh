@@ -20,8 +20,7 @@ export function createHistoryActions(deps: {
       deps.setState((current) => ({ ...current, historyLoading: true }))
       const openVersion = deps.getOpenVersion?.()
       const isCurrent = (): boolean =>
-        deps.getState().activeSessionId === window.sessionId &&
-        deps.getOpenVersion?.() === openVersion
+        deps.getState().activeSessionId === window.sessionId && deps.getOpenVersion?.() === openVersion
       try {
         let cursor = window
         for (let attempt = 0; attempt < 2; attempt++) {
@@ -41,7 +40,9 @@ export function createHistoryActions(deps: {
           const next = parseTranscript(result)
           deps.setState((current) => installTranscript(current, next))
           if (
-            attempt === 0 && next.hasMore && next.revision > cursor.revision &&
+            attempt === 0 &&
+            next.hasMore &&
+            next.revision > cursor.revision &&
             next.beforeSequence === cursor.beforeSequence
           ) {
             cursor = next
@@ -51,9 +52,7 @@ export function createHistoryActions(deps: {
         }
       } finally {
         if (requestGeneration === generation)
-          deps.setState((current) =>
-            isCurrent() ? { ...current, historyLoading: false } : current,
-          )
+          deps.setState((current) => ({ ...current, historyLoading: false }))
       }
     },
   }

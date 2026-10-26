@@ -372,7 +372,7 @@ describe('Host transcript windows', () => {
     }
     const service = new TranscriptWindowService({
       read: () => Promise.resolve({ events: [], hasMore: false }),
-      publicValue: value => value,
+      publicValue: (value) => value,
       post,
       postPatch: post,
     })
@@ -405,18 +405,42 @@ describe('Host transcript windows', () => {
     vi.useFakeTimers()
     const f = fixture()
     f.open([message(0)])
-    f.service.accept({ type: 'reasoning.delta', sessionId, messageId: 'live', turn: 1, step: 1, delta: 'think' })
+    f.service.accept({
+      type: 'reasoning.delta',
+      sessionId,
+      messageId: 'live',
+      turn: 1,
+      step: 1,
+      delta: 'think',
+    })
     expect(f.posted).toHaveLength(1)
     await Promise.resolve()
     f.service.acknowledge(sessionId, f.posted[0]!.revision)
-    f.service.accept({ type: 'reasoning.delta', sessionId, messageId: 'live', turn: 1, step: 1, delta: ' more' })
+    f.service.accept({
+      type: 'reasoning.delta',
+      sessionId,
+      messageId: 'live',
+      turn: 1,
+      step: 1,
+      delta: ' more',
+    })
     expect(f.posted).toHaveLength(1)
     f.service.accept({ type: 'message.delta', sessionId, messageId: 'live', turn: 1, step: 1, delta: 'body' })
     expect(f.posted).toHaveLength(2)
-    expect(f.posted[1]!.nodes.at(-1)).toMatchObject({ markdown: 'body', reasoning: { markdown: 'think more' } })
+    expect(f.posted[1]!.nodes.at(-1)).toMatchObject({
+      markdown: 'body',
+      reasoning: { markdown: 'think more' },
+    })
     await Promise.resolve()
     f.service.acknowledge(sessionId, f.posted[1]!.revision)
-    f.service.accept({ type: 'message.delta', sessionId, messageId: 'live', turn: 1, step: 1, delta: ' queued' })
+    f.service.accept({
+      type: 'message.delta',
+      sessionId,
+      messageId: 'live',
+      turn: 1,
+      step: 1,
+      delta: ' queued',
+    })
     expect(vi.getTimerCount()).toBe(1)
     f.service.dispose()
     expect(vi.getTimerCount()).toBe(0)
@@ -432,21 +456,30 @@ describe('Host transcript windows', () => {
     const sent: TranscriptWindow[] = []
     const service = new TranscriptWindowService({
       read: () => Promise.resolve({ events: [], hasMore: false }),
-      publicValue: value => value,
-      post: value => { sent.push(value); return Promise.resolve(true) },
+      publicValue: (value) => value,
+      post: (value) => {
+        sent.push(value)
+        return Promise.resolve(true)
+      },
       observeTiming,
     })
     service.installPage(sessionId, { events: [], hasMore: false }, service.begin(sessionId))
     for (let i = 0; i < 4; i++) {
-      service.accept({ type: 'message.delta', sessionId, messageId: 'live', delta: 'private fixture text', time: Date.now() - 25 })
+      service.accept({
+        type: 'message.delta',
+        sessionId,
+        messageId: 'live',
+        delta: 'private fixture text',
+        time: Date.now() - 25,
+      })
       await vi.advanceTimersByTimeAsync(16)
       service.acknowledge(sessionId, sent.at(-1)!.revision)
     }
     expect(sent.length).toBeGreaterThan(1)
-    const phases = observeTiming.mock.calls.map(call => call[0])
-    expect(phases.filter(phase => phase === 'stream-ingress')).toHaveLength(1)
-    expect(phases.filter(phase => phase === 'stream-post')).toHaveLength(1)
-    expect(phases.filter(phase => phase === 'stream-ack')).toHaveLength(1)
+    const phases = observeTiming.mock.calls.map((call) => call[0])
+    expect(phases.filter((phase) => phase === 'stream-ingress')).toHaveLength(1)
+    expect(phases.filter((phase) => phase === 'stream-post')).toHaveLength(1)
+    expect(phases.filter((phase) => phase === 'stream-ack')).toHaveLength(1)
     expect(JSON.stringify(observeTiming.mock.calls)).not.toContain('private fixture text')
     service.dispose()
   })

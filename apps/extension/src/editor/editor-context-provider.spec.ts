@@ -258,7 +258,7 @@ describe('EditorContextProvider', () => {
     ])
 
     const item = await harness.provider.capture({ kind: 'symbol' }, harness.owner)
-    expect(item.label.startsWith('symbol: src/greet.ts:1 ')).toBe(true)
+    expect(item.label.startsWith('symbol: src/greet.ts:1–3 ')).toBe(true)
     expect(item.label.length).toBe(512)
   })
 

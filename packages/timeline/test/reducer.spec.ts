@@ -13,7 +13,13 @@ describe('reduceTimeline', () => {
     })
     const delta = reduceTimeline(started, {
       sequence: 2,
-      event: { type: 'reasoning.delta', sessionId: 'session-1', turn: 1, delta: 'thinking' },
+      event: {
+        type: 'reasoning.delta',
+        sessionId: 'session-1',
+        messageId: 'reasoning-1',
+        turn: 1,
+        delta: 'thinking',
+      },
     })
     expect(delta.activeTurnStartedAt).toBe(1234)
     const ended = reduceTimeline(delta, {

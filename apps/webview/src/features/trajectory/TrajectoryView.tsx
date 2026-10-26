@@ -108,51 +108,21 @@ export const TrajectoryView = memo(function TrajectoryView(props: TrajectoryView
         )}
       </div>
       <div className="dsh-trajectory__viewport">
-      <div
-        ref={scrollRef}
-        className="dsh-trajectory"
-        data-scroll-follow={isPinnedToBottom ? 'pinned' : 'free'}
-        aria-label={t('trajectory.ledger')}
-      >
-        <div ref={contentRef} className="dsh-trajectory__content">
-          {projection.recordCount === 0 ? (
-            <p className="dsh-trajectory__empty">{t('trajectory.empty')}</p>
-          ) : searching ? (
-            matches.length === 0 ? (
-              <p className="dsh-trajectory__empty">{t('trajectory.noMatch', { query: query.trim() })}</p>
-            ) : (
-              <ul className="dsh-trajectory__rows">
-                {matches.map((record) => (
-                  <TrajectoryRow
-                    key={record.id}
-                    record={record}
-                    selected={selectedId === record.id}
-                    onSelect={selectRecord}
-                    t={t}
-                  />
-                ))}
-              </ul>
-            )
-          ) : (
-            projection.sections.map((section, sectionIndex) => (
-              <section
-                className="dsh-trajectory__section"
-                key={
-                  section.kind === 'turn' ? `turn:${section.turn ?? sectionIndex}` : `between:${sectionIndex}`
-                }
-                aria-label={
-                  section.kind === 'turn'
-                    ? t('trajectory.turn', { turn: section.turn ?? 0 })
-                    : t('trajectory.betweenTurns')
-                }
-              >
-                <h3 className="dsh-trajectory__section-title">
-                  {section.kind === 'turn'
-                    ? t('trajectory.turn', { turn: section.turn ?? 0 })
-                    : t('trajectory.betweenTurns')}
-                </h3>
+        <div
+          ref={scrollRef}
+          className="dsh-trajectory"
+          data-scroll-follow={isPinnedToBottom ? 'pinned' : 'free'}
+          aria-label={t('trajectory.ledger')}
+        >
+          <div ref={contentRef} className="dsh-trajectory__content">
+            {projection.recordCount === 0 ? (
+              <p className="dsh-trajectory__empty">{t('trajectory.empty')}</p>
+            ) : searching ? (
+              matches.length === 0 ? (
+                <p className="dsh-trajectory__empty">{t('trajectory.noMatch', { query: query.trim() })}</p>
+              ) : (
                 <ul className="dsh-trajectory__rows">
-                  {section.records.map((record) => (
+                  {matches.map((record) => (
                     <TrajectoryRow
                       key={record.id}
                       record={record}
@@ -162,17 +132,51 @@ export const TrajectoryView = memo(function TrajectoryView(props: TrajectoryView
                     />
                   ))}
                 </ul>
-              </section>
-            ))
-          )}
-          {props.streaming ? (
-            <span className="dsh-sr-only" aria-live="polite">
-              {t('timeline.streaming')}
-            </span>
-          ) : null}
+              )
+            ) : (
+              projection.sections.map((section, sectionIndex) => (
+                <section
+                  className="dsh-trajectory__section"
+                  key={
+                    section.kind === 'turn'
+                      ? `turn:${section.turn ?? sectionIndex}`
+                      : `between:${sectionIndex}`
+                  }
+                  aria-label={
+                    section.kind === 'turn'
+                      ? t('trajectory.turn', { turn: section.turn ?? 0 })
+                      : t('trajectory.betweenTurns')
+                  }
+                >
+                  <h3 className="dsh-trajectory__section-title">
+                    {section.kind === 'turn'
+                      ? t('trajectory.turn', { turn: section.turn ?? 0 })
+                      : t('trajectory.betweenTurns')}
+                  </h3>
+                  <ul className="dsh-trajectory__rows">
+                    {section.records.map((record) => (
+                      <TrajectoryRow
+                        key={record.id}
+                        record={record}
+                        selected={selectedId === record.id}
+                        onSelect={selectRecord}
+                        t={t}
+                      />
+                    ))}
+                  </ul>
+                </section>
+              ))
+            )}
+            {props.streaming ? (
+              <span className="dsh-sr-only" aria-live="polite">
+                {t('timeline.streaming')}
+              </span>
+            ) : null}
+          </div>
         </div>
-      </div>
-      {showJumpToLatest ? <ScrollToLatestButton label={t('timeline.jump')} onClick={scrollToLatest} /> : null}
+        {showJumpToLatest ? (
+          <ScrollToLatestButton label={t('timeline.jump')} onClick={scrollToLatest} />
+        ) : null}
       </div>
       {selected === undefined ? null : (
         <TrajectoryInspector
@@ -269,63 +273,63 @@ function TrajectoryInspector(props: {
         </button>
       </header>
       <div className="dsh-trajectory-inspector__body">
-      <dl className="dsh-trajectory-inspector__facts">
-        <dt>{t('trajectory.duration')}</dt>
-        <dd>{record.streaming ? t('trajectory.running') : formatDuration(record.timeSeconds)}</dd>
-        {record.startedAt === undefined ? null : (
-          <>
-            <dt>{t('trajectory.started')}</dt>
-            <dd>{new Date(record.startedAt).toLocaleTimeString()}</dd>
-          </>
+        <dl className="dsh-trajectory-inspector__facts">
+          <dt>{t('trajectory.duration')}</dt>
+          <dd>{record.streaming ? t('trajectory.running') : formatDuration(record.timeSeconds)}</dd>
+          {record.startedAt === undefined ? null : (
+            <>
+              <dt>{t('trajectory.started')}</dt>
+              <dd>{new Date(record.startedAt).toLocaleTimeString()}</dd>
+            </>
+          )}
+          {usage === undefined ? null : (
+            <>
+              <dt>{t('trajectory.input')}</dt>
+              <dd>{t('trajectory.tokensValue', { count: usage.inputTokens.toLocaleString() })}</dd>
+              {usage.cacheReadTokens === undefined ? null : (
+                <>
+                  <dt>{t('trajectory.cacheRead')}</dt>
+                  <dd>{t('trajectory.tokensValue', { count: usage.cacheReadTokens.toLocaleString() })}</dd>
+                </>
+              )}
+              {usage.cacheWriteTokens === undefined ? null : (
+                <>
+                  <dt>{t('trajectory.cacheWrite')}</dt>
+                  <dd>{t('trajectory.tokensValue', { count: usage.cacheWriteTokens.toLocaleString() })}</dd>
+                </>
+              )}
+              <dt>{t('trajectory.output')}</dt>
+              <dd>{t('trajectory.tokensValue', { count: usage.outputTokens.toLocaleString() })}</dd>
+              {usage.reasoningTokens === undefined ? null : (
+                <>
+                  <dt>{t('trajectory.reasoning')}</dt>
+                  <dd>{t('trajectory.tokensValue', { count: usage.reasoningTokens.toLocaleString() })}</dd>
+                </>
+              )}
+            </>
+          )}
+        </dl>
+        {record.inputDetail === undefined ? null : (
+          <details className="dsh-trajectory-inspector__block" open>
+            <summary>{t('trajectory.input')}</summary>
+            <pre>{record.inputDetail}</pre>
+          </details>
         )}
-        {usage === undefined ? null : (
-          <>
-            <dt>{t('trajectory.input')}</dt>
-            <dd>{t('trajectory.tokensValue', { count: usage.inputTokens.toLocaleString() })}</dd>
-            {usage.cacheReadTokens === undefined ? null : (
-              <>
-                <dt>{t('trajectory.cacheRead')}</dt>
-                <dd>{t('trajectory.tokensValue', { count: usage.cacheReadTokens.toLocaleString() })}</dd>
-              </>
-            )}
-            {usage.cacheWriteTokens === undefined ? null : (
-              <>
-                <dt>{t('trajectory.cacheWrite')}</dt>
-                <dd>{t('trajectory.tokensValue', { count: usage.cacheWriteTokens.toLocaleString() })}</dd>
-              </>
-            )}
-            <dt>{t('trajectory.output')}</dt>
-            <dd>{t('trajectory.tokensValue', { count: usage.outputTokens.toLocaleString() })}</dd>
-            {usage.reasoningTokens === undefined ? null : (
-              <>
-                <dt>{t('trajectory.reasoning')}</dt>
-                <dd>{t('trajectory.tokensValue', { count: usage.reasoningTokens.toLocaleString() })}</dd>
-              </>
-            )}
-          </>
+        {record.outputDetail === undefined ? null : (
+          <details className="dsh-trajectory-inspector__block" open>
+            <summary>
+              {t('trajectory.output')}
+              {record.isError ? ` · ${t('trajectory.failed')}` : ''}
+            </summary>
+            <pre>{record.outputDetail}</pre>
+          </details>
         )}
-      </dl>
-      {record.inputDetail === undefined ? null : (
-        <details className="dsh-trajectory-inspector__block" open>
-          <summary>{t('trajectory.input')}</summary>
-          <pre>{record.inputDetail}</pre>
-        </details>
-      )}
-      {record.outputDetail === undefined ? null : (
-        <details className="dsh-trajectory-inspector__block" open>
-          <summary>
-            {t('trajectory.output')}
-            {record.isError ? ` · ${t('trajectory.failed')}` : ''}
-          </summary>
-          <pre>{record.outputDetail}</pre>
-        </details>
-      )}
-      {record.thinkingDetail === undefined ? null : (
-        <details className="dsh-trajectory-inspector__block">
-          <summary>{t('timeline.thinking')}</summary>
-          <pre>{record.thinkingDetail}</pre>
-        </details>
-      )}
+        {record.thinkingDetail === undefined ? null : (
+          <details className="dsh-trajectory-inspector__block">
+            <summary>{t('timeline.thinking')}</summary>
+            <pre>{record.thinkingDetail}</pre>
+          </details>
+        )}
       </div>
     </aside>
   )

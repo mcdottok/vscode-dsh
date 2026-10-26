@@ -487,47 +487,38 @@ describe('SessionDrawer', () => {
     expect(screen.getByText('Content matches')).toBeDefined()
   })
 
-  it('surfaces host content matches when sessions are grouped by workspace', async () => {
+  it('surfaces host content matches without the retired grouping toggle', async () => {
     const onSearch = vi.fn().mockResolvedValue({ items: [sessions[2]] })
     renderDrawer({ onSearch })
-
-    fireEvent.click(screen.getByTitle('Show sessions grouped by workspace'))
+    expect(screen.queryByTitle('Show sessions grouped by workspace')).toBeNull()
     fireEvent.change(screen.getByLabelText('Search sessions by title or content'), {
-      target: { value: 'phrase from conversation' },
+      target: { value: 'note' },
     })
-
-    await waitFor(() => expect(onSearch).toHaveBeenCalledWith('phrase from conversation'))
     expect(await screen.findByTitle('Other workspace note')).toBeDefined()
+    expect(onSearch).toHaveBeenCalledWith('note')
     expect(screen.getByText('Content matches')).toBeDefined()
   })
 
-  it('puts search matches before workspace controls and shows one empty state across groups', () => {
+  it('keeps search results uncluttered and restores workspace controls after clearing the query', () => {
     renderDrawer()
-    fireEvent.click(screen.getByTitle('Show sessions grouped by workspace'))
     const search = screen.getByLabelText('Search sessions by title or content')
     const results = document.querySelector<HTMLElement>('.dsh-session-switcher__results')!
     results.scrollTop = 500
     fireEvent.change(search, { target: { value: 'login' } })
     expect(results.scrollTop).toBe(0)
-
-    const groups = document.querySelectorAll('.dsh-session-switcher__group')
-    expect(groups).toHaveLength(1)
-    expect(groups[0]?.textContent).toContain('Fix login bug')
-    expect(screen.queryByText('No sessions match this search.')).toBeNull()
-    const navigation = screen.getByRole('group', { name: 'Workspaces' })
-    expect(within(navigation).getByRole('button', { name: 'Rename workspace Beta' })).toBeDefined()
-    expect(groups[0]!.compareDocumentPosition(navigation) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-
-    fireEvent.change(search, { target: { value: 'no matching session' } })
-    expect(document.querySelectorAll('.dsh-session-switcher__group')).toHaveLength(0)
-    expect(screen.getAllByText('No sessions match this search.')).toHaveLength(1)
-
-    fireEvent.change(search, { target: { value: '' } })
-    expect(document.querySelectorAll('.dsh-session-switcher__group')).toHaveLength(2)
+    expect(screen.getByTitle('Fix login bug')).toBeDefined()
+    expect(screen.queryByTitle('Write docs')).toBeNull()
     expect(
-      navigation.compareDocumentPosition(document.querySelector('.dsh-session-switcher__groups')!) &
+      screen
+        .getByTitle('Fix login bug')
+        .compareDocumentPosition(screen.getByRole('group', { name: 'Workspaces' })) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
+    fireEvent.change(search, { target: { value: 'no matching session' } })
+    expect(screen.getAllByText('No sessions match this search.')).toHaveLength(1)
+    fireEvent.change(search, { target: { value: '' } })
+    expect(screen.getByRole('group', { name: 'Workspaces' })).toBeDefined()
+    expect(screen.getByTitle('Write docs')).toBeDefined()
   })
 
   it('surfaces the active session when only its content matches the query', async () => {
@@ -720,22 +711,14 @@ describe('SessionDrawer', () => {
     expect(screen.getByText('Another session in this workspace already uses this name.')).toBeDefined()
   })
 
-  it('confirms workspace removal and keeps the destructive action explicit', async () => {
-    const onRemoveWorkspace = vi.fn().mockResolvedValue(undefined)
+  it('keeps workspace removal out of the session browser while preserving rename', () => {
+    const onRemoveWorkspace = vi.fn()
     renderDrawer({ onRemoveWorkspace })
-
-    const trigger = screen.getByRole('button', { name: 'Remove workspace Alpha' })
-    trigger.focus()
-    fireEvent.click(trigger)
-    const dialog = screen.getByRole('alertdialog', { name: 'Remove workspace' })
-    expect(dialog).toBeDefined()
-    expect(dialog.parentElement?.parentElement).toBe(document.body)
-    expect(screen.getByText('Remove “Alpha” from DSH? Its 2 session(s) and files will remain.')).toBeDefined()
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
-
-    await waitFor(() => expect(onRemoveWorkspace).toHaveBeenCalledWith('w1'))
-    await waitFor(() => expect(screen.queryByRole('alertdialog', { name: 'Remove workspace' })).toBeNull())
-    expect(document.activeElement).toBe(trigger)
+    expect(screen.queryByRole('button', { name: 'Remove workspace Alpha' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Add folder to workspace' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Rename workspace Alpha' })).toBeDefined()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onRemoveWorkspace).not.toHaveBeenCalled()
   })
 
   it('dismisses the switcher on Escape and returns focus to its trigger', () => {
@@ -817,33 +800,6 @@ describe('SessionDrawer', () => {
     expect(document.activeElement).toBe(trigger)
   })
 
-  it('cancels the workspace removal confirmation on Escape without removing anything', () => {
-    const onOpenChange = vi.fn()
-    const onRemoveWorkspace = vi.fn().mockResolvedValue(undefined)
-    renderDrawer({ open: true, onOpenChange, onRemoveWorkspace })
-
-    fireEvent.click(screen.getByRole('button', { name: 'Remove workspace Alpha' }))
-    expect(screen.getByRole('alertdialog', { name: 'Remove workspace' })).toBeDefined()
-
-    fireEvent.keyDown(document, { key: 'Escape' })
-
-    expect(screen.queryByRole('alertdialog', { name: 'Remove workspace' })).toBeNull()
-    expect(onRemoveWorkspace).not.toHaveBeenCalled()
-    expect(onOpenChange).not.toHaveBeenCalled()
-  })
-
-  it('keeps the removal confirmation while its removal is in flight', () => {
-    const onRemoveWorkspace = vi.fn().mockImplementation(() => new Promise(() => undefined))
-    renderDrawer({ open: true, onRemoveWorkspace })
-
-    fireEvent.click(screen.getByRole('button', { name: 'Remove workspace Alpha' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
-
-    fireEvent.keyDown(document, { key: 'Escape' })
-
-    expect(screen.getByRole('alertdialog', { name: 'Remove workspace' })).toBeDefined()
-  })
-
   it('keeps a pointer inside the rename dialog from dismissing the switcher', () => {
     const onOpenChange = vi.fn()
     renderDrawer({ open: true, onOpenChange })
@@ -855,12 +811,12 @@ describe('SessionDrawer', () => {
     expect(screen.getByRole('dialog', { name: 'Rename session' })).toBeDefined()
   })
 
-  it('switches to grouped workspace view and exposes explicit status badges', () => {
+  it('switches workspaces through their rows and exposes explicit status badges', () => {
     renderDrawer()
-    fireEvent.click(screen.getByTitle('Show sessions grouped by workspace'))
-
-    expect(screen.getAllByText('Alpha').length).toBeGreaterThan(0)
-    expect(screen.getAllByText('Beta').length).toBeGreaterThan(0)
+    expect(screen.queryByTitle('Show sessions grouped by workspace')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Beta1' }))
+    expect(screen.getByTitle('Other workspace note')).toBeDefined()
+    expect(screen.queryByTitle('Fix login bug')).toBeNull()
     expect(screen.getAllByText('Completed').length).toBeGreaterThan(0)
   })
 
@@ -926,22 +882,6 @@ describe('SessionDrawer', () => {
     await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Unable to reorder.'))
   })
 
-  it('takes focus into the workspace removal confirmation and gives it back to the row', () => {
-    renderDrawer()
-
-    const trigger = screen.getByRole('button', { name: 'Remove workspace Alpha' })
-    trigger.focus()
-    fireEvent.click(trigger)
-
-    const dialog = screen.getByRole('alertdialog', { name: 'Remove workspace' })
-    expect(dialog.contains(document.activeElement)).toBe(true)
-
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
-
-    expect(screen.queryByRole('alertdialog', { name: 'Remove workspace' })).toBeNull()
-    expect(document.activeElement).toBe(trigger)
-  })
-
   it('cycles Tab in both directions inside the top rename dialog above the switcher', () => {
     renderDrawer({ open: true })
 
@@ -966,29 +906,6 @@ describe('SessionDrawer', () => {
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('dialog', { name: 'Rename session' })).toBeNull()
     expect(screen.getByRole('dialog', { name: 'Sessions' })).toBeDefined()
-    expect(document.activeElement).toBe(trigger)
-  })
-
-  it('cycles Tab and Shift+Tab inside the workspace confirmation and restores focus on cancel', () => {
-    renderDrawer()
-
-    const trigger = screen.getByRole('button', { name: 'Remove workspace Alpha' })
-    trigger.focus()
-    fireEvent.click(trigger)
-    const dialog = screen.getByRole('alertdialog', { name: 'Remove workspace' })
-    const cancel = within(dialog).getByRole('button', { name: 'Cancel' })
-    const remove = within(dialog).getByRole('button', { name: 'Remove' })
-
-    expect(document.activeElement).toBe(cancel)
-    expect(fireEvent.keyDown(cancel, { key: 'Tab' })).toBe(false)
-    expect(document.activeElement).toBe(remove)
-    expect(fireEvent.keyDown(remove, { key: 'Tab' })).toBe(false)
-    expect(document.activeElement).toBe(cancel)
-    expect(fireEvent.keyDown(cancel, { key: 'Tab', shiftKey: true })).toBe(false)
-    expect(document.activeElement).toBe(remove)
-
-    fireEvent.click(cancel)
-    expect(screen.queryByRole('alertdialog', { name: 'Remove workspace' })).toBeNull()
     expect(document.activeElement).toBe(trigger)
   })
 
@@ -1031,22 +948,17 @@ describe('SessionDrawer', () => {
 
 describe('workspace folder picker', () => {
   afterEach(() => cleanup())
-  it('opens the host picker without choosing a path in the Webview', async () => {
-    const onAddWorkspace = vi.fn().mockResolvedValue(undefined)
+  it('does not expose the retired folder picker inside the session browser', () => {
+    const onAddWorkspace = vi.fn()
     renderDrawer({ onAddWorkspace })
-    fireEvent.click(screen.getByRole('button', { name: 'Add folder to workspace' }))
-    await waitFor(() => expect(onAddWorkspace).toHaveBeenCalledExactlyOnceWith())
+    expect(screen.queryByRole('button', { name: 'Add folder to workspace' })).toBeNull()
+    expect(onAddWorkspace).not.toHaveBeenCalled()
   })
-  it('reports picker failures and permits retry', async () => {
-    const onAddWorkspace = vi
-      .fn()
-      .mockRejectedValueOnce(new Error('Picker unavailable'))
-      .mockResolvedValue(undefined)
-    renderDrawer({ onAddWorkspace })
-    fireEvent.click(screen.getByRole('button', { name: 'Add folder to workspace' }))
-    await waitFor(() => expect(screen.getByText('Picker unavailable')).toBeDefined())
-    fireEvent.click(screen.getByRole('button', { name: 'Add folder to workspace' }))
-    await waitFor(() => expect(onAddWorkspace).toHaveBeenCalledTimes(2))
+  it('keeps workspace navigation available without a folder picker', () => {
+    renderDrawer()
+    fireEvent.click(screen.getByRole('button', { name: 'Beta1' }))
+    expect(screen.getByTitle('Other workspace note')).toBeDefined()
+    expect(screen.queryByRole('button', { name: 'Add folder to workspace' })).toBeNull()
   })
 })
 

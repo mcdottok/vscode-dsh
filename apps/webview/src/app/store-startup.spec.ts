@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CONNECTION_PHASES, type ModelDescriptor, type ModelProvider } from '@dsh-vscode/domain'
 import type { HostMessage } from '@dsh-vscode/webview-protocol'
 import type { ProtocolClient } from './protocol-client.js'
@@ -158,6 +158,9 @@ function startupResponse(request: WebviewRequest): unknown {
 }
 
 describe('AppStore startup session restoration', () => {
+  beforeEach(() => {
+    persisted.state = { version: 1, activeSessionId: activeSession.id }
+  })
   it('replays safe connection output from snapshots and accepts live replacement without changing backend state', () => {
     const client = new StartupClient(startupResponse, false)
     const store = createAppStore(client as unknown as ProtocolClient)
@@ -281,7 +284,7 @@ describe('AppStore startup session restoration', () => {
         store.setDrawer('settings')
         await vi.runAllTimersAsync()
         expect(store.getState()).toBe(snapshot)
-        expect(persisted.state).toBeUndefined()
+        expect(persisted.state).toEqual({ version: 1, activeSessionId: activeSession.id })
         expect(notified).not.toHaveBeenCalled()
         unsubscribe()
       } finally {
@@ -656,7 +659,7 @@ describe('AppStore startup session restoration', () => {
     expect(store.dshUpdateProgress).toEqual({ phase: 'downloading', version: '0.1.1-rc.1' })
   })
 
-  it('opens an existing active root session when no persisted id is available', async () => {
+  it('restores a remembered active root session without duplicating creation', async () => {
     const client = new StartupClient()
     const store = createAppStore(client as unknown as ProtocolClient)
 
@@ -808,6 +811,7 @@ describe('AppStore startup session restoration', () => {
   })
 
   it('opens a durable workspace session when the session summary projection is temporarily empty', async () => {
+    persisted.state = { version: 1, activeSessionId: blankSession.id }
     const client = new StartupClient((request) => {
       if (request.type === 'session.list') return { items: [] }
       if (request.type === 'workspace.list') return { items: [workspace] }
@@ -1424,7 +1428,8 @@ describe('AppStore startup session restoration', () => {
     store.dispose()
   })
 
-  it('opens an existing blank root session instead of showing the new-session empty state', async () => {
+  it('opens a remembered blank root session instead of showing the new-session empty state', async () => {
+    persisted.state = { version: 1, activeSessionId: blankSession.id }
     const client = new StartupClient((request) => {
       if (request.type === 'session.list') return { items: [blankSession] }
       if (request.type === 'session.open')

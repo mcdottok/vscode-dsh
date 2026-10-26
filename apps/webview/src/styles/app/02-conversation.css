@@ -27,7 +27,7 @@
   --dsh-markdown-heading-4: calc(0.9375rem * var(--dsh-conversation-font-scale));
   --dsh-markdown-heading-5: var(--dsh-font-size-md);
   --dsh-markdown-heading-6: var(--dsh-font-size-sm);
-  font-size: calc(14px * var(--dsh-conversation-font-scale));
+  font-size: var(--dsh-font-size-md);
 }
 
 .dsh-conversation[data-conversation-font-size='small'] {

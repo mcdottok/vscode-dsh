@@ -15,7 +15,7 @@
   border-radius: 12px;
   background: var(--dsh-widget-bg);
   color: var(--dsh-text);
-  font-size: 13px;
+  font-size: var(--dsh-font-size-sm);
   line-height: 1.5;
   box-shadow: 0 8px 28px #00000030;
 }
@@ -26,7 +26,7 @@
 }
 
 .dsh-app .dsh-settings .dsh-settings__header h2 {
-  font-size: 14px;
+  font-size: var(--dsh-font-size-md);
   font-weight: 500;
 }
 
@@ -40,7 +40,7 @@
   padding: 4px 10px;
   border: 0;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--dsh-font-size-xs);
   font-weight: 400;
 }
 
@@ -85,7 +85,7 @@
 
 .dsh-app .dsh-settings :is(h3, .dsh-setting-card__title) {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--dsh-font-size-xs);
   font-weight: 600;
 }
 
@@ -101,7 +101,7 @@
     .dsh-settings__empty
   ) {
   margin: 0;
-  font-size: 11px;
+  font-size: var(--dsh-font-size-xs);
   line-height: 1.5;
 }
 
@@ -117,7 +117,7 @@
 }
 
 .dsh-app .dsh-settings .dsh-setting-row__title {
-  font-size: 12px;
+  font-size: var(--dsh-font-size-xs);
   font-weight: 400;
 }
 
@@ -138,12 +138,12 @@
 }
 
 .dsh-app .dsh-settings .dsh-settings__connection-option strong {
-  font-size: 12px;
+  font-size: var(--dsh-font-size-xs);
   font-weight: 400;
 }
 
 .dsh-app .dsh-settings .dsh-settings__connection-option small {
-  font-size: 11px;
+  font-size: var(--dsh-font-size-xs);
 }
 
 .dsh-app .dsh-settings .dsh-settings__connection-option input {
@@ -157,7 +157,7 @@
   min-height: 28px;
   padding: 4px 8px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--dsh-font-size-xs);
   font-weight: 400;
   line-height: 1.4;
 }
@@ -176,7 +176,7 @@
   min-height: 28px;
   padding: 4px 8px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--dsh-font-size-xs);
   color: var(--dsh-text);
   background: var(--dsh-surface-soft);
   border-color: color-mix(in srgb, var(--dsh-text) 12%, transparent);
@@ -195,11 +195,11 @@
 .dsh-app .dsh-settings .dsh-settings__runtime-update-facts {
   gap: 5px 16px;
   margin: 10px 0;
-  font-size: 11px;
+  font-size: var(--dsh-font-size-xs);
 }
 
 .dsh-app .dsh-settings .dsh-settings__environment {
-  font-size: 11px;
+  font-size: var(--dsh-font-size-xs);
 }
 
 .dsh-app .dsh-settings :is(.dsh-icon-button, .dsh-button) svg {

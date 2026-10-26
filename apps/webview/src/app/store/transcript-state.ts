@@ -65,27 +65,43 @@ export function installTranscript(state: AppState, window: TranscriptWindow, liv
     return state
   const previous = state.transcript
   const sameSession = previous?.sessionId === window.sessionId
-  const priorNodes = new Map(sameSession ? (previous?.nodes ?? []).map((node) => [node.id, node] as const) : [])
-  const isLive = live && sameSession && previous?.historical !== true && !window.historical && !state.historyLoading
+  const priorNodes = new Map(
+    sameSession ? (previous?.nodes ?? []).map((node) => [node.id, node] as const) : [],
+  )
+  const isLive =
+    live && sameSession && previous?.historical !== true && !window.historical && !state.historyLoading
   const arrived = isLive ? window.nodes.filter((node) => !priorNodes.has(node.id)) : []
-  const progressed = isLive && (arrived.some((node) => node.kind === 'user-message') ||
-    window.nodes.some((node) => {
-      if (node.kind !== 'assistant-message' || node.streaming || node.markdown.trim() === '') return false
-      const before = priorNodes.get(node.id)
-      return before?.kind !== 'assistant-message' || before.streaming || before.markdown !== node.markdown
-    }))
-  const retained = new Set(sameSession && !progressed ? state.liveNotificationIds ?? [] : [])
+  const progressed =
+    isLive &&
+    (arrived.some((node) => node.kind === 'user-message') ||
+      window.nodes.some((node) => {
+        if (node.kind !== 'assistant-message' || node.streaming || node.markdown.trim() === '') return false
+        const before = priorNodes.get(node.id)
+        return before?.kind !== 'assistant-message' || before.streaming || before.markdown !== node.markdown
+      }))
+  const retained = new Set(sameSession && !progressed ? (state.liveNotificationIds ?? []) : [])
   for (const node of arrived) {
-    if ((node.kind === 'notice' && node.level !== 'info') || node.kind === 'turn-terminal' ||
-      (node.kind === 'retry' && node.state !== 'cancelled')) retained.add(node.id)
+    if (
+      (node.kind === 'notice' && node.level !== 'info') ||
+      node.kind === 'turn-terminal' ||
+      (node.kind === 'retry' && node.state !== 'cancelled')
+    )
+      retained.add(node.id)
   }
-  const liveNotificationIds = window.nodes.filter((node) => {
-    if (!retained.has(node.id)) return false
-    if (node.kind === 'retry' && (node.state === 'cancelled' || progressed)) return false
-    if ((node.kind === 'retry' || node.kind === 'turn-terminal') &&
-      window.activeTurn !== undefined && window.activeTurn > node.turn) return false
-    return true
-  }).map((node) => node.id).slice(-100)
+  const liveNotificationIds = window.nodes
+    .filter((node) => {
+      if (!retained.has(node.id)) return false
+      if (node.kind === 'retry' && (node.state === 'cancelled' || progressed)) return false
+      if (
+        (node.kind === 'retry' || node.kind === 'turn-terminal') &&
+        window.activeTurn !== undefined &&
+        window.activeTurn > node.turn
+      )
+        return false
+      return true
+    })
+    .map((node) => node.id)
+    .slice(-100)
   return withCurrentTodos({
     ...state,
     liveNotificationIds,

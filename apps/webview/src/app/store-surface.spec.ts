@@ -281,7 +281,7 @@ describe('AppStore bound-session startup', () => {
     }
   })
 
-  it('still restores the last session on the side bar surface', async () => {
+  it('does not choose an unrelated recent session on a fresh side bar surface', async () => {
     const client = new SurfaceClient()
     const store = createAppStore(client as unknown as ProtocolClient)
     try {
@@ -290,8 +290,8 @@ describe('AppStore bound-session startup', () => {
 
       await store.initialize()
 
-      await vi.waitFor(() => expect(requestsOfType(client, 'session.open')).toHaveLength(1))
-      expect(store.getState().activeSessionId).toBe('s1')
+      expect(requestsOfType(client, 'session.open')).toHaveLength(0)
+      expect(store.getState().activeSessionId).toBeUndefined()
     } finally {
       store.dispose()
     }

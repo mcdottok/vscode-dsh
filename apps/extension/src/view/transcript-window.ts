@@ -173,7 +173,8 @@ export class TranscriptWindowService {
     generation: number,
     cwd?: string,
   ): TranscriptWindow {
-    if (this.pending?.generation !== generation || this.pending.sessionId !== sessionId) throw stale('open-superseded')
+    if (this.pending?.generation !== generation || this.pending.sessionId !== sessionId)
+      throw stale('open-superseded')
     if (this.pending.overflow) throw stale('open-buffer-overflow')
     const resident = this.project(sessionId, page, this.pending.child, undefined, cwd)
     if (
@@ -228,8 +229,7 @@ export class TranscriptWindowService {
   /** Content is never queued for the renderer; only the latest bounded window is published. */
   public accept(event: BackendEvent): boolean {
     const sessionId = ('sessionId' in event ? event.sessionId : undefined) ?? this.tail?.sessionId
-    if (event.type === 'session.subscribed' && sessionId !== undefined)
-      this.clearConnectionNotices(sessionId)
+    if (event.type === 'session.subscribed' && sessionId !== undefined) this.clearConnectionNotices(sessionId)
     if (event.type === 'connection.restored') this.clearConnectionNotices(undefined)
     if (event.type === 'session.subscribed' && this.tail !== undefined && this.tail.sessionId === sessionId) {
       this.tail.timeline = reduceTimeline(this.tail.timeline, {
@@ -311,11 +311,7 @@ export class TranscriptWindowService {
     revision: number,
     signal: AbortSignal,
   ): Promise<TranscriptWindow> {
-    if (
-      this.tail?.sessionId !== sessionId ||
-      this.displayed === undefined ||
-      revision > this.revision
-    )
+    if (this.tail?.sessionId !== sessionId || this.displayed === undefined || revision > this.revision)
       throw stale('navigate-window-mismatch')
     // A live update can advance an expanded window before the renderer's next
     // navigation arrives. Return the current window so it can retry from the
@@ -350,7 +346,8 @@ export class TranscriptWindowService {
     }
     const before = direction === 'older' ? previous.before : this.forward[this.forward.length - 1]
     const page = await this.deps.read(sessionId, before, signal, previous.child)
-    if (signal.aborted || generation !== this.generation || this.displayed !== previous) throw stale('navigate-superseded')
+    if (signal.aborted || generation !== this.generation || this.displayed !== previous)
+      throw stale('navigate-superseded')
     if (direction === 'older') {
       if (
         page.beforeSequence !== undefined &&
@@ -674,22 +671,30 @@ export class TranscriptWindowService {
   }
 
   private clearConnectionNotices(sessionId: string | undefined): void {
-    const recovered = (node: TimelineNode): boolean => node.kind === 'notice' && (
-      node.id.startsWith('connection:') || (sessionId !== undefined && (
-        node.transient === 'connection' ||
-        // Migrate reminders already cached by previous extension versions.
-        node.text === 'The session live stream was interrupted; reconnecting.'
-      ))
-    )
+    const recovered = (node: TimelineNode): boolean =>
+      node.kind === 'notice' &&
+      (node.id.startsWith('connection:') ||
+        (sessionId !== undefined &&
+          (node.transient === 'connection' ||
+            // Migrate reminders already cached by previous extension versions.
+            node.text === 'The session live stream was interrupted; reconnecting.')))
     for (const [id, entries] of this.notices) {
       if (sessionId !== undefined && id !== sessionId) continue
-      this.notices.set(id, entries.filter((entry) => !recovered(entry.node)))
+      this.notices.set(
+        id,
+        entries.filter((entry) => !recovered(entry.node)),
+      )
     }
     const pending = this.pending
     if (sessionId !== undefined && pending?.sessionId === sessionId) {
-      pending.events = pending.events.filter((event) => !(event.type === 'notice' && (
-        event.transient === 'connection' || event.text === 'The session live stream was interrupted; reconnecting.'
-      )))
+      pending.events = pending.events.filter(
+        (event) =>
+          !(
+            event.type === 'notice' &&
+            (event.transient === 'connection' ||
+              event.text === 'The session live stream was interrupted; reconnecting.')
+          ),
+      )
       pending.chars = pending.events.reduce((size, event) => size + JSON.stringify(event).length, 0)
     }
     for (const resident of new Set([this.tail, this.displayed])) {
@@ -1232,7 +1237,11 @@ function isOngoingText(event: BackendEvent, before: TimelineState, after: Timeli
   if (previous === undefined || next === undefined || previous.id !== next.id || previous.kind !== next.kind)
     return false
   if (previous.kind === 'assistant-message' && next.kind === 'assistant-message') {
-    if (previous.liveAttemptId !== next.liveAttemptId || previous.turn !== next.turn || previous.step !== next.step)
+    if (
+      previous.liveAttemptId !== next.liveAttemptId ||
+      previous.turn !== next.turn ||
+      previous.step !== next.step
+    )
       return false
     return event.type === 'message.delta'
       ? previous.streaming && next.streaming && previous.markdown.length > 0

@@ -1523,7 +1523,7 @@ describe('AppStore history paging', () => {
         },
       ],
     })
-    await expect(paging).rejects.toMatchObject({ code: 'STALE_INTERACTION' })
+    await expect(paging).resolves.toBeUndefined()
 
     // The newer open has not painted yet, so the old session is still active.
     // The page must nevertheless be discarded by the open-generation guard.

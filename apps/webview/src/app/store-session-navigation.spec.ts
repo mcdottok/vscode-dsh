@@ -187,7 +187,7 @@ describe('pagination ownership across a failed navigation', () => {
         hasMore: true,
         beforeSeq: 15,
       })
-      await expect(paging).rejects.toMatchObject({ code: 'STALE_INTERACTION' })
+      await expect(paging).resolves.toBeUndefined()
 
       // The late page is discarded for the superseded open, but the user is
       // still reading session-a: the shared pagination flag must be released

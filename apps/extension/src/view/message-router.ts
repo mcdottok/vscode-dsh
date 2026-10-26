@@ -94,9 +94,11 @@ export class WebviewMessageRouter {
     if (!isFeature && request.type === 'session.open') {
       for (const previous of this.inFlight.values()) {
         if (
-          previous.surfaceId === surfaceId && previous.phase === 'running' &&
+          previous.surfaceId === surfaceId &&
+          previous.phase === 'running' &&
           (previous.requestType === 'session.open' || previous.requestType === 'session.transcript.navigate')
-        ) previous.controller.abort()
+        )
+          previous.controller.abort()
       }
     }
     const operation: InFlightRequest = {
@@ -110,21 +112,40 @@ export class WebviewMessageRouter {
     const diagnosticStart = Date.now()
     const diagnosticCount = ++this.diagnosticSequence
     const trace = (phase: string, error?: unknown): void => {
-      if (isFeature || !['session.open', 'session.transcript.navigate', 'session.transcript.resync'].includes(request.type)) return
+      if (
+        isFeature ||
+        !['session.open', 'session.transcript.navigate', 'session.transcript.resync'].includes(request.type)
+      )
+        return
       const reason = error instanceof AppError ? error.context?.reason : undefined
-      const knownReason = typeof reason === 'string' && [
-        'open-superseded', 'open-buffer-overflow', 'navigate-window-mismatch',
-        'navigate-superseded', 'history-cursor-not-advancing', 'window-changed',
-      ].includes(reason) ? reason : 'unspecified'
+      const knownReason =
+        typeof reason === 'string' &&
+        [
+          'open-superseded',
+          'open-buffer-overflow',
+          'navigate-window-mismatch',
+          'navigate-superseded',
+          'history-cursor-not-advancing',
+          'window-changed',
+        ].includes(reason)
+          ? reason
+          : 'unspecified'
       try {
         this.dependencies.logSessionRequest?.({
-          requestType: request.type, phase, count: diagnosticCount,
+          requestType: request.type,
+          phase,
+          count: diagnosticCount,
           durationMs: Date.now() - diagnosticStart,
-          ...(error === undefined ? {} : {
-            code: error instanceof AppError ? error.code : 'INTERNAL_ERROR', method: knownReason,
-          }),
+          ...(error === undefined
+            ? {}
+            : {
+                code: error instanceof AppError ? error.code : 'INTERNAL_ERROR',
+                method: knownReason,
+              }),
         })
-      } catch { /* Diagnostics cannot affect request handling. */ }
+      } catch {
+        /* Diagnostics cannot affect request handling. */
+      }
     }
     trace('started')
     if (isFeature && request.type === 'feature.request.cancel') {

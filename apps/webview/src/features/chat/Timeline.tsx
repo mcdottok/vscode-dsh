@@ -157,11 +157,19 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
   }>()
   const focusedProjector = useMemo(() => createFocusedTimelineProjector(), [])
   const prependAnchorRef = useRef<ScrollAnchor | undefined>(undefined)
-  const [historyAnchorSourceId, setHistoryAnchorSourceId] = useState<string>()
+  const [historyAnchor, setHistoryAnchor] = useState<{ sessionId: string; sourceId: string }>()
+  if (historyAnchor !== undefined && historyAnchor.sessionId !== props.sessionId) setHistoryAnchor(undefined)
+  const historyAnchorSourceId =
+    historyAnchor?.sessionId === props.sessionId ? historyAnchor.sourceId : undefined
+  const setHistoryAnchorSourceId = useCallback(
+    (sourceId: string | undefined): void => {
+      setHistoryAnchor(sourceId === undefined ? undefined : { sessionId: props.sessionId, sourceId })
+    },
+    [props.sessionId],
+  )
   const olderHistoryRequestRef = useRef<{ readonly sessionId: string } | undefined>(undefined)
   useLayoutEffect(() => {
     prependAnchorRef.current = undefined
-    setHistoryAnchorSourceId(undefined)
     olderHistoryRequestRef.current = undefined
   }, [props.sessionId])
   const [expandedDetails, setExpandedDetails] = useState<ReadonlySet<string>>(new Set())
@@ -196,8 +204,10 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
   )
   const displayNodes = useMemo(
     () =>
-      (conversationLayout === 'focused' ? focusedProjector(displayProjection.nodes) : displayProjection.nodes)
-        .filter((node) => node.kind !== 'notice' && node.kind !== 'retry' && node.kind !== 'turn-terminal'),
+      (conversationLayout === 'focused'
+        ? focusedProjector(displayProjection.nodes)
+        : displayProjection.nodes
+      ).filter((node) => node.kind !== 'notice' && node.kind !== 'retry' && node.kind !== 'turn-terminal'),
     [conversationLayout, displayProjection.nodes, focusedProjector],
   )
   // The Webview's own "Copy" copies nothing without a selection; this fills it
@@ -338,20 +348,31 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
     layoutAnchor?.layout === conversationLayout && layoutAnchor.sessionId === props.sessionId
       ? displayNodes.findIndex((node) => presentedSourceNodeIds(node).includes(layoutAnchor.nodeId))
       : -1
-  const historyAnchorIndex = historyAnchorSourceId === undefined ? -1 : displayNodes.findIndex(
-    (node) => node.id === historyAnchorSourceId || presentedSourceNodeIds(node).includes(historyAnchorSourceId),
-  )
+  const historyAnchorIndex =
+    historyAnchorSourceId === undefined
+      ? -1
+      : displayNodes.findIndex(
+          (node) =>
+            node.id === historyAnchorSourceId || presentedSourceNodeIds(node).includes(historyAnchorSourceId),
+        )
   const getPinnedTimelineIndex = useCallback(
     (): number | undefined =>
       historyAnchorIndex >= 0
         ? historyAnchorIndex
         : anchorIndex >= 0
-        ? anchorIndex
-        : // Measure the actual tail while following it. An estimated final row
-          // can grow after an explicit jump and leave the latest answer offscreen.
-          (getFocusedTimelineIndex() ??
-          (revealIndex >= 0 ? revealIndex : isPinnedToBottom ? displayNodes.length - 1 : undefined)),
-    [anchorIndex, historyAnchorIndex, displayNodes.length, getFocusedTimelineIndex, isPinnedToBottom, revealIndex],
+          ? anchorIndex
+          : // Measure the actual tail while following it. An estimated final row
+            // can grow after an explicit jump and leave the latest answer offscreen.
+            (getFocusedTimelineIndex() ??
+            (revealIndex >= 0 ? revealIndex : isPinnedToBottom ? displayNodes.length - 1 : undefined)),
+    [
+      anchorIndex,
+      historyAnchorIndex,
+      displayNodes.length,
+      getFocusedTimelineIndex,
+      isPinnedToBottom,
+      revealIndex,
+    ],
   )
   const virtualized = useVirtualizedCollection({
     items: displayNodes,
@@ -475,9 +496,11 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
     prependAnchorRef.current = captureScrollAnchor()
     if (prependAnchorRef.current === undefined) return
     const anchorNode = displayNodes.find((node) => node.id === prependAnchorRef.current?.nodeId)
-    setHistoryAnchorSourceId(anchorNode === undefined
-      ? prependAnchorRef.current.nodeId
-      : (presentedSourceNodeIds(anchorNode)[0] ?? anchorNode.id))
+    setHistoryAnchorSourceId(
+      anchorNode === undefined
+        ? prependAnchorRef.current.nodeId
+        : (presentedSourceNodeIds(anchorNode)[0] ?? anchorNode.id),
+    )
     const request = { sessionId: props.sessionId }
     olderHistoryRequestRef.current = request
     const result = onLoadOlderHistory()
@@ -488,7 +511,15 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
     void result.finally(() => {
       if (olderHistoryRequestRef.current === request) olderHistoryRequestRef.current = undefined
     })
-  }, [captureScrollAnchor, displayNodes, hasMoreHistory, loadingOlderHistory, onLoadOlderHistory, props.sessionId])
+  }, [
+    captureScrollAnchor,
+    displayNodes,
+    hasMoreHistory,
+    loadingOlderHistory,
+    onLoadOlderHistory,
+    setHistoryAnchorSourceId,
+    props.sessionId,
+  ])
   const handleScroll = useCallback((): void => {
     const element = scrollRef.current
     if (props.pagedHistory !== true && element !== null && element.scrollTop <= 24 && isUserScrollActive())
@@ -566,18 +597,34 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
     if (virtualized.enabled && !virtualized.ready) return
     // Pin the original source row through prepend and virtualizer measurement.
     // Focused turns may receive a new wrapper id as older work is grouped in.
-    const row = historyAnchorIndex < 0 ? undefined : Array.from(
-      element.querySelectorAll<HTMLElement>('.dsh-timeline__row[data-index]'),
-    ).find((candidate) => Number(candidate.dataset.index) === historyAnchorIndex)
+    const row =
+      historyAnchorIndex < 0
+        ? undefined
+        : Array.from(element.querySelectorAll<HTMLElement>('.dsh-timeline__row[data-index]')).find(
+            (candidate) => Number(candidate.dataset.index) === historyAnchorIndex,
+          )
     if (virtualized.enabled && historyAnchorIndex >= 0 && row === undefined) return
-    restoreScrollAnchor(row?.dataset.nodeId === undefined ? anchor : {
-      ...anchor, nodeId: row.dataset.nodeId,
-    }, true)
+    restoreScrollAnchor(
+      row?.dataset.nodeId === undefined
+        ? anchor
+        : {
+            ...anchor,
+            nodeId: row.dataset.nodeId,
+          },
+      true,
+    )
     prependAnchorRef.current = undefined
     setHistoryAnchorSourceId(undefined)
   }, [
-    props.loadingOlderHistory, props.nodes, historyAnchorIndex,
-    restoreScrollAnchor, scrollRef, virtualized.enabled, virtualized.ready, virtualized.totalSize,
+    props.loadingOlderHistory,
+    props.nodes,
+    historyAnchorIndex,
+    setHistoryAnchorSourceId,
+    restoreScrollAnchor,
+    scrollRef,
+    virtualized.enabled,
+    virtualized.ready,
+    virtualized.totalSize,
   ])
 
   return (

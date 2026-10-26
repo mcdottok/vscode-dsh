@@ -1,3 +1,4 @@
+import { webviewRequestSchema } from '@dsh-vscode/webview-protocol'
 import { transcriptWindowFixture } from '../view/transcript-window.fixture.js'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppError, type BackendEvent, type InteractionRepository } from '@dsh-vscode/domain'
@@ -10,7 +11,7 @@ const { Rc6InteractionRepository } = await vi.importActual<{
   }
 }>('../../../../packages/dsh-adapter/src/repositories/interaction-repository.js')
 
-const host = vi.hoisted(() => ({ isTrusted: true, commands: [] as string[] }))
+const host = vi.hoisted(() => ({ isTrusted: true, commands: [] as string[], events: [] as string[] }))
 
 vi.mock('vscode', () => ({
   workspace: {
@@ -45,6 +46,7 @@ function buildGateway(isTrusted: boolean): {
 } {
   host.isTrusted = isTrusted
   host.commands = []
+  host.events = []
   const sent: Sent[] = []
   const retries: number[] = []
   const controls: string[] = []
@@ -68,7 +70,10 @@ function buildGateway(isTrusted: boolean): {
   const gateway = createRequestGateway({
     postTo: () => Promise.resolve(true),
     postEvent: () => Promise.resolve(true),
-    postEventTo: () => Promise.resolve(true),
+    postEventTo: (_target: unknown, name: string) => {
+      host.events.push(name)
+      return Promise.resolve(true)
+    },
     surfaces: new WebviewSurfaceRegistry(),
     transcript: transcriptWindowFixture(),
     post: (message: unknown) => {
@@ -119,7 +124,7 @@ describe('request gateway workspace trust refusal', () => {
   it.each([
     ['open-web-ui', 'dsh.openWebUi'],
     ['open-editor', 'dsh.openChatInEditor'],
-    ['open-session-list', 'dsh.openSessionList'],
+    ['open-session-list', 'retired'],
   ])('routes the page toolbar action %s through the Host', async (action, command) => {
     const { gateway } = buildGateway(true)
     host.commands.length = 0
@@ -127,7 +132,16 @@ describe('request gateway workspace trust refusal', () => {
       protocolVersion: 1,
       message: { type: 'runtime.action', requestId: 'toolbar-action', payload: { action } },
     })
-    expect(host.commands).toEqual([command])
+    if (action === 'open-session-list') {
+      expect(
+        webviewRequestSchema.safeParse({
+          type: 'runtime.action',
+          requestId: 'toolbar-action',
+          payload: { action },
+        }).success,
+      ).toBe(false)
+      expect(host.commands).toEqual([])
+    } else expect(host.commands).toEqual([command])
   })
   it('opens the native Desktop login command without passing any address or token through the Webview', async () => {
     const { gateway } = buildGateway(true)

@@ -301,10 +301,14 @@ export class EditorContextProvider implements EditorContextPort, vscode.Disposab
     // relative path or a long symbol name can exceed that on its own, and an
     // over-budget response is replaced wholesale by the Host router, so the
     // whole editor-context rail would fail to load.
-    const endLine = range === undefined ? undefined : Math.max(range.start.line + 1, range.end.line + (range.end.character === 0 ? 0 : 1))
-    const label = `${input.kind}: ${relativePath}${range === undefined ? '' : `:${range.start.line + 1}–${endLine}`}${
-      symbolName === undefined ? '' : ` ${symbolName}`
-    }`.slice(0, 512)
+    const endLine =
+      range === undefined
+        ? undefined
+        : Math.max(range.start.line + 1, range.end.line + (range.end.character === 0 ? 0 : 1))
+    const label =
+      `${input.kind}: ${relativePath}${range === undefined ? '' : `:${range.start.line + 1}–${endLine}`}${
+        symbolName === undefined ? '' : ` ${symbolName}`
+      }`.slice(0, 512)
     const readCurrent = async (): Promise<CurrentEditorContextContent> => {
       // Do not retain the capture request's AbortSignal in a long-lived
       // context handle. A cancellation after capture admission must not make

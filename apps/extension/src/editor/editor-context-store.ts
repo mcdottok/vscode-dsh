@@ -183,9 +183,15 @@ export class EditorContextStore {
     this.assertOwner(owner)
     const removed: string[] = []
     for (const [contextRef, entry] of this.entries) {
-      if (!entry.automaticSelection || entry.ref.kind !== 'selection' ||
-        !this.matchesOwner(entry.ref, owner) || !this.matchesWorkspace(entry.ref, owner.workspaceFolderId) ||
-        entry.ref.sessionId !== undefined || this.pendingBindings.has(contextRef)) continue
+      if (
+        !entry.automaticSelection ||
+        entry.ref.kind !== 'selection' ||
+        !this.matchesOwner(entry.ref, owner) ||
+        !this.matchesWorkspace(entry.ref, owner.workspaceFolderId) ||
+        entry.ref.sessionId !== undefined ||
+        this.pendingBindings.has(contextRef)
+      )
+        continue
       this.entries.delete(contextRef)
       removed.push(contextRef)
     }

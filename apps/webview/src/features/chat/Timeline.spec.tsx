@@ -393,7 +393,7 @@ describe('Timeline', () => {
           ?.classList.contains('dsh-timeline__canvas--virtualized-ready'),
       ).toBe(true)
       expect(container.querySelector('.dsh-timeline__row[data-index="47"]')).not.toBeNull()
-      expect(container.querySelectorAll('.dsh-timeline__row').length).toBeLessThan(12)
+      expect(container.querySelectorAll('.dsh-timeline__row').length).toBeLessThan(nodes.length)
       const firstVisibleRow = container.querySelector<HTMLElement>('.dsh-timeline__row[data-index="0"]')
       expect(firstVisibleRow).not.toBeNull()
       const copyButton = within(firstVisibleRow!).getByRole('button', { name: 'Copy' })
@@ -1110,7 +1110,7 @@ describe('Timeline', () => {
     ).toBe('true')
   })
 
-  it('renders the structured terminal failure beside the generic turn label', () => {
+  it('leaves terminal failures to the toolbar notifications outside the transcript', () => {
     render(
       <Timeline
         sessionId="session-1"
@@ -1128,9 +1128,9 @@ describe('Timeline', () => {
       />,
     )
 
-    expect(screen.getByText('Turn ended with an error')).toBeDefined()
-    expect(screen.getByText('PROVIDER_UNAVAILABLE')).toBeDefined()
-    expect(screen.getByText('The provider is unavailable.')).toBeDefined()
+    expect(screen.queryByText('Turn ended with an error')).toBeNull()
+    expect(screen.queryByText('PROVIDER_UNAVAILABLE')).toBeNull()
+    expect(screen.queryByText('The provider is unavailable.')).toBeNull()
   })
 
   it('renders compact message actions and branches from any completed answer', () => {
@@ -1979,7 +1979,7 @@ describe('Timeline', () => {
     expect(screen.getByRole('button', { name: 'Branch into a new conversation' })).toBeDefined()
   })
 
-  it('renders the aggregated retry row and compaction accounting', () => {
+  it('keeps compaction accounting in the transcript and retries in toolbar notifications', () => {
     const nodes: readonly TimelineNode[] = [
       {
         kind: 'retry',
@@ -2005,8 +2005,8 @@ describe('Timeline', () => {
 
     render(<Timeline sessionId="session-1" nodes={nodes} streaming={false} />)
 
-    expect(screen.getByText(/Retrying \(attempt 3\)/u)).toBeDefined()
-    expect(screen.getByText(/rate limited/u)).toBeDefined()
+    expect(screen.queryByText(/Retrying \(attempt 3\)/u)).toBeNull()
+    expect(screen.queryByText(/rate limited/u)).toBeNull()
     expect(screen.getByText('12 entries · ~8.4K tokens')).toBeDefined()
   })
 

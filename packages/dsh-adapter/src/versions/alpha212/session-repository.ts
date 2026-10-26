@@ -14,25 +14,31 @@ export class Alpha212SessionRepository extends Rc172SessionRepository {
     items: readonly SessionSummary[],
     signal?: AbortSignal,
   ): Promise<void> {
-    const missing = items.filter((item) => !item.blank &&
-      item.formatStatus !== 'migration-required' && !this.hasProjectedTitle(item.id) &&
-      (this.titleRetryAt.get(item.id) ?? 0) <= Date.now())
+    const missing = items.filter(
+      (item) =>
+        !item.blank &&
+        item.formatStatus !== 'migration-required' &&
+        !this.hasProjectedTitle(item.id) &&
+        (this.titleRetryAt.get(item.id) ?? 0) <= Date.now(),
+    )
     let index = 0
     // Exact read-only observations rebuild cold projections without Agent
     // activation. Bound disk work and keep the ordinary list usable on errors.
-    await Promise.all(Array.from({ length: Math.min(3, missing.length) }, async () => {
-      while (index < missing.length) {
-        signal?.throwIfAborted()
-        const item = missing[index++]
-        if (item === undefined) return
-        try {
-          await this.readColdTitle(item.id, signal)
-        } catch {
+    await Promise.all(
+      Array.from({ length: Math.min(3, missing.length) }, async () => {
+        while (index < missing.length) {
           signal?.throwIfAborted()
-          this.titleRetryAt.set(item.id, Date.now() + 5_000)
+          const item = missing[index++]
+          if (item === undefined) return
+          try {
+            await this.readColdTitle(item.id, signal)
+          } catch {
+            signal?.throwIfAborted()
+            this.titleRetryAt.set(item.id, Date.now() + 5_000)
+          }
         }
-      }
-    }))
+      }),
+    )
   }
 
   private async readColdTitle(sessionId: string, signal?: AbortSignal): Promise<void> {
@@ -54,7 +60,8 @@ export class Alpha212SessionRepository extends Rc172SessionRepository {
     if (projection?.kind !== 'sequenced') throw malformedTitleProjection()
     const { kind, ...baseline } = projection
     void kind
-    if (!validAlpha171ProjectionBaseline(baseline) || typeof baseline.asOfSeq !== 'number') throw malformedTitleProjection()
+    if (!validAlpha171ProjectionBaseline(baseline) || typeof baseline.asOfSeq !== 'number')
+      throw malformedTitleProjection()
     const values = recordOrUndefined(baseline.values)
     if (values?.title === undefined || values.title === null || values.title === '') {
       this.titleRetryAt.set(sessionId, Date.now() + 30_000)
@@ -120,5 +127,9 @@ export class Alpha212SessionRepository extends Rc172SessionRepository {
 }
 
 function malformedTitleProjection(): AppError {
-  return new AppError({ code: 'PROTOCOL_ERROR', message: 'DSH returned a malformed session title projection.', retryable: false })
+  return new AppError({
+    code: 'PROTOCOL_ERROR',
+    message: 'DSH returned a malformed session title projection.',
+    retryable: false,
+  })
 }

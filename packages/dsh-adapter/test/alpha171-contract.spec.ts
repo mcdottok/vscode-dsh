@@ -963,12 +963,20 @@ for (const profile of controlAdapterProfiles) {
               id: 'm-queued',
               placement: 'queued',
               rpcId: 'request-queued',
-              message: { id: 'm-queued', content: [{ type: 'text', text: 'queued text' }] },
+              message: {
+                id: 'm-queued',
+                source: { kind: 'user' },
+                content: [{ type: 'text', text: 'queued text' }],
+              },
             },
             {
               id: 'm-steering',
               placement: 'steering',
-              message: { id: 'm-steering', content: [{ type: 'text', text: 'steering text' }] },
+              message: {
+                id: 'm-steering',
+                source: { kind: 'plugin' },
+                content: [{ type: 'text', text: 'steering text' }],
+              },
             },
           ],
         },
@@ -988,10 +996,7 @@ for (const profile of controlAdapterProfiles) {
         type: 'queue.updated',
         sessionId: 's-1',
         asOfSequence: 12,
-        items: [
-          { id: 'm-queued', mode: 'queue', text: 'queued text', rpcId: 'request-queued' },
-          { id: 'm-steering', mode: 'steer', text: 'steering text' },
-        ],
+        items: [{ id: 'm-queued', mode: 'queue', text: 'queued text', rpcId: 'request-queued' }],
       })
       await expect(iterator.next()).resolves.toEqual({
         done: false,
@@ -1028,7 +1033,11 @@ for (const profile of controlAdapterProfiles) {
               id: 'm-next',
               placement: 'steering',
               rpcId: 'request-next',
-              message: { id: 'm-next', content: [{ type: 'text', text: 'next step' }] },
+              message: {
+                id: 'm-next',
+                source: { kind: 'user' },
+                content: [{ type: 'text', text: 'next step' }],
+              },
             },
           ],
         },

@@ -134,7 +134,7 @@ function setupSettings(
 }
 
 describe('useDshSettings generation fencing', () => {
-  it('keeps Developer Tools surfaces gated until a snapshot is accepted and after a failed read', async () => {
+  it('keeps local tools available while settings load or fail without accepting stale preferences', async () => {
     let resolveSettings: ((snapshot: DshSettingsSnapshot) => void) | undefined
     const pendingSettings = new Promise<DshSettingsSnapshot>((resolve) => {
       resolveSettings = resolve
@@ -145,8 +145,8 @@ describe('useDshSettings generation fencing', () => {
       .mockRejectedValue(new Error('offline'))
     const settings = setupSettings(connectedState(), { readDshSettings })
 
-    // While the first read is in flight nothing is trusted yet.
-    expect(settings.result.current.codingToolsEnabled).toBe(false)
+    // Local tools stay available; shared preferences still require an accepted snapshot.
+    expect(settings.result.current.codingToolsEnabled).toBe(true)
     expect(settings.result.current.readyDshUiPreferences).toBeUndefined()
 
     await act(async () => {
@@ -155,10 +155,10 @@ describe('useDshSettings generation fencing', () => {
     })
     await waitFor(() => expect(settings.result.current.codingToolsEnabled).toBe(true))
 
-    // A new connection generation whose read fails falls back to the closed gate.
+    // Failed reads after reconnect clear shared preferences without disabling local tools.
     settings.setState(connectedState({ connectionEpoch: 2 }))
     await waitFor(() => expect(readDshSettings).toHaveBeenCalledTimes(2))
-    await waitFor(() => expect(settings.result.current.codingToolsEnabled).toBe(false))
+    await waitFor(() => expect(settings.result.current.codingToolsEnabled).toBe(true))
     expect(settings.result.current.readyDshUiPreferences).toBeUndefined()
   })
 
@@ -170,7 +170,7 @@ describe('useDshSettings generation fencing', () => {
       readDshSettings: vi.fn().mockResolvedValue(dshUiSettingsSnapshot(false)),
     })
 
-    await waitFor(() => expect(settings.result.current.codingToolsEnabled).toBe(false))
+    await waitFor(() => expect(settings.result.current.codingToolsEnabled).toBe(true))
     expect(settings.result.current.newSessionPresetSelectionEnabled).toBe(true)
   })
 
@@ -179,7 +179,7 @@ describe('useDshSettings generation fencing', () => {
       readDshSettings: vi.fn().mockRejectedValue(new Error('offline')),
     })
 
-    await waitFor(() => expect(settings.result.current.codingToolsEnabled).toBe(false))
+    await waitFor(() => expect(settings.result.current.codingToolsEnabled).toBe(true))
     expect(settings.result.current.newSessionPresetSelectionEnabled).toBe(true)
   })
 
@@ -292,7 +292,7 @@ describe('useDshSettings generation fencing', () => {
     }
   })
 
-  it('clears the old settings gate after a confirmed DSH version change', async () => {
+  it('clears old preferences after a confirmed DSH version change', async () => {
     let rejectNewVersion: ((reason: Error) => void) | undefined
     const nextVersionRead = new Promise<DshSettingsSnapshot>((_resolve, reject) => {
       rejectNewVersion = reject
@@ -307,11 +307,11 @@ describe('useDshSettings generation fencing', () => {
     settings.setState(connectedState({ connectedDshVersion: '0.1.0-rc.7' }))
     await waitFor(() => expect(readDshSettings).toHaveBeenCalledTimes(2))
     act(() => rejectNewVersion?.(new Error('new DSH unavailable')))
-    expect(settings.result.current.codingToolsEnabled).toBe(false)
+    expect(settings.result.current.codingToolsEnabled).toBe(true)
     expect(settings.result.current.readyDshUiPreferences).toBeUndefined()
   })
 
-  it('does not let a pre-write settings read restore the old Developer Tools value', async () => {
+  it('does not let a pre-write settings read restore stale preferences', async () => {
     let resolvePreWriteRead: ((snapshot: DshSettingsSnapshot) => void) | undefined
     const preWriteRead = new Promise<DshSettingsSnapshot>((resolve) => {
       resolvePreWriteRead = resolve
@@ -331,16 +331,17 @@ describe('useDshSettings generation fencing', () => {
     await act(async () => {
       await settings.result.current.updateDshSettingFromDrawer('ui-settings.enabled', false, 1)
     })
-    await waitFor(() => expect(settings.result.current.codingToolsEnabled).toBe(false))
+    await waitFor(() => expect(settings.result.current.codingToolsEnabled).toBe(true))
 
     await act(async () => {
       resolvePreWriteRead?.(dshUiSettingsSnapshot(true))
       await preWriteRead
     })
-    expect(settings.result.current.codingToolsEnabled).toBe(false)
+    expect(settings.result.current.codingToolsEnabled).toBe(true)
+    expect(settings.result.current.readyDshUiPreferences?.codingToolsEnabled).toBe(false)
   })
 
-  it('applies a successful Developer Tools setting update to the application gate', async () => {
+  it('accepts a Developer Tools preference update without disabling local tools', async () => {
     let codingToolsEnabled = true
     const readDshSettings = vi
       .fn()
@@ -355,6 +356,7 @@ describe('useDshSettings generation fencing', () => {
     await act(async () => {
       await settings.result.current.updateDshSettingFromDrawer('ui-settings.enabled', false, 1)
     })
-    await waitFor(() => expect(settings.result.current.codingToolsEnabled).toBe(false))
+    await waitFor(() => expect(settings.result.current.readyDshUiPreferences?.codingToolsEnabled).toBe(false))
+    expect(settings.result.current.codingToolsEnabled).toBe(true)
   })
 })

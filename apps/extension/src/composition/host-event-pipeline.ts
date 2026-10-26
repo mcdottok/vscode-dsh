@@ -9,7 +9,12 @@ import type {
   PluginInstallProgressView,
 } from '@dsh-vscode/domain'
 import type { BackendService, EditorContextUseCases } from '@dsh-vscode/application'
-import { TRANSCRIPT_MAX_CHARS, type FeatureHostEvent, type FeatureHostMessage, type HostMessage } from '@dsh-vscode/webview-protocol'
+import {
+  TRANSCRIPT_MAX_CHARS,
+  type FeatureHostEvent,
+  type FeatureHostMessage,
+  type HostMessage,
+} from '@dsh-vscode/webview-protocol'
 import type { RedactedDiagnostics } from '../backend/diagnostics.js'
 import type { TemporaryWorkspaceManager } from '../backend/temporary-workspace.js'
 import { sanitizePublicValue } from '../view/public-value.js'
@@ -218,12 +223,16 @@ export function createHostEventPipeline(deps: HostEventPipelineDependencies): Ho
     }
   }
   let sequence = 0
-  const eventPostQueue = new BoundedEventQueue(async () => {
-    diagnostics.log('warn', 'session-recovery', { phase: 'event-queue-overflow' })
-    const nextSequence = sequence + 1
-    if (await post({ type: 'event', name: 'ui.resync', sequence: nextSequence, payload: {} }))
-      sequence = nextSequence
-  }, 128, 2 * TRANSCRIPT_MAX_CHARS + 512 * 1024)
+  const eventPostQueue = new BoundedEventQueue(
+    async () => {
+      diagnostics.log('warn', 'session-recovery', { phase: 'event-queue-overflow' })
+      const nextSequence = sequence + 1
+      if (await post({ type: 'event', name: 'ui.resync', sequence: nextSequence, payload: {} }))
+        sequence = nextSequence
+    },
+    128,
+    2 * TRANSCRIPT_MAX_CHARS + 512 * 1024,
+  )
   const enqueueEvent = (
     resolve: () => Promise<{ readonly name: string; readonly payload: unknown } | undefined>,
     chars: number,
