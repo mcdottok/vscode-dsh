@@ -75,9 +75,9 @@ export const SUPPORTED_DSH_RANGE =
 export const DSH_PACKAGE_NAME = '@deepseek-ai/dsh' as const
 
 /** Newest exact DSH package published upstream; not automatically the installer default. */
-export const LATEST_PUBLISHED_DSH_VERSION = '0.2.1-rc.3' as const
+export const LATEST_PUBLISHED_DSH_VERSION = '0.2.1-rc.4' as const
 
-export const LATEST_SUPPORTED_DSH_VERSION = LATEST_PUBLISHED_DSH_VERSION
+export const LATEST_SUPPORTED_DSH_VERSION = '0.2.1-rc.3' as const
 
 /** Explicit exact-version default for guided installs; update only after reviewing the release contract. */
 export const DEFAULT_INSTALL_DSH_VERSION = '0.2.1-rc.2' as const
@@ -128,6 +128,8 @@ export interface DshVersionAdapter {
   readonly compatibilityPriority?: number
   /** Whether this adapter is eligible for unknown-runtime probing and factory fallback. */
   readonly fallback?: boolean
+  /** Admit a bounded modern wire family without enabling legacy fallback on rejection. */
+  supportsCompatibilityVersion?(version: string): boolean
   probe(candidate: BackendCandidate, signal?: AbortSignal): Promise<BackendCapabilities | undefined>
   /**
    * Probe an unknown, non-empty runtime label without assuming that its release

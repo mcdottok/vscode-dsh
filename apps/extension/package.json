@@ -2,7 +2,7 @@
   "name": "vscode-dsh",
   "displayName": "DSH",
   "description": "Share and continue your DSH Desktop conversations in VS Code.",
-  "version": "0.1.74",
+  "version": "0.1.75",
   "publisher": "mcdottok",
   "icon": "resources/dsh.png",
   "license": "MIT",

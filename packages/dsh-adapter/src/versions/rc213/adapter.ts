@@ -8,6 +8,10 @@ import { Rc212VersionAdapter } from '../rc212/adapter.js'
  * implementation and differs only in its exact identity.
  */
 export class Rc213VersionAdapter extends Rc212VersionAdapter {
+  public override supportsCompatibilityVersion(_version: string): boolean {
+    return false
+  }
+
   protected override readonly identity: VersionAdapterIdentity = {
     id: 'dsh-0.2.1-rc.3',
     supportedVersion: '0.2.1-rc.3',

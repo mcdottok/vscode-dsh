@@ -53,13 +53,21 @@ export class VersionedBackendProbe implements BackendProbe {
         ? candidate.runtimeVersion
         : normalizeDshVersion(candidate.runtimeVersion)
     const compatibilityProbe = hintedVersion === undefined || !isKnownDshVersion(hintedVersion)
+    const familyAdapters =
+      compatibilityProbe && hintedVersion !== undefined
+        ? this.adapters.filter((adapter) => adapter.supportsCompatibilityVersion?.(hintedVersion) === true)
+        : []
     // A missing runtime identity is as unsafe for exact selection as an
     // unknown release: it must be claimed only by an explicitly designated
     // compatibility fallback. Having a probeCompatibility method alone is
     // not sufficient: exact-only adapters can expose that hook accidentally,
     // and selecting one would misreport the wire contract for a future build.
     const adapters = compatibilityProbe
-      ? orderCompatibilityAdapters(this.adapters.filter((adapter) => adapter.fallback === true))
+      ? orderCompatibilityAdapters(
+          familyAdapters.length > 0
+            ? familyAdapters
+            : this.adapters.filter((adapter) => adapter.fallback === true),
+        )
       : this.adapters
     let incompatible: AppError | undefined
     for (const adapter of adapters) {

@@ -29,7 +29,11 @@ function fixture(value: () => unknown): DshTransport {
   }
 }
 
-const incrementalAdapters = [Rc211VersionAdapter, Rc212VersionAdapter, Rc213VersionAdapter]
+const incrementalAdapters: readonly (typeof Rc211VersionAdapter)[] = [
+  Rc211VersionAdapter,
+  Rc212VersionAdapter,
+  Rc213VersionAdapter,
+]
 describe.each(incrementalAdapters)('%s incremental contracts', (Adapter) => {
   class FixtureAdapter extends Adapter {
     public transport(): AlphaLoopbackApiClient {

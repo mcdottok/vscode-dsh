@@ -6,9 +6,15 @@
 
 官方 Desktop 的 `0.2.1-rc.2` 安装包与同名 tag 使用同一 Host 启动契约：`apps/desktop-host/src/index.ts` 通过 `--host 127.0.0.1 --port 0` 启动，再调用 `connection.authenticatedUrl` 向 Electron 提交地址。连接配套复用该版本 `connection.fetch.register` 的已认证 owner-only 精确路由，界面使用 `settings.general.item` 与 `plugins.bundle.config`。Windows 发现从 `app.asar` 内有界读取 shell/core manifest，要求官方包身份和精确版本相同；Electron Host 使用 `original-fs` 读取物理归档，避免默认文件接口把 ASAR 当成虚拟目录。元数据仍须经 Adapter Probe 验证，不代表进程所有权。现场双端验收独立记录。
 
-当前上游最新发布包为 `@deepseek-ai/dsh@0.2.1-rc.3`，其相对 rc.2 的源码只改动 Web/Electron 客户端 UI、遥测和模型列表，被本扩展消费的 wire 未变，因此 `rc213` 继承 `rc212` 的消费契约，目前只有源码核对、尚无独立隔离运行证据；扩展引导安装默认包为 `@deepseek-ai/dsh@0.2.1-rc.2`（保持上次交付的已验证精确版本），固定源码与隔离运行证据见[交付检查](../reviews/dsh-rc212-release-review.md)。发布版本与安装默认分别由 `LATEST_PUBLISHED_DSH_VERSION`、`DEFAULT_INSTALL_DSH_VERSION` 维护；新增适配不自动切换默认，安装和更新均使用经过验证的精确版本，不跟随浮动 dist-tag。默认版本不代表所有能力完成，timed 提问等验收缺口仍见能力矩阵。
+当前上游最新发布包为 `@deepseek-ai/dsh@0.2.1-rc.4`；最新独立适配版本为 rc.3，其相对 rc.2 的源码只改动 Web/Electron 客户端 UI、遥测和模型列表，被本扩展消费的 wire 未变，因此 `rc213` 继承 `rc212` 的消费契约，目前只有源码核对、尚无独立隔离运行证据；扩展引导安装默认包为 `@deepseek-ai/dsh@0.2.1-rc.2`（保持上次交付的已验证精确版本），固定源码与隔离运行证据见[交付检查](../reviews/dsh-rc212-release-review.md)。发布版本与安装默认分别由 `LATEST_PUBLISHED_DSH_VERSION`、`DEFAULT_INSTALL_DSH_VERSION` 维护；新增适配不自动切换默认，安装和更新均使用经过验证的精确版本，不跟随浮动 dist-tag。默认版本不代表所有能力完成，timed 提问等验收缺口仍见能力矩阵。
 
 历史 Host API 的固定基线是提交 [`47f943859bef60e4160492346772ded9b24f765a`](https://github.com/deepseek-ai/deepseek-harness/tree/47f943859bef60e4160492346772ded9b24f765a)：[RPC map](https://github.com/deepseek-ai/deepseek-harness/blob/47f943859bef60e4160492346772ded9b24f765a/packages/host/apiproxy/src/api/rpc-map.ts)、[events](https://github.com/deepseek-ai/deepseek-harness/blob/47f943859bef60e4160492346772ded9b24f765a/packages/host/apiproxy/src/api/events.ts)、[tool catalog](https://github.com/deepseek-ai/deepseek-harness/tree/47f943859bef60e4160492346772ded9b24f765a/packages/core/tools)。它只证明该 Host API 家族；较新的 Connection/Gateway、typed Remote 和 Session Controller 必须从**目标版本自己的 tag/commit 和实际存在的接口文件**核对。尤其 `0.1.5-rc.2` 与 `0.1.5-rc.3` 的 wire 比较不能引用上述已不存在的旧 RPC 文件；两者被适配器消费的 Session Controller、typed Remote、Connection/Gateway 与工具运行时源码相同，仍保留各自精确身份。
+
+## 后续版本的连接范围
+
+对于尚未登记精确身份、且满足 `>=0.2.1-rc.2 <0.3.0-0` 的合法版本（包括范围内的预发布版本），优先使用 `rc212` 协议基线。先只读检查 `session.list` 的 Session V4 入口和 `workspace.list` 的 pinned Workspace 结构；通过后保留实际 DSH 版本、`best-effort` 身份及兼容提示，不把它视作逐项完成验证。检查失败时停止此家族的连接，不再尝试 Session v0 等历史回退。已有精确入口保持优先；范围之外不套用 rc.2 基线，缺失版本的旧探测策略不变。
+
+`0.2.1-rc.4` 的 npm 发布包已核对：相对 rc.3，所消费的 Gateway、Host Webserver、Session、Workspace、Session Format Catalog、Session Projection、Typert Protocol/Registry、Client Locale/Renderer 和 Plugin Manager 的 JavaScript 与类型声明在归一化包版本后相同。此核对不等于 rc.4 的完整现场验收。Connect 的 `engines.dsh` 同步采用上述范围，构建依赖仍固定 rc.2；不把未核对的 rc.1 或更早内核纳入 Connect 安装声明。
 
 ## 版本身份与 wire 家族
 
@@ -36,7 +42,7 @@
 | `0.2.1-alpha.4`                                                                     | `alpha214`                                      | 继承已核对 wire，增加插件 already-installed 业务错误；仅精确身份                                                                                                  |
 | `0.2.1-alpha.5`                                                                     | `alpha215`                                      | 账号奖励通知标题与可选显示字段；任意 JSON 元数据留在 Host；仅精确身份                                                                                             |
 | `0.2.1-rc.1`                                                                        | `rc211`                                         | 独立入口，复用已核对 alpha.5 消费契约；不作为未知版本回退                                                                                                         |
-| `0.2.1-rc.2`                                                                        | `rc212`                                         | 独立入口，复用已核对 rc.1 消费契约；动态承接 Search / Fetch 设置；不作为未知版本回退                                                                              |
+| `0.2.1-rc.2`                                                                        | `rc212`                                         | 独立入口，复用已核对 rc.1 消费契约；动态承接 Search / Fetch 设置；同时作为后续 0.2.x 的有界兼容基线                                                               |
 | `0.2.1-rc.3`                                                                        | `rc213`                                         | 独立入口，复用已核对 rc.2 消费契约；上游仅客户端 UI、遥测与模型列表变化；不作为未知版本回退                                                                       |
 
 `0.1.7-rc.2` 的固定源码是 [tag `dsh-v0.1.7-rc.2`](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.1.7-rc.2)，提交 `477b4f420553e8a52c2fbccc464d7561b239c443`。其他新增版本也必须在 fixture 注明 tag、commit、文件和类型；版本身份、schema、错误词汇、启动参数与能力声明一起核对。
