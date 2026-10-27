@@ -224,7 +224,7 @@ function QueueItemEditor(props: {
   return (
     <textarea
       ref={textareaRef}
-      rows={Math.min(8, Math.max(2, value.split('\n').length))}
+      rows={1}
       aria-label={t('queue.edit', { position: props.position })}
       value={value}
       onChange={(event) => setValue(event.target.value)}

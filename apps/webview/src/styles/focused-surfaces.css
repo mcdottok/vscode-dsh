@@ -283,7 +283,10 @@
 }
 
 .dsh-app[data-conversation-layout='focused'] .dsh-queue {
-  padding-inline: 0;
+  padding: 4px 0;
+  border: 1px solid var(--dsh-border-color);
+  border-radius: 12px;
+  background: transparent;
 }
 
 .dsh-app[data-conversation-layout='focused']

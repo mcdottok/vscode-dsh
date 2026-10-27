@@ -322,7 +322,7 @@
 
 .dsh-queue__item-main textarea,
 .dsh-queue__handoff {
-  grid-column: 2 / -1;
+  grid-column: 2;
   grid-row: 1;
   width: 100%;
   min-width: 0;
@@ -334,11 +334,26 @@
 
 .dsh-queue__item-main textarea {
   max-height: 14rem;
-  resize: vertical;
+  border: 1px solid transparent;
+  border-radius: var(--dsh-radius-sm);
+  background: transparent;
+  color: var(--dsh-text);
+  resize: none;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   overflow-y: auto;
   line-height: var(--dsh-line-height-body);
+}
+
+/* Editing stays discoverable without a second filled box inside the dock. */
+.dsh-queue__item-main textarea:hover:not(:read-only) {
+  background: var(--dsh-surface-hover);
+}
+
+.dsh-queue__item-main textarea:focus-visible {
+  border-color: var(--dsh-focus-ring);
+  outline: none;
+  background: var(--dsh-widget-bg);
 }
 
 .dsh-queue__handoff-text {
@@ -356,8 +371,8 @@
 }
 
 .dsh-queue__item-actions {
-  grid-column: 2 / -1;
-  grid-row: 2;
+  grid-column: 3;
+  grid-row: 1;
   flex: 0 0 auto;
   flex-wrap: nowrap;
   justify-content: flex-end;
@@ -372,7 +387,9 @@
 
 .dsh-queue__mode .dsh-select-menu__trigger {
   padding: var(--dsh-space-1) var(--dsh-space-2);
-  font-size: var(--dsh-font-size-sm);
+  border-color: transparent;
+  background: transparent;
+  font-size: var(--dsh-font-size-xs);
 }
 
 .dsh-queue .dsh-icon-button {
