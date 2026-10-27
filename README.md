@@ -1,6 +1,6 @@
 # DSH Coding Agent
 
-[简体中文](README.md) | [English](README.en.md)
+简体中文 | [English](README.en.md)
 
 在 VS Code 中使用 DeepSeek Harness，获得类似 Codex、Claude Code 的编辑器插件体验：围绕当前项目对话，附加选区和文件，跟踪工具执行并审阅代码变更。可独立运行本机 DSH，也可自动连接桌面端并接续同一工作区与会话。
 

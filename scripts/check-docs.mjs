@@ -145,6 +145,8 @@ const localTargets = (source) =>
   [...source.matchAll(/\]\(([^)\s]+)\)/gu)]
     .map((match) => match[1])
     .filter((target) => !/^(?:https?:|mailto:)/iu.test(target))
+    // Language navigation links intentionally omit the current document.
+    .filter((target) => target !== 'README.md' && target !== 'README.en.md')
     .sort()
 if (JSON.stringify(localTargets(readme)) !== JSON.stringify(localTargets(chineseReadme)))
   errors.push('README translations link to different local documentation')

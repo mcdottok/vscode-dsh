@@ -1,6 +1,6 @@
 # DSH Coding Agent
 
-[简体中文](README.md) | [English](README.en.md)
+[简体中文](README.md) | English
 
 Develop with DeepSeek Harness in VS Code, with an editor workflow similar to Codex and Claude Code extensions: chat about your project, attach selections and files, follow tool execution, and review changes. Run a local DSH package or connect to Desktop and continue the same workspace and session.
 
