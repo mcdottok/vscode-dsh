@@ -228,6 +228,7 @@ export const protocolAppErrorCodeSchema = z.enum([
   'DSH_INCOMPATIBLE',
   'BACKEND_UNREACHABLE',
   'BACKEND_BUSY',
+  'SESSION_WRITER_HELD',
   'NO_RUNNING_INSTANCE',
   'PORT_CONFLICT',
   'INVALID_ENDPOINT',

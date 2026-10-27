@@ -92,6 +92,13 @@ export function publicProtocolErrorMessage(reason: unknown): string | undefined 
   return reason instanceof Error && publicRequestErrors.has(reason) ? reason.message : undefined
 }
 
+/** Only inspect a validated Host error, never arbitrary callback error properties. */
+export function publicProtocolErrorCode(reason: unknown): string | undefined {
+  if (!(reason instanceof Error) || !publicRequestErrors.has(reason)) return undefined
+  const code: unknown = (reason as Error & { readonly code?: unknown }).code
+  return typeof code === 'string' ? code : undefined
+}
+
 export class ProtocolClient {
   private readonly pending = new Map<string, Pending>()
   private readonly listeners = new Set<(message: HostMessage) => void>()

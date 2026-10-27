@@ -685,6 +685,7 @@
   "model.loading": "正在读取会话模型目录…",
   "model.applying": "正在切换模型…",
   "model.applyFailed": "无法切换模型，请检查连接后重试。",
+  "model.sessionWriterHeld": "此会话正由另一个 DSH 实例占用，暂时无法更换模型。请先在其他实例中释放该会话（必要时退出该实例），再重试；也可新建会话，或连接正在使用此会话的桌面端。",
   "model.loadFailed": "无法读取会话模型目录：{message}",
   "model.retry": "重新读取",
   "model.groupLoadFailed": "无法加载 {name} 的模型：{message}",

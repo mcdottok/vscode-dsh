@@ -5,6 +5,58 @@ import { featureResponseSchema, hostEnvelopeSchema } from '@dsh-vscode/webview-p
 
 import { WebviewMessageRouter } from './message-router.js'
 
+it.each([
+  [undefined, 'SESSION_WRITER_HELD'],
+  ['session/writer-held', 'SESSION_WRITER_HELD'],
+  ['REPLY_QUEUED', 'BACKEND_BUSY'],
+  ['CALLER_NOT_LIVE', 'BACKEND_BUSY'],
+] as const)(
+  'distinguishes Session writer ownership from other normalized busy errors (%s)',
+  async (wireCode, code) => {
+    const sent: unknown[] = []
+    const router = new WebviewMessageRouter({
+      postMessage: (message) => {
+        sent.push(message)
+        return Promise.resolve(true)
+      },
+      handleRequest: () =>
+        Promise.reject(
+          new AppError({
+            code: 'BACKEND_BUSY',
+            message: 'Private session and owner details must not reach the view',
+            retryable: true,
+            context: {
+              rpcCode: 'writer-held',
+              rpcMethod: 'session.selectModel',
+              ...(wireCode === undefined ? {} : { wireCode }),
+            },
+          }),
+        ),
+    })
+    await router.handle({
+      protocolVersion: 1,
+      message: {
+        type: 'session.configure',
+        requestId: 'busy-model-change',
+        payload: {
+          sessionId: 'fixture-session',
+          configuration: {
+            preset: 'standard',
+            toolMode: 'native',
+            permissionPreset: 'workspace-write',
+            planMode: false,
+            model: { providerId: 'available', modelId: 'replacement' },
+          },
+        },
+      },
+    })
+    expect(sent[0]).toMatchObject({ ok: false, error: { code, retryable: true } })
+    expect(hostEnvelopeSchema.safeParse({ protocolVersion: 1, message: sent[0] }).success).toBe(true)
+    if (code === 'SESSION_WRITER_HELD') expect(JSON.stringify(sent[0])).toContain('another DSH instance')
+    expect(JSON.stringify(sent[0])).not.toContain('Private session and owner details')
+  },
+)
+
 describe('WebviewMessageRouter custom provider validation', () => {
   it.each([
     ['unsupported input type', { input: ['audio'] }],

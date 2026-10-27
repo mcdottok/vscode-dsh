@@ -685,6 +685,7 @@
   "model.loading": "Reading the session model directory…",
   "model.applying": "Switching model…",
   "model.applyFailed": "Could not switch models. Check the connection and try again.",
+  "model.sessionWriterHeld": "This session is open in another DSH instance, so its model cannot be changed here yet. Release it there (exit that instance if needed), then retry. You can also create a new session or connect to the Desktop that owns it.",
   "model.loadFailed": "Could not read the session model directory: {message}",
   "model.retry": "Read again",
   "model.groupLoadFailed": "Could not load models for {name}: {message}",

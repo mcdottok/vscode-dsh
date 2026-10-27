@@ -426,6 +426,19 @@ function publicError(
   error: unknown,
   requestType: string,
 ): { code: string; message: string; retryable: boolean } {
+  if (
+    error instanceof AppError &&
+    requestType === 'session.configure' &&
+    error.code === 'BACKEND_BUSY' &&
+    error.context?.rpcCode === 'writer-held' &&
+    (error.context.wireCode === undefined || error.context.wireCode === 'session/writer-held')
+  )
+    return {
+      code: 'SESSION_WRITER_HELD',
+      message:
+        'This session is open in another DSH instance. Release it there (exit that instance if needed), then retry. You can also create a new session or connect to the Desktop that owns this session.',
+      retryable: true,
+    }
   if (error instanceof AppError)
     return {
       code: error.code,

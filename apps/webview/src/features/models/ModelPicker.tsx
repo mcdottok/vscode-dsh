@@ -17,6 +17,7 @@ import { useDismissibleLayer } from '../../components/common/useDismissibleLayer
 import { useViewportMenuPosition } from '../../components/common/useViewportMenuPosition.js'
 import { useConversationLayout } from '../../app/ConversationLayoutProvider.js'
 import { rankByName } from './rank-by-name.js'
+import { publicProtocolErrorCode } from '../../app/protocol-client.js'
 
 type ModelPane = 'root' | 'models' | 'effort'
 
@@ -63,7 +64,7 @@ export const ModelPicker = memo(function ModelPicker(props: ModelPickerProps): R
   const [open, setOpen] = useState(false)
   const [pane, setPane] = useState<ModelPane>('root')
   const [applying, setApplying] = useState(false)
-  const [applyError, setApplyError] = useState(false)
+  const [applyError, setApplyError] = useState<'generic' | 'session-writer-held'>()
   const applyingRef = useRef(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -294,12 +295,14 @@ export const ModelPicker = memo(function ModelPicker(props: ModelPickerProps): R
 
   const applySelection = (value: ModelSelection): void => {
     if (applyingRef.current) return
-    setApplyError(false)
+    setApplyError(undefined)
     let result: void | Promise<void>
     try {
       result = props.onChange(value)
-    } catch {
-      setApplyError(true)
+    } catch (error) {
+      setApplyError(
+        publicProtocolErrorCode(error) === 'SESSION_WRITER_HELD' ? 'session-writer-held' : 'generic',
+      )
       return
     }
     const finish = (): void => {
@@ -314,7 +317,11 @@ export const ModelPicker = memo(function ModelPicker(props: ModelPickerProps): R
     setApplying(true)
     void result
       .then(finish)
-      .catch(() => setApplyError(true))
+      .catch((error: unknown) =>
+        setApplyError(
+          publicProtocolErrorCode(error) === 'SESSION_WRITER_HELD' ? 'session-writer-held' : 'generic',
+        ),
+      )
       .finally(() => {
         applyingRef.current = false
         setApplying(false)
@@ -609,7 +616,7 @@ export const ModelPicker = memo(function ModelPicker(props: ModelPickerProps): R
                 </p>
               ) : applyError ? (
                 <p className="dsh-model-picker__warning" role="alert">
-                  {t('model.applyFailed')}
+                  {t(applyError === 'session-writer-held' ? 'model.sessionWriterHeld' : 'model.applyFailed')}
                 </p>
               ) : null}
             </div>

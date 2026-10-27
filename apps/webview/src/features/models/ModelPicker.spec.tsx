@@ -8,6 +8,7 @@ import type { ModelCatalogFailure, ModelDescriptor, ModelSelection } from '@dsh-
 import { I18nProvider } from '../../i18n.js'
 import { ModelPicker } from './ModelPicker.js'
 import { ConversationLayoutProvider } from '../../app/ConversationLayoutProvider.js'
+import { ProtocolClient } from '../../app/protocol-client.js'
 
 afterEach(() => vi.useRealTimers())
 
@@ -202,7 +203,9 @@ describe('ModelPicker keyboard and focus contract', () => {
   })
 
   it('keeps the picker open and announces a failed asynchronous model change', async () => {
-    const onChange = vi.fn().mockRejectedValue(new Error('write failed'))
+    const onChange = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error('write failed'), { code: 'SESSION_WRITER_HELD' }))
     renderPicker({ onChange })
 
     openRoot()
@@ -213,6 +216,70 @@ describe('ModelPicker keyboard and focus contract', () => {
     expect(alert.textContent).toContain('Could not switch models. Check the connection and try again.')
     expect(screen.getByRole('menu')).toBeDefined()
     expect(trigger().getAttribute('aria-disabled')).toBe('false')
+  })
+
+  it('explains a validated cross-instance Session lock and permits retry after release', async () => {
+    let held = true
+    const client = new ProtocolClient({
+      postMessage: (envelope) => {
+        if (!('requestId' in envelope.message)) return
+        const requestId = envelope.message.requestId
+        queueMicrotask(() =>
+          window.dispatchEvent(
+            new MessageEvent('message', {
+              data: {
+                protocolVersion: 1,
+                message: held
+                  ? {
+                      type: 'response',
+                      requestId,
+                      ok: false,
+                      error: {
+                        code: 'SESSION_WRITER_HELD',
+                        message: 'Session is owned by another instance.',
+                        retryable: true,
+                      },
+                    }
+                  : { type: 'response', requestId, ok: true, payload: {} },
+              },
+            }),
+          ),
+        )
+      },
+      getState: () => undefined,
+      setState: () => undefined,
+    })
+    renderPicker({
+      onChange: async (model) => {
+        await client.request({
+          type: 'session.configure',
+          requestId: 'fixture-change',
+          payload: {
+            sessionId: 'fixture-session',
+            configuration: {
+              preset: 'standard',
+              toolMode: 'native',
+              permissionPreset: 'workspace-write',
+              planMode: false,
+              model,
+            },
+          },
+        })
+      },
+    })
+    openRoot()
+    activate(screen.getByRole('menuitem', { name: /^Model/u }))
+    activate(screen.getByRole('menuitemradio', { name: /DeepSeek Reasoner/u }))
+    expect((await screen.findByRole('alert')).textContent).toContain('another DSH instance')
+    expect(screen.getByRole('alert').textContent).toContain('Release it there')
+    expect(screen.getByRole('menu')).toBeDefined()
+    held = false
+    await act(async () => {
+      activate(screen.getByRole('menuitemradio', { name: /DeepSeek Reasoner/u }))
+      await Promise.resolve()
+    })
+    expect(screen.queryByRole('menu')).toBeNull()
+    client.dispose()
   })
 
   it('keeps the keyboard inside the pane after switching panes', () => {
