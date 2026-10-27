@@ -23,7 +23,7 @@ const launch = JSON.parse(
 describe('desktop sharing defaults', () => {
   it('registers the local DSH entry beside other secondary-sidebar containers', () => {
     expect(`${manifest.publisher}.${manifest.name}`).toBe(EXTENSION_ID)
-    expect(manifest.displayName).toBe('DSH')
+    expect(manifest.displayName).toBe('DSH Coding Agent')
     expect(manifest.contributes.viewsContainers.secondarySidebar).toContainEqual({
       id: VIEW_CONTAINER_ID,
       title: 'DSH',
