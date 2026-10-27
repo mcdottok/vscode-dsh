@@ -15,6 +15,10 @@ Other platforms, remote environments and automatic connection failures use manua
 
 Chat in the side bar or an editor tab. Available models, tools and advanced features depend on the connected DSH runtime. See the repository documentation for compatibility and [support](SUPPORT.md) for reporting instructions.
 
+## Upgrading from the local build
+
+This extension uses the ID `mcdottok.vscode-dsh`. If you previously installed `dsh-local.vscode-dsh` from a VSIX, uninstall that extension before installing this one to avoid loading both copies. VS Code treats them as separate extensions, so you may need to configure the connection again. Your DSH sessions remain in DSH.
+
 ## License and credits
 
 MIT. Based on [Jabofish/deepseek-harness-vscode](https://github.com/Jabofish/deepseek-harness-vscode), powered by [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). This community build uses `dsh-local.vscode-dsh` and is not a Marketplace listing.

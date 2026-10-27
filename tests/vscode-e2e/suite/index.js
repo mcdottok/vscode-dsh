@@ -7,7 +7,7 @@ import * as vscode from 'vscode'
 const ATTACH_TIMEOUT_MS = 20_000
 const POLL_INTERVAL_MS = 250
 const IDLE_OBSERVATION_MS = 4_000
-const EXTENSION_ID = 'dsh-local.vscode-dsh'
+const EXTENSION_ID = 'mcdottok.vscode-dsh'
 
 export async function run() {
   const extension = vscode.extensions.getExtension(EXTENSION_ID)

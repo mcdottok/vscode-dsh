@@ -69,7 +69,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         home && home.startsWith(`${os.tmpdir()}${path.sep}`),
         'DSH must use a test-owned temporary home.',
       )
-      const extension = vscode.extensions.getExtension('dsh-local.vscode-dsh')
+      const extension = vscode.extensions.getExtension('mcdottok.vscode-dsh')
       assert.ok(extension, 'The product extension must be installed remotely.')
       assert.equal(extension.extensionKind, vscode.ExtensionKind.Workspace)
       await extension.activate()

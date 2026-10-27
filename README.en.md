@@ -32,7 +32,9 @@ The extension attaches to your running DSH by default. Advanced features depend 
 
 ## Development
 
-See [build instructions](BUILD.md), [contributing](CONTRIBUTING.md) and [developer documentation](docs/README.md). This community build uses `dsh-local.vscode-dsh` and is not a Marketplace listing.
+This community build uses `mcdottok.vscode-dsh`. Uninstall the earlier `dsh-local.vscode-dsh` before installing this build; you may need to configure the connection again.
+
+See [build instructions](BUILD.md), [contributing](CONTRIBUTING.md) and [developer documentation](docs/README.md). This community build uses `mcdottok.vscode-dsh` and is not a Marketplace listing.
 
 See the [changelog](CHANGELOG.md) for this fork’s development history and version changes.
 
