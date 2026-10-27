@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest'
 import type { DshSettingsSnapshot } from './store.js'
 import {
   DSH_UI_SETTING_PATHS,
+  CONVERSATION_FONT_SIZE_STORAGE_KEY,
+  readConversationFontSize,
+  rememberConversationFontSize,
+  legacyConversationFontSizePx,
   TRANSCRIPT_VIEW_OPTIONS,
   dshUiPreferences,
   isDshSettingWritable,
@@ -192,5 +196,44 @@ describe('DSH UI preferences', () => {
     expect(
       withDshSettingValue(settingsSnapshot({ writable: false }), DSH_UI_SETTING_PATHS.codingTools, false),
     ).toBeUndefined()
+  })
+})
+
+describe('local conversation font size', () => {
+  it('persists pixel sizes and restores legacy named preferences', () => {
+    const values = new Map<string, string>()
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        values.set(key, value)
+      },
+    }
+    rememberConversationFontSize(16, storage)
+    expect(readConversationFontSize(storage)).toBe(16)
+    expect(values.get(CONVERSATION_FONT_SIZE_STORAGE_KEY)).toBe('16')
+    for (const [name, pixels] of [
+      ['small', 12],
+      ['medium', 13],
+      ['large', 17],
+    ] as const) {
+      values.set(CONVERSATION_FONT_SIZE_STORAGE_KEY, name)
+      expect(legacyConversationFontSizePx(readConversationFontSize(storage))).toBe(pixels)
+    }
+  })
+
+  it('falls back safely for invalid sizes or unavailable local storage', () => {
+    for (const invalid of ['11', '18', '13.5', 'NaN', '', 'unknown']) {
+      expect(readConversationFontSize({ getItem: () => invalid, setItem: () => {} })).toBe('medium')
+    }
+    const storage = {
+      getItem: (): string => {
+        throw new Error('storage unavailable')
+      },
+      setItem: (): void => {
+        throw new Error('storage unavailable')
+      },
+    }
+    expect(readConversationFontSize(storage)).toBe('medium')
+    expect(() => rememberConversationFontSize(16, storage)).not.toThrow()
   })
 })

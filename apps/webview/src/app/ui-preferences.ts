@@ -1,6 +1,6 @@
 import type { DshSettingsSnapshot } from './store.js'
 
-export type ConversationFontSize = 'small' | 'medium' | 'large'
+export type ConversationFontSize = 'small' | 'medium' | 'large' | number
 export type ThemePreference = 'light' | 'dark' | 'system'
 export type TranscriptViewMode = 'compact' | 'standard' | 'detailed' | 'verbose'
 export type PerformanceUsageMode = 'compact' | 'detailed'
@@ -8,7 +8,7 @@ export type BusyEnterBehavior = 'queue' | 'steer'
 
 export const DEFAULT_CONVERSATION_FONT_SIZE: ConversationFontSize = 'medium'
 export const CONVERSATION_FONT_SIZE_STORAGE_KEY = 'dsh-webview-conversation-font-size'
-export const CONVERSATION_FONT_SIZE_OPTIONS: readonly ConversationFontSize[] = ['small', 'medium', 'large']
+export const CONVERSATION_FONT_SIZE_OPTIONS = ['small', 'medium', 'large'] as const
 export const DEFAULT_THEME_PREFERENCE: ThemePreference = 'system'
 export const THEME_PREFERENCE_STORAGE_KEY = 'dsh-webview-theme'
 export const THEME_PREFERENCE_OPTIONS: readonly ThemePreference[] = ['light', 'dark', 'system']
@@ -172,6 +172,7 @@ export function readDshSettingValue(values: Readonly<Record<string, unknown>>, p
 }
 
 export function legacyConversationFontSizePx(value: ConversationFontSize): number {
+  if (isConversationFontSizePx(value)) return value
   switch (value) {
     case 'small':
       return MIN_CONVERSATION_FONT_SIZE_PX
@@ -193,8 +194,8 @@ function browserStorage(): PreferenceStorage | undefined {
   }
 }
 
-export function isConversationFontSize(value: string | null | undefined): value is ConversationFontSize {
-  return value === 'small' || value === 'medium' || value === 'large'
+export function isConversationFontSize(value: unknown): value is ConversationFontSize {
+  return value === 'small' || value === 'medium' || value === 'large' || isConversationFontSizePx(value)
 }
 
 export function readConversationFontSize(
@@ -202,7 +203,9 @@ export function readConversationFontSize(
 ): ConversationFontSize {
   try {
     const stored = storage?.getItem(CONVERSATION_FONT_SIZE_STORAGE_KEY)
-    return isConversationFontSize(stored) ? stored : DEFAULT_CONVERSATION_FONT_SIZE
+    if (isConversationFontSize(stored)) return stored
+    const pixels = stored === null || stored === undefined ? undefined : Number(stored)
+    return isConversationFontSizePx(pixels) ? pixels : DEFAULT_CONVERSATION_FONT_SIZE
   } catch {
     return DEFAULT_CONVERSATION_FONT_SIZE
   }
@@ -213,7 +216,7 @@ export function rememberConversationFontSize(
   storage: PreferenceStorage | undefined = browserStorage(),
 ): void {
   try {
-    storage?.setItem(CONVERSATION_FONT_SIZE_STORAGE_KEY, value)
+    storage?.setItem(CONVERSATION_FONT_SIZE_STORAGE_KEY, String(value))
   } catch {
     // A restricted Webview storage area should not prevent changing the UI.
   }

@@ -4,7 +4,9 @@
  * VS Code owns the --vscode-* variables. The system preference deliberately
  * leaves those variables and the base DSH aliases untouched, so the Webview
  * follows the active VS Code theme. Explicit light/dark preferences override
- * only the Webview's own --dsh-* semantic tokens; they never redefine a host
+ * only the Webview's own --dsh-* semantic tokens when switching away from the
+ * host's light/dark family. A matching dark host keeps its exact palette in
+ * both dark and system modes. These preferences never redefine a host
  * variable or make the surrounding VS Code UI change theme.
  */
 
@@ -108,8 +110,8 @@ html[data-dsh-theme='system']:has(body.vscode-high-contrast-light) {
   --dsh-theme-scrollbar-thumb-active: #737e90;
 }
 
-:root[data-dsh-theme='dark'],
-.dsh-app[data-dsh-theme='dark'] {
+:root[data-dsh-theme='dark']:not(:has(body:is(.vscode-dark, .vscode-high-contrast))),
+:root:not(:has(body:is(.vscode-dark, .vscode-high-contrast))) .dsh-app[data-dsh-theme='dark'] {
   --dsh-theme-border: #3a3d42;
   --dsh-theme-text: #e6e7ea;
   --dsh-theme-muted: #a7abb4;
@@ -156,8 +158,8 @@ html[data-dsh-theme='system']:has(body.vscode-high-contrast-light) {
 
 :root[data-dsh-theme='light'],
 .dsh-app[data-dsh-theme='light'],
-:root[data-dsh-theme='dark'],
-.dsh-app[data-dsh-theme='dark'] {
+:root[data-dsh-theme='dark']:not(:has(body:is(.vscode-dark, .vscode-high-contrast))),
+:root:not(:has(body:is(.vscode-dark, .vscode-high-contrast))) .dsh-app[data-dsh-theme='dark'] {
   --dsh-border-color: var(--dsh-theme-border);
   --dsh-border: 1px solid var(--dsh-border-color);
   --dsh-focus: var(--dsh-theme-focus);

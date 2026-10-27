@@ -457,16 +457,16 @@ describe('SettingsDrawer', () => {
     expect(field).toHaveProperty('value', '')
   })
 
-  it('offers local conversation font size presets', async () => {
+  it('changes local pixel size without writing shared DSH settings', async () => {
     const onConversationFontSizeChange = vi.fn()
-    renderDrawer({ onConversationFontSizeChange })
-
-    const group = await screen.findByRole('group', { name: 'Conversation font size' })
-    expect(group).toBeDefined()
-    expect(screen.getByRole('button', { name: 'Medium', pressed: true })).toBeDefined()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Large' }))
-    expect(onConversationFontSizeChange).toHaveBeenCalledWith('large')
+    const onUpdateDshSetting = vi.fn()
+    renderDrawer({ onConversationFontSizeChange, onUpdateDshSetting })
+    const input = await screen.findByRole('spinbutton', { name: 'Conversation font size' })
+    expect(input).toHaveProperty('value', '13')
+    fireEvent.change(input, { target: { value: '17' } })
+    fireEvent.blur(input)
+    expect(onConversationFontSizeChange).toHaveBeenCalledWith(17)
+    expect(onUpdateDshSetting).not.toHaveBeenCalled()
   })
 
   it('changes the extension language even when DSH settings are unavailable', async () => {
@@ -499,7 +499,7 @@ describe('SettingsDrawer', () => {
     await waitFor(() => expect(onLocaleFromDsh).toHaveBeenCalledWith('zh'))
   })
 
-  it('applies the appearance choice locally while updating the DSH preference', async () => {
+  it('applies appearance locally without writing or adopting the Desktop preference', async () => {
     const onThemeChange = vi.fn()
     const onUpdateDshSetting = vi.fn().mockResolvedValue(undefined)
     renderDrawer({ onThemeChange, onUpdateDshSetting })
@@ -510,7 +510,35 @@ describe('SettingsDrawer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'light' }))
 
     expect(onThemeChange).toHaveBeenCalledWith('light')
-    await waitFor(() => expect(onUpdateDshSetting).toHaveBeenCalledWith('ui-theme.preference', 'light', 3))
+    expect(onUpdateDshSetting).not.toHaveBeenCalled()
+  })
+
+  it.each([true, false])(
+    'keeps local appearance independent of Host theme and writable=%s',
+    async (writable) => {
+      const onThemeChange = vi.fn()
+      const fixture = dshSettingsFixture()
+      const onLoadDshSettings = vi.fn().mockResolvedValue({
+        ...fixture,
+        schema: { ...fixture.schema, writable },
+        values: { ...fixture.values, 'ui-theme': { preference: 'dark' } },
+      })
+      const onUpdateDshSetting = vi.fn()
+      renderDrawer({ theme: 'light', onThemeChange, onLoadDshSettings, onUpdateDshSetting })
+      await screen.findByRole('group', { name: 'Permission' })
+      expect(screen.getByRole('button', { name: 'light', pressed: true })).toHaveProperty('disabled', false)
+      expect(onThemeChange).not.toHaveBeenCalled()
+      fireEvent.click(screen.getByRole('button', { name: 'dark' }))
+      expect(onThemeChange).toHaveBeenCalledExactlyOnceWith('dark')
+      expect(onUpdateDshSetting).not.toHaveBeenCalled()
+    },
+  )
+
+  it('allows changing appearance while Desktop settings are unavailable', async () => {
+    const onThemeChange = vi.fn()
+    renderDrawer({ onThemeChange, onLoadDshSettings: vi.fn().mockRejectedValue(new Error('offline')) })
+    fireEvent.click(await screen.findByRole('button', { name: 'dark' }))
+    expect(onThemeChange).toHaveBeenCalledExactlyOnceWith('dark')
   })
 
   it('keeps general settings sections in a predictable order', async () => {
@@ -910,7 +938,7 @@ describe('SettingsDrawer', () => {
     expect(within(transcript).getByRole('button', { name: 'Standard', pressed: true })).toBeDefined()
     expect(within(performance).getByRole('button', { name: 'Detailed', pressed: true })).toBeDefined()
     expect(screen.queryByRole('switch', { name: 'Developer Tools' })).toBeNull()
-    expect(screen.getByRole('spinbutton', { name: 'Conversation font size' })).toHaveProperty('value', '14')
+    expect(screen.getByRole('spinbutton', { name: 'Conversation font size' })).toHaveProperty('value', '13')
   })
 
   it('keeps preset selection and Creator independent of Developer Tools and writes the exact default path', async () => {
@@ -1050,7 +1078,8 @@ describe('SettingsDrawer', () => {
     expect(onUpdateDshSetting).not.toHaveBeenCalled()
   })
 
-  it('writes transcript, usage, and font-size choices through the Host settings channel', async () => {
+  it('writes transcript and usage through Host but keeps font size local', async () => {
+    const onConversationFontSizeChange = vi.fn()
     let hostSnapshot = rc2GeneralSettingsFixture()
     const onLoadDshSettings = vi.fn().mockImplementation(() => Promise.resolve(hostSnapshot))
     const onUpdateDshSetting = vi.fn().mockImplementation((path: string, value: unknown) => {
@@ -1069,7 +1098,7 @@ describe('SettingsDrawer', () => {
       }
       return Promise.resolve()
     })
-    renderDrawer({ onLoadDshSettings, onUpdateDshSetting })
+    renderDrawer({ onLoadDshSettings, onUpdateDshSetting, onConversationFontSizeChange })
 
     const transcript = await screen.findByRole('group', { name: 'Workflow display' })
     fireEvent.click(within(transcript).getByRole('button', { name: 'Compact' }))
@@ -1102,7 +1131,8 @@ describe('SettingsDrawer', () => {
     const fontSize = screen.getByRole<HTMLInputElement>('spinbutton', { name: 'Conversation font size' })
     fireEvent.change(fontSize, { target: { value: '16' } })
     fireEvent.blur(fontSize)
-    await waitFor(() => expect(onUpdateDshSetting).toHaveBeenCalledWith('ui-theme.fontSize', 16, 3))
+    expect(onConversationFontSizeChange).toHaveBeenCalledWith(16)
+    expect(onUpdateDshSetting.mock.calls.some(([path]) => path === 'ui-theme.fontSize')).toBe(false)
   })
 
   it('keeps an accepted General preference visible when the follow-up read fails', async () => {
@@ -1181,7 +1211,7 @@ describe('SettingsDrawer', () => {
     expect(screen.queryByRole('group', { name: 'Workflow display' })).toBeNull()
     expect(screen.queryByRole('group', { name: 'Performance and usage' })).toBeNull()
     expect(screen.queryByRole('switch', { name: 'Developer Tools' })).toBeNull()
-    expect(screen.getByRole('group', { name: 'Conversation font size' })).toBeDefined()
+    expect(screen.getByRole('spinbutton', { name: 'Conversation font size' })).toBeDefined()
   })
 
   it('hides new controls when the rc2 settings schema is read-only', async () => {
@@ -1193,7 +1223,10 @@ describe('SettingsDrawer', () => {
     expect(screen.queryByRole('group', { name: 'Workflow display' })).toBeNull()
     expect(screen.queryByRole('group', { name: 'Performance and usage' })).toBeNull()
     expect(screen.queryByRole('switch', { name: 'Developer Tools' })).toBeNull()
-    expect(screen.queryByRole('spinbutton', { name: 'Conversation font size' })).toBeNull()
+    expect(screen.getByRole('spinbutton', { name: 'Conversation font size' })).toHaveProperty(
+      'disabled',
+      false,
+    )
   })
 
   it('keeps rc2 controls unavailable while the settings snapshot is loading or fails', async () => {
@@ -1234,9 +1267,11 @@ describe('SettingsDrawer', () => {
     const onUpdateDshSetting = vi.fn().mockResolvedValue(undefined)
     const onLoadDshSettings = vi.fn().mockResolvedValue(fixture)
     renderDrawer({ onUpdateDshSetting, onLoadDshSettings })
-    await waitFor(() => expect(screen.getByRole('group', { name: 'Appearance' })).toBeDefined())
-    fireEvent.click(screen.getByRole('button', { name: 'dark' }))
-    await waitFor(() => expect(onUpdateDshSetting).toHaveBeenCalledWith('ui-theme.preference', 'dark', 3))
+    await waitFor(() => expect(screen.getByRole('group', { name: 'Permission' })).toBeDefined())
+    fireEvent.click(screen.getByRole('button', { name: 'Read Only' }))
+    await waitFor(() =>
+      expect(onUpdateDshSetting).toHaveBeenCalledWith('permission.defaultPreset', 'read-only', 1),
+    )
     // A successful write reloads the authoritative snapshot.
     await waitFor(() => expect(onLoadDshSettings).toHaveBeenCalledTimes(2))
   })
@@ -1299,8 +1334,8 @@ describe('SettingsDrawer', () => {
     })
 
     expect(await screen.findByText(/DSH settings are read-only/i)).toBeDefined()
-    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'dark' }).disabled).toBe(true)
-    fireEvent.click(screen.getByRole('button', { name: 'dark' }))
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Read Only' }).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Read Only' }))
     expect(onUpdateDshSetting).not.toHaveBeenCalled()
   })
 
@@ -2105,8 +2140,8 @@ describe('SettingsDrawer', () => {
       )
     const onUpdateDshSetting = vi.fn().mockResolvedValue(undefined)
     const view = renderDrawer({ onLoadDshSettings, onUpdateDshSetting })
-    await waitFor(() => expect(screen.getByRole('group', { name: 'Appearance' })).toBeDefined())
-    fireEvent.click(screen.getByRole('button', { name: 'dark' }))
+    await waitFor(() => expect(screen.getByRole('group', { name: 'Permission' })).toBeDefined())
+    fireEvent.click(screen.getByRole('button', { name: 'Read Only' }))
     await waitFor(() => expect(onLoadDshSettings).toHaveBeenCalledTimes(2))
 
     // Close with the save's follow-up read in flight, then let it finish: it

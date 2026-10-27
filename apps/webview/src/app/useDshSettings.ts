@@ -1,14 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { AppState, AppStore, DshSettingsSnapshot } from './store.js'
 import {
   dshUiPreferences,
   findDshSettingsField,
   readDshSettingValue,
-  rememberThemePreference,
   withDshSettingValue,
   type DshUiPreferences,
   type PerformanceUsageMode,
-  type ThemePreference,
   type TranscriptViewMode,
 } from './ui-preferences.js'
 import { useStableCallback } from './useStableCallback.js'
@@ -34,8 +32,6 @@ interface DshSettingsUi {
   readonly newSessionPresetSelectionEnabled: boolean | undefined
   readonly transcriptView: TranscriptViewMode
   readonly performanceUsage: PerformanceUsageMode
-  readonly hostConversationFontSizePx: number | undefined
-  readonly conversationFontStyle: CSSProperties | undefined
 }
 
 export function useDshSettings(input: {
@@ -46,11 +42,10 @@ export function useDshSettings(input: {
   >
   readonly adoptLocaleFromHost: (value: unknown, hasExplicitPreference: boolean) => void
   readonly setLocale: (locale: Locale) => void
-  readonly setThemePreferenceState: (theme: ThemePreference) => void
   readonly setError: (message: string | undefined) => void
   readonly t: Translate
 }): DshSettingsUi {
-  const { store, state, adoptLocaleFromHost, setLocale, setThemePreferenceState, setError, t } = input
+  const { store, state, adoptLocaleFromHost, setLocale, setError, t } = input
   const [dshSettingsSnapshot, setDshSettingsSnapshot] = useState<DshSettingsSnapshot | undefined>()
   const [dshSettingsSnapshotVersion, setDshSettingsSnapshotVersion] = useState<string | undefined>()
   const [dshSettingsSnapshotConnectionEpoch, setDshSettingsSnapshotConnectionEpoch] = useState<
@@ -86,17 +81,11 @@ export function useDshSettings(input: {
       setDshSettingsSnapshotVersion(state.connectedDshVersion)
       setDshSettingsSnapshotConnectionEpoch(connectionEpoch)
       setDshSettingsReadState('ready')
-      const preferences = dshUiPreferences(snapshot)
       const localeField = findDshSettingsField(snapshot, DSH_LOCALE_SETTING_PATH)
       const hostLocale = readDshSettingValue(snapshot.values, DSH_LOCALE_SETTING_PATH)
       adoptLocaleFromHost(hostLocale, localeField?.type === 'string' && typeof hostLocale === 'string')
-      const hostTheme = preferences.theme
-      if (hostTheme !== undefined) {
-        setThemePreferenceState(hostTheme)
-        rememberThemePreference(hostTheme)
-      }
     },
-    [adoptLocaleFromHost, setThemePreferenceState, state.connectedDshVersion, state.connectionEpoch],
+    [adoptLocaleFromHost, state.connectedDshVersion, state.connectionEpoch],
   )
 
   const readDshSettingsForUi = useStableCallback(async (): Promise<DshSettingsSnapshot | undefined> => {
@@ -391,15 +380,6 @@ export function useDshSettings(input: {
   const newSessionPresetSelectionEnabled = state.presetSelectionEnabled
   const transcriptView = readyDshUiPreferences?.transcriptView ?? 'standard'
   const performanceUsage = readyDshUiPreferences?.performanceUsage ?? 'detailed'
-  const hostConversationFontSizePx = readyDshUiPreferences?.fontSize
-  const conversationFontStyle =
-    hostConversationFontSizePx === undefined
-      ? undefined
-      : ({
-          fontSize: `${hostConversationFontSizePx}px`,
-          '--dsh-conversation-font-scale': String(hostConversationFontSizePx / 14),
-        } as CSSProperties)
-
   const applyLocale = useCallback(
     (next: Locale): void => {
       setLocale(next)
@@ -438,7 +418,5 @@ export function useDshSettings(input: {
     newSessionPresetSelectionEnabled,
     transcriptView,
     performanceUsage,
-    hostConversationFontSizePx,
-    conversationFontStyle,
   }
 }

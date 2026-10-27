@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactElement } from 'react'
 import type { ExtensionSettingsSummary, ModelDescriptor } from '@dsh-vscode/domain'
-import { dshUiPreferences as readDshUiPreferences, isThemePreference } from '../../app/ui-preferences.js'
 import { ModalWrapper } from '../../components/common/PopoverCard.js'
 import { useDismissibleLayer } from '../../components/common/useDismissibleLayer.js'
 import { Icon } from '../../ui/Icon.js'
@@ -59,7 +58,6 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
     onLoadSettings,
     onLoadDshSettings,
     onLocaleFromDsh,
-    onThemeChange,
     onUpdateDshSetting,
     onOpenChange,
   } = props
@@ -78,7 +76,6 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
   useLayoutEffect(() => {
     if (!open) openEpochRef.current += 1
   }, [open])
-  const dshUiPreferences = dshState.status === 'ready' ? readDshUiPreferences(dshState.snapshot) : undefined
   const [savingPath, setSavingPath] = useState<string | undefined>(undefined)
   const [saveError, setSaveError] = useState<string | undefined>(undefined)
   const [riskPending, setRiskPending] = useState<RiskPending | undefined>(undefined)
@@ -217,8 +214,6 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
           if (snapshot !== undefined) {
             const hostLocale = settingValueAt(snapshot.values, 'locale.preference')
             if (isLocale(hostLocale)) onLocaleFromDsh(hostLocale)
-            const preferences = readDshUiPreferences(snapshot)
-            if (preferences.theme !== undefined) onThemeChange(preferences.theme)
           }
           if (snapshot !== undefined) {
             setDshState({ status: 'ready', snapshot })
@@ -232,7 +227,7 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
     return () => {
       cancelled = true
     }
-  }, [open, onLoadDshSettings, onLocaleFromDsh, onThemeChange, dshState.status])
+  }, [open, onLoadDshSettings, onLocaleFromDsh, dshState.status])
 
   useEffect(() => {
     if (!open) {
@@ -257,13 +252,10 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
       setSaveError(t('settings.updateFailed'))
       return
     }
-    const themeValue = path === 'ui-theme.preference' && isThemePreference(value) ? value : undefined
-    const previousTheme = props.theme
     setSaveError(undefined)
     setRiskPending(undefined)
     setRiskAcknowledged(false)
     setSavingPath(path)
-    if (themeValue !== undefined) props.onThemeChange(themeValue)
     const epoch = openEpochRef.current
     void (async () => {
       let accepted = false
@@ -272,7 +264,6 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
         accepted = true
       } catch (reason: unknown) {
         if (openEpochRef.current !== epoch) return
-        if (themeValue !== undefined) props.onThemeChange(previousTheme)
         setSaveError(reason instanceof Error ? reason.message : t('settings.updateFailed'))
       }
       if (openEpochRef.current !== epoch) return
@@ -286,8 +277,6 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
       if (snapshot !== undefined) {
         setDshState({ status: 'ready', snapshot })
         setDshSettingsSnapshotFresh(true)
-        const preferences = readDshUiPreferences(snapshot)
-        if (themeValue !== undefined && preferences.theme !== undefined) onThemeChange(preferences.theme)
       } else if (accepted) {
         setDshState((current) =>
           current.status === 'ready'
@@ -557,7 +546,6 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
     selectedDshVersionAlreadyInstalled,
     setSelectedDshVersion,
     dshState,
-    dshUiPreferences,
     dshSettingsSnapshotFresh,
     retryDshSettings,
     savingPath,

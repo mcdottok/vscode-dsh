@@ -1,12 +1,9 @@
 import type { Dispatch, ReactElement, SetStateAction } from 'react'
 import type { ExtensionSettingsSummary } from '@dsh-vscode/domain'
-import {
-  DSH_UI_SETTING_PATHS,
-  findDshSettingsField,
-  type dshUiPreferences as readDshUiPreferences,
-} from '../../app/ui-preferences.js'
 import { SettingCard, SettingRow } from '../../components/common/SettingCard.js'
 import { Icon } from '../../ui/Icon.js'
+import { THEME_PREFERENCE_OPTIONS } from '../../app/ui-preferences.js'
+import { formatSettingValue } from './settings-values.js'
 import { AccountLifecycle } from '../account/AccountLifecycle.js'
 import { AccountProfile } from '../account/AccountProfile.js'
 import { accountLifecycleLabels, accountProfileLabels } from './account-labels.js'
@@ -54,7 +51,6 @@ export interface GeneralSettingsTabProps {
   readonly selectedDshVersionAlreadyInstalled: boolean
   readonly setSelectedDshVersion: Dispatch<SetStateAction<string | undefined>>
   readonly dshState: DshSettingsState
-  readonly dshUiPreferences: ReturnType<typeof readDshUiPreferences> | undefined
   readonly dshSettingsSnapshotFresh: boolean
   readonly retryDshSettings: () => void
   readonly savingPath: string | undefined
@@ -82,7 +78,6 @@ export function GeneralSettingsTab(input: GeneralSettingsTabProps): ReactElement
     openAccountTopUp,
 
     dshState,
-    dshUiPreferences,
     dshSettingsSnapshotFresh,
     retryDshSettings,
     savingPath,
@@ -161,6 +156,29 @@ export function GeneralSettingsTab(input: GeneralSettingsTabProps): ReactElement
           }
         />
       </SettingCard>
+      <SettingCard ariaLabel={t('settings.appearance.label')}>
+        <SettingRow
+          title={t('settings.appearance.label')}
+          description={t('settings.appearance.hint')}
+          control={
+            <div className="dsh-settings__segment" role="group" aria-label={t('settings.appearance.label')}>
+              {THEME_PREFERENCE_OPTIONS.map((option) => (
+                <button
+                  key={option}
+                  className={`dsh-settings__segment-item${option === props.theme ? ' dsh-settings__segment-item--active' : ''}`}
+                  type="button"
+                  aria-pressed={option === props.theme}
+                  onClick={() => {
+                    if (option !== props.theme) props.onThemeChange(option)
+                  }}
+                >
+                  {formatSettingValue(option, t)}
+                </button>
+              ))}
+            </div>
+          }
+        />
+      </SettingCard>
       <SettingCard ariaLabel={t('settings.preferences')} title={t('settings.preferences')}>
         {dshState.status === 'loading' ? (
           <p className="dsh-settings__empty" role="status">
@@ -214,7 +232,6 @@ export function GeneralSettingsTab(input: GeneralSettingsTabProps): ReactElement
                   fields={dshState.snapshot.schema.fields}
                   values={dshState.snapshot.values}
                   writable={dshState.snapshot.schema.writable}
-                  selectedValue={row.path === 'ui-theme.preference' ? props.theme : undefined}
                   saving={savingPath === row.path}
                   disabled={
                     !dshState.snapshot.schema.writable ||
@@ -255,25 +272,11 @@ export function GeneralSettingsTab(input: GeneralSettingsTabProps): ReactElement
         ariaLabel={t('settings.conversationAppearance')}
         title={t('settings.conversationAppearance')}
       >
-        {dshState.status === 'ready' &&
-        findDshSettingsField(dshState.snapshot, DSH_UI_SETTING_PATHS.fontSize)?.type === 'number' &&
-        !dshState.snapshot.schema.writable ? null : (
-          <SettingRow
-            title={t('settings.conversationFontSize')}
-            description={t('settings.conversationFontSizeHint')}
-            control={renderFontSizeControl(
-              dshState,
-              dshUiPreferences?.fontSize,
-              props.conversationFontSize,
-              savingPath,
-              dshSettingsSnapshotFresh,
-              saveError,
-              (value) => saveSetting(DSH_UI_SETTING_PATHS.fontSize, value),
-              props.onConversationFontSizeChange,
-              t,
-            )}
-          />
-        )}
+        <SettingRow
+          title={t('settings.conversationFontSize')}
+          description={t('settings.conversationFontSizeHint')}
+          control={renderFontSizeControl(props.conversationFontSize, props.onConversationFontSizeChange, t)}
+        />
       </SettingCard>
       <SettingCard ariaLabel={t('settings.keyboardShortcuts')}>
         <SettingRow

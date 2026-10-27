@@ -2,13 +2,12 @@ import { useState, type ReactElement } from 'react'
 import type { DshSettingsSchema } from '@dsh-vscode/domain'
 import type { DshSettingsSnapshot } from '../../app/store.js'
 import {
-  CONVERSATION_FONT_SIZE_OPTIONS,
-  DEFAULT_CONVERSATION_FONT_SIZE_PX,
   DSH_UI_SETTING_PATHS,
   MAX_CONVERSATION_FONT_SIZE_PX,
   MIN_CONVERSATION_FONT_SIZE_PX,
   findDshSettingsField,
   isConversationFontSizePx,
+  legacyConversationFontSizePx,
   isPerformanceUsageMode,
   isTranscriptViewMode,
   type ConversationFontSize,
@@ -41,11 +40,6 @@ export const GENERAL_SETTING_ROWS: readonly {
     path: 'permission.defaultPreset',
     labelKey: 'settings.permission.label',
     hintKey: 'settings.permission.hint',
-  },
-  {
-    path: 'ui-theme.preference',
-    labelKey: 'settings.appearance.label',
-    hintKey: 'settings.appearance.hint',
   },
   {
     path: 'ui-chat.transcriptView',
@@ -116,59 +110,16 @@ export function renderCodingToolsSetting(
 }
 
 export function renderFontSizeControl(
-  dshState: DshSettingsState,
-  hostFontSize: number | undefined,
   localFontSize: ConversationFontSize,
-  savingPath: string | undefined,
-  snapshotFresh: boolean,
-  error: string | undefined,
-  onHostChange: (value: number) => void,
   onLocalChange: (value: ConversationFontSize) => void,
   t: Translate,
 ): ReactElement {
-  const field =
-    dshState.status === 'ready'
-      ? findDshSettingsField(dshState.snapshot, DSH_UI_SETTING_PATHS.fontSize)
-      : undefined
-  if (dshState.status === 'ready' && field?.type === 'number') {
-    return (
-      <FontSizeSettingControl
-        key={`${hostFontSize ?? DEFAULT_CONVERSATION_FONT_SIZE_PX}:${error ?? ''}:${savingPath === DSH_UI_SETTING_PATHS.fontSize ? 'saving' : 'idle'}`}
-        value={hostFontSize ?? DEFAULT_CONVERSATION_FONT_SIZE_PX}
-        disabled={!dshState.snapshot.schema.writable || savingPath !== undefined || !snapshotFresh}
-        saving={savingPath === DSH_UI_SETTING_PATHS.fontSize}
-        error={error}
-        onCommit={onHostChange}
-        translate={t}
-      />
-    )
-  }
-  return (
-    <div className="dsh-settings__segment" role="group" aria-label={t('settings.conversationFontSize')}>
-      {CONVERSATION_FONT_SIZE_OPTIONS.map((size) => (
-        <button
-          key={size}
-          className={`dsh-settings__segment-item${
-            size === localFontSize ? ' dsh-settings__segment-item--active' : ''
-          }`}
-          type="button"
-          aria-pressed={size === localFontSize}
-          onClick={() => {
-            if (size !== localFontSize) onLocalChange(size)
-          }}
-        >
-          {t(`settings.value.${size}`)}
-        </button>
-      ))}
-    </div>
-  )
+  const pixels = legacyConversationFontSizePx(localFontSize)
+  return <FontSizeSettingControl key={pixels} value={pixels} onCommit={onLocalChange} translate={t} />
 }
 
 interface FontSizeSettingControlProps {
   readonly value: number
-  readonly disabled: boolean
-  readonly saving: boolean
-  readonly error: string | undefined
   readonly onCommit: (value: number) => void
   readonly translate: Translate
 }
@@ -194,8 +145,6 @@ function FontSizeSettingControl(props: FontSizeSettingControlProps): ReactElemen
         max={MAX_CONVERSATION_FONT_SIZE_PX}
         step={1}
         aria-label={props.translate('settings.conversationFontSize')}
-        aria-busy={props.saving}
-        disabled={props.disabled}
         value={draft}
         onChange={(event) => setDraft(event.currentTarget.value)}
         onBlur={commit}

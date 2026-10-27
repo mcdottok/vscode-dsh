@@ -27,10 +27,11 @@
   box-shadow: 0 12px 32px #00000029;
 }
 
-/* The default preference follows the host theme, so borrow VS Code's own
- * widget palette there instead of the DSH palette's bluish grey. Explicit
- * light/dark preferences keep the local tokens above. */
-html[data-dsh-theme='system'] .dsh-app .dsh-settings {
+/* System and an explicit dark preference on a dark host share the exact
+ * VS Code widget palette. Forced light/dark on the opposite host family uses
+ * the local tokens above. */
+html[data-dsh-theme='system'] .dsh-app .dsh-settings,
+html[data-dsh-theme='dark']:has(body:is(.vscode-dark, .vscode-high-contrast)) .dsh-app .dsh-settings {
   --stg-panel: var(--vscode-editorWidget-background, var(--dsh-widget-bg));
   --stg-line: color-mix(in srgb, var(--vscode-foreground, var(--dsh-text)) 17%, transparent);
   --stg-line-soft: color-mix(in srgb, var(--vscode-foreground, var(--dsh-text)) 12%, transparent);

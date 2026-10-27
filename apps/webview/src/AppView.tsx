@@ -83,7 +83,7 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
     goalOnUpdate,
     headerOnNewSession,
     headerOnOpenSettings,
-    hostConversationFontSizePx,
+    conversationFontSizePx,
     imageLimits,
     lineageActiveSubagent,
     lineageOnOpenSession,
@@ -417,9 +417,9 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
                 <section
                   className="dsh-conversation"
                   data-conversation-font-size={conversationFontSize}
-                  {...(hostConversationFontSizePx === undefined
+                  {...(conversationFontSizePx === undefined
                     ? {}
-                    : { 'data-conversation-font-size-px': hostConversationFontSizePx })}
+                    : { 'data-conversation-font-size-px': conversationFontSizePx })}
                   {...(conversationFontStyle === undefined ? {} : { style: conversationFontStyle })}
                   aria-label={active.title.trim() === '' ? t('app.conversation') : active.title}
                 >

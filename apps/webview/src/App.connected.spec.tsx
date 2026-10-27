@@ -1010,12 +1010,52 @@ describe('App connected rendering', () => {
     )
     // The first settings opening loads a separate chunk; allow module loading
     // under the full parallel suite before checking the actual preference write.
-    fireEvent.click(await screen.findByRole('button', { name: 'Small' }, { timeout: 5_000 }))
-
-    expect(document.querySelector('.dsh-conversation')?.getAttribute('data-conversation-font-size')).toBe(
-      'small',
+    const input = await screen.findByRole(
+      'spinbutton',
+      { name: 'Conversation font size' },
+      { timeout: 5_000 },
     )
-    expect(window.localStorage.getItem(CONVERSATION_FONT_SIZE_STORAGE_KEY)).toBe('small')
+    expect(input).toHaveProperty('value', '17')
+    fireEvent.change(input, { target: { value: '12' } })
+    fireEvent.blur(input)
+    const conversation = document.querySelector<HTMLElement>('.dsh-conversation')
+    expect(conversation?.getAttribute('data-conversation-font-size-px')).toBe('12')
+    expect(conversation?.style.fontSize).toBe('12px')
+    expect(window.localStorage.getItem(CONVERSATION_FONT_SIZE_STORAGE_KEY)).toBe('12')
+  })
+
+  it('preserves local theme after Desktop settings load and persists local changes', async () => {
+    window.localStorage.setItem(THEME_PREFERENCE_STORAGE_KEY, 'light')
+    const base = dshUiSettingsSnapshot()
+    const snapshot: DshSettingsSnapshot = {
+      ...base,
+      schema: {
+        ...base.schema,
+        fields: [
+          {
+            path: 'ui-theme.preference',
+            label: 'preference',
+            type: 'enum',
+            required: false,
+            enumValues: ['light', 'dark', 'system'],
+            restartRequired: false,
+          },
+        ],
+      },
+      values: { 'ui-theme': { preference: 'dark' } },
+    }
+    const readDshSettings = vi.fn().mockResolvedValue(snapshot)
+    currentStore = { ...storeFor({ ...connectedState(true), drawer: 'settings' }), readDshSettings }
+    render(<App />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(readDshSettings).toHaveBeenCalled())
+    expect(document.documentElement.dataset.dshTheme).toBe('light')
+    expect(window.localStorage.getItem(THEME_PREFERENCE_STORAGE_KEY)).toBe('light')
+    fireEvent.click(await screen.findByRole('button', { name: 'system' }, { timeout: 5_000 }))
+    expect(document.documentElement.dataset.dshTheme).toBe('system')
+    expect(window.localStorage.getItem(THEME_PREFERENCE_STORAGE_KEY)).toBe('system')
   })
 
   it('restores the selected Webview theme on the application root', () => {

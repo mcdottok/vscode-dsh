@@ -49,6 +49,7 @@ import { readImageAttachmentLimits } from './app/attachment-reader.js'
 import {
   readConversationFontSize,
   rememberConversationFontSize,
+  legacyConversationFontSizePx,
   readThemePreference,
   rememberThemePreference,
   type ConversationFontSize,
@@ -147,14 +148,11 @@ const useAppControllerImpl = () => {
     newSessionPresetSelectionEnabled,
     transcriptView,
     performanceUsage,
-    hostConversationFontSizePx,
-    conversationFontStyle,
   } = useDshSettings({
     store,
     state,
     adoptLocaleFromHost,
     setLocale,
-    setThemePreferenceState,
     setError,
     t,
   })
@@ -176,6 +174,12 @@ const useAppControllerImpl = () => {
     setConversationView(next)
     document.getElementById(CONVERSATION_VIEW_IDS[next].tab)?.focus()
   }, [])
+
+  const localConversationFontSizePx = legacyConversationFontSizePx(conversationFontSize)
+  const conversationFontStyle = {
+    fontSize: `${localConversationFontSizePx}px`,
+    '--dsh-conversation-font-scale': String(localConversationFontSizePx / 14),
+  }
 
   const setConversationFontSize = useCallback((next: ConversationFontSize): void => {
     setConversationFontSizeState(next)
@@ -931,7 +935,7 @@ const useAppControllerImpl = () => {
     headerOnNewSession,
     headerOnOpenSchedules,
     headerOnOpenSettings,
-    hostConversationFontSizePx,
+    conversationFontSizePx: localConversationFontSizePx,
     imageLimits,
     lineageActiveSubagent,
     lineageOnOpenSession,

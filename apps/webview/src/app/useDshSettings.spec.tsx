@@ -105,7 +105,6 @@ function setupSettings(
   // callbacks production receives from useI18n and App handlers.
   const adoptLocaleFromHost = vi.fn()
   const setLocale = vi.fn()
-  const setThemePreferenceState = vi.fn()
   const setError = vi.fn()
   const t = vi.fn((key: string): string => key)
   const store = { getState: () => state, readDshSettings, updateDshSetting } as unknown as AppStore
@@ -116,7 +115,6 @@ function setupSettings(
         state,
         adoptLocaleFromHost,
         setLocale,
-        setThemePreferenceState,
         setError,
         t,
       }),
