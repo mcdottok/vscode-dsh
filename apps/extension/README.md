@@ -18,7 +18,7 @@ Install **DSH Coding Agent** in VS Code, open a trusted project folder, then ope
 2. Keep Desktop running. On Windows, the plugins discover and connect automatically on the same machine, without copying an address or enabling browser access.
 3. Select the same workspace and existing session to continue from either app.
 
-If you previously disabled the connection entry, re-enable **Settings → General → VS Code connection** in Desktop. A saved manual connection takes precedence.
+If you previously disabled the connection entry, re-enable **Settings → General → VS Code connection** in Desktop. A saved manual connection takes precedence. On local Windows, interrupted Desktop connections automatically refresh their address and authorization before reconnecting. A saved address without pairing information can recover only when a unique local Desktop is verified. Manual recovery steps appear if automatic recovery fails.
 
 For other platforms, remote environments, or when automatic connection is unavailable, copy the address from Desktop's **VS Code connection** entry and run **DSH: Connect to Desktop** in VS Code. Credentials are stored in VS Code SecretStorage.
 

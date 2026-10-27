@@ -1,6 +1,7 @@
 import { parseDesktopLaunchUrl } from '../vscode/connect-desktop.js'
 import { resetConnectionSettings } from '../config/reset-connection-settings.js'
 import type { DesktopPairing } from '../backend/desktop-pairing.js'
+import { canRecoverDesktop, withDesktopRecovery } from '../backend/desktop-recovery.js'
 import {
   allowsAutomaticDesktop,
   AUTOMATIC_DESKTOP_ORIGIN,
@@ -15,6 +16,7 @@ import { promisify } from 'node:util'
 import { access } from 'node:fs/promises'
 import {
   AppError,
+  type AppErrorCode,
   type BackendEndpoint,
   type BackendState,
   type DshBackend,
@@ -381,7 +383,10 @@ export function createRuntimeAssembly(deps: RuntimeAssemblyDependencies): Runtim
 export interface ConnectionLifecycleDependencies {
   readonly discoverAutomaticDesktop?: (
     signal?: AbortSignal,
+    expectedKey?: string,
   ) => Promise<AutomaticDesktopConnection | undefined>
+  readonly onDesktopRecoveryState?: (active: boolean) => void
+  readonly onDesktopRecoveryFailure?: (code: AppErrorCode) => void
   readonly desktopPairing?: DesktopPairing
   readonly context: vscode.ExtensionContext
   readonly configuration: VsCodeConfigurationSource
@@ -401,6 +406,7 @@ export interface ConnectionLifecycleDependencies {
 
 export interface ConnectionLifecycle {
   readonly resetConnection: () => Promise<void>
+  readonly pauseAutomaticConnection: () => void
   readonly isAutomaticConnectionPaused: () => boolean
   readonly connect: (signal?: AbortSignal) => Promise<unknown>
   readonly reconnect: (signal?: AbortSignal) => Promise<unknown>
@@ -436,7 +442,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
   let resetRevision = 0
   let resettingConnection = false
   let automaticConnectionPaused = false
-  const connect = async (signal?: AbortSignal, automaticChecked = false): Promise<unknown> => {
+  const connectOnce = async (signal?: AbortSignal, automaticChecked = false): Promise<unknown> => {
     if (resettingConnection) throw new DOMException('Connection reset in progress.', 'AbortError')
     const connectionRevision = resetRevision
     automaticConnectionPaused = false
@@ -457,7 +463,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
       canBootstrap &&
       !(current.connection.serverUrl && (await deps.desktopPairing?.has(current.connection.serverUrl)))
     ) {
-      if (await enrollAutomaticDesktop(signal)) return connect(signal, true)
+      if (await enrollAutomaticDesktop(signal)) return connectOnce(signal, true)
     }
     const mode = development ? 'new-isolated' : current.connection.mode
     const hasWorkspaceFolder = currentWorkspaceFolders().length > 0
@@ -484,18 +490,28 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
         launchUrl = await deps.desktopPairing.resolve(customEndpoint.baseUrl, signal)
       } catch (error) {
         signal?.throwIfAborted()
-        if (canBootstrap && (await enrollAutomaticDesktop(signal))) return connect(signal, true)
-        throw error
+        throw new AppError({
+          code: 'BACKEND_UNREACHABLE',
+          message: 'The paired Desktop is temporarily unavailable.',
+          retryable: true,
+          cause: error,
+        })
       }
       signal?.throwIfAborted()
       if (launchUrl !== undefined) {
         const launch = parseDesktopLaunchUrl(launchUrl)
         await externalConnection?.authorizePairedDesktop(launch.endpoint, launch.token, signal)
         pairedVersion = await deps.discoverDesktopVersion?.(launch.endpoint, signal)
+        if (pairedVersion === undefined && launch.endpoint.baseUrl === current.connection.serverUrl)
+          pairedVersion = current.connection.runtimeVersion
         signal?.throwIfAborted()
         customEndpoint = launch.endpoint
-        if (automaticOrigin !== undefined && desktopOrigin !== automaticOrigin)
-          await context.workspaceState.update('dsh.desktop.lastEndpoint', automaticOrigin)
+        if (
+          launch.endpoint.baseUrl !== current.connection.serverUrl ||
+          pairedVersion !== current.connection.runtimeVersion
+        ) {
+          await persistPairedDesktop(current.connection.serverUrl!, launch.endpoint, pairedVersion, signal)
+        }
       }
     }
     const allowedEndpoints =
@@ -506,15 +522,18 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
             baseUrl: `http://127.0.0.1:${port}`,
           }))
         : undefined
+    const selectedRuntimeVersion =
+      customEndpoint?.baseUrl !== current.connection.serverUrl
+        ? pairedVersion
+        : (pairedVersion ?? current.connection.runtimeVersion)
     const request: ConnectionRequest = {
       mode: useConfiguredEndpoint ? 'custom' : mode,
       ...(useConfiguredEndpoint ? { credentialRevision: externalConnection?.revision ?? 0 } : {}),
       ...(customEndpoint === undefined ? {} : { endpoint: customEndpoint }),
       ...(allowedEndpoints === undefined ? {} : { allowedEndpoints }),
-      ...((pairedVersion ?? current.connection.runtimeVersion) === undefined ||
-      (pairedVersion ?? current.connection.runtimeVersion) === ''
+      ...(selectedRuntimeVersion === undefined || selectedRuntimeVersion === ''
         ? {}
-        : { runtimeVersion: pairedVersion ?? current.connection.runtimeVersion }),
+        : { runtimeVersion: selectedRuntimeVersion }),
       // A workspace that has not been trusted may attach to an existing
       // host. An empty window is safe to isolate in a temporary workspace,
       // but an untrusted project folder must never auto-start DSH.
@@ -603,10 +622,79 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
     publishState(result.state)
     return { connected: true }
   }
+  let connectionOperation: Promise<unknown> | undefined
+  let connectionAbort: AbortController | undefined
+  let connectionSelection = -1
+  const connect = (signal?: AbortSignal): Promise<unknown> => {
+    if (
+      connectionOperation !== undefined &&
+      connectionSelection === configurationRevision &&
+      !connectionAbort?.signal.aborted
+    )
+      return connectionOperation
+    connectionAbort?.abort(new DOMException('Connection selection changed.', 'AbortError'))
+    const abort = new AbortController()
+    connectionAbort = abort
+    connectionSelection = configurationRevision
+    const operationSignal = signal ? AbortSignal.any([abort.signal, signal]) : abort.signal
+    const eligible =
+      deps.discoverAutomaticDesktop !== undefined &&
+      !configuringTransport &&
+      !usesDevelopmentRuntime(context) &&
+      vscode.workspace.isTrusted &&
+      canRecoverDesktop(configuration.read().connection)
+    const operation = (async (): Promise<unknown> => {
+      if (!eligible) return connectOnce(signal)
+      const recoverySignal = AbortSignal.any([AbortSignal.timeout(25_000), operationSignal])
+      try {
+        return await withDesktopRecovery({
+          signal: recoverySignal,
+          active: (active) => deps.onDesktopRecoveryState?.(active),
+          connect: () => {
+            if (!vscode.workspace.isTrusted) throw new DOMException('Workspace trust changed.', 'AbortError')
+            return connectOnce(recoverySignal)
+          },
+          refresh: async () => {
+            // Never enqueue behind configureConnection while it is awaiting us.
+            if (!configuringTransport) await enrollAutomaticDesktop(recoverySignal, true)
+          },
+        })
+      } catch (error) {
+        operationSignal.throwIfAborted()
+        if (
+          (error instanceof Error && error.name === 'AbortError') ||
+          (error instanceof AppError && error.code === 'REQUEST_CANCELLED')
+        )
+          throw error
+        const failure =
+          error instanceof AppError
+            ? error
+            : new AppError({
+                code: 'BACKEND_UNREACHABLE',
+                message:
+                  'Desktop could not be recovered automatically. Update the connection address or choose a connection source.',
+                retryable: true,
+              })
+        deps.onDesktopRecoveryFailure?.(failure.code)
+        if (!coordinator.reportPreparationFailure?.(failure))
+          publishState({ kind: 'failed', message: failure.message, retryable: failure.retryable })
+        throw failure
+      }
+    })()
+    connectionOperation = operation
+    void operation
+      .finally(() => {
+        if (connectionOperation === operation) connectionOperation = undefined
+        if (connectionAbort === abort) connectionAbort = undefined
+      })
+      .catch(() => undefined)
+    return operation
+  }
   let reconnectOperation: Promise<unknown> | undefined
   let reconnectAbort: AbortController | undefined
   const reconnect = async (signal?: AbortSignal, replace = false): Promise<unknown> => {
     if (reconnectOperation !== undefined && !replace) return reconnectOperation
+    connectionAbort?.abort(new DOMException('Reconnecting DSH.', 'AbortError'))
     reconnectAbort?.abort(new DOMException('Connection settings changed.', 'AbortError'))
     const abort = new AbortController()
     reconnectAbort = abort
@@ -644,18 +732,25 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
   const writeTransportSettings = async (
     settings: vscode.WorkspaceConfiguration,
     writes: readonly (readonly [string, unknown])[],
+    assertCurrent: () => void = () => undefined,
   ): Promise<void> => {
-    for (const [key, value] of writes) await settings.update(key, value, vscode.ConfigurationTarget.Global)
+    for (const [key, value] of writes) {
+      assertCurrent()
+      await settings.update(key, value, vscode.ConfigurationTarget.Global)
+      assertCurrent()
+    }
   }
-  const enrollAutomaticDesktop = (signal?: AbortSignal): Promise<boolean> => {
+  const enrollAutomaticDesktop = (signal?: AbortSignal, recovering = false): Promise<boolean> => {
     if (automaticEnrollment) return automaticEnrollment
     const revision = configurationRevision
     const operation = configurationQueue.then(async () => {
-      const previous = configuration.read()
+      const selected = configuration.read()
+      const previous = { connection: { ...selected.connection }, runtime: { ...selected.runtime } }
       const previousAutomatic = context.globalState.get<string>(AUTOMATIC_DESKTOP_ORIGIN)
       const previousMarker = context.workspaceState.get<string>('dsh.desktop.lastEndpoint')
+      const recoveryAllowed = recovering && canRecoverDesktop(previous.connection)
       if (
-        !allowsAutomaticDesktop(previous.connection, previousAutomatic) ||
+        (!allowsAutomaticDesktop(previous.connection, previousAutomatic) && !recoveryAllowed) ||
         !deps.desktopPairing ||
         !externalConnection
       )
@@ -666,7 +761,12 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
           throw new DOMException('Connection selection changed.', 'AbortError')
       }
       assertCurrent()
-      const found = await deps.discoverAutomaticDesktop?.(signal)
+      const previousKey =
+        previous.connection.serverUrl === undefined
+          ? undefined
+          : await deps.desktopPairing.keyFor?.(previous.connection.serverUrl)
+      assertCurrent()
+      const found = await deps.discoverAutomaticDesktop?.(signal, previousKey)
       assertCurrent()
       if (!found) return false
       configuringTransport = true
@@ -680,12 +780,16 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
         await context.workspaceState.update('dsh.desktop.lastEndpoint', found.endpoint.baseUrl)
         await context.globalState.update(AUTOMATIC_DESKTOP_ORIGIN, found.endpoint.baseUrl)
         assertCurrent()
-        await writeTransportSettings(vscode.workspace.getConfiguration('dsh'), [
-          ['connection.serverUrl', found.endpoint.baseUrl],
-          ['connection.runtimeVersion', found.runtimeVersion],
-          ['runtime.autoStart', false],
-          ['connection.mode', 'custom'],
-        ])
+        await writeTransportSettings(
+          vscode.workspace.getConfiguration('dsh'),
+          [
+            ['connection.serverUrl', found.endpoint.baseUrl],
+            ['connection.runtimeVersion', found.runtimeVersion],
+            ['runtime.autoStart', false],
+            ['connection.mode', 'custom'],
+          ],
+          assertCurrent,
+        )
         assertCurrent()
         return true
       } catch (error) {
@@ -698,6 +802,9 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
           ]).catch(() => undefined)
           await context.globalState.update(AUTOMATIC_DESKTOP_ORIGIN, previousAutomatic)
           await context.workspaceState.update('dsh.desktop.lastEndpoint', previousMarker)
+          if (previousKey !== undefined && previous.connection.serverUrl !== undefined)
+            await deps.desktopPairing.save(previous.connection.serverUrl, { version: 1, key: previousKey })
+          else await deps.desktopPairing.clear()
         }
         throw error
       } finally {
@@ -719,8 +826,87 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
     )
     return operation
   }
+  const persistPairedDesktopNow = async (
+    origin: string,
+    endpoint: BackendEndpoint,
+    version: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<void> => {
+    const revision = configurationRevision
+    const previous = { ...configuration.read().connection }
+    const previousMarker = context.workspaceState.get<string>('dsh.desktop.lastEndpoint')
+    const previousAutomatic =
+      deps.discoverAutomaticDesktop === undefined
+        ? undefined
+        : context.globalState.get<string>(AUTOMATIC_DESKTOP_ORIGIN)
+    const key = await deps.desktopPairing?.keyFor?.(origin)
+    const assertCurrent = (): void => {
+      signal?.throwIfAborted()
+      if (revision !== configurationRevision || !vscode.workspace.isTrusted)
+        throw new DOMException('Connection selection changed.', 'AbortError')
+    }
+    assertCurrent()
+    if (deps.desktopPairing?.keyFor !== undefined && key === undefined)
+      throw new DOMException('Desktop pairing was cleared.', 'AbortError')
+    const wasConfiguring = configuringTransport
+    configuringTransport = true
+    try {
+      await writeTransportSettings(
+        vscode.workspace.getConfiguration('dsh'),
+        [
+          ['connection.serverUrl', endpoint.baseUrl],
+          ['connection.runtimeVersion', version ?? ''],
+        ],
+        assertCurrent,
+      )
+      if (key !== undefined) await deps.desktopPairing?.save(endpoint.baseUrl, { version: 1, key })
+      assertCurrent()
+      await context.workspaceState.update('dsh.desktop.lastEndpoint', endpoint.baseUrl)
+      assertCurrent()
+      if (deps.discoverAutomaticDesktop !== undefined)
+        await context.globalState.update(AUTOMATIC_DESKTOP_ORIGIN, endpoint.baseUrl)
+      assertCurrent()
+    } catch (error) {
+      if (revision === configurationRevision) {
+        await writeTransportSettings(vscode.workspace.getConfiguration('dsh'), [
+          ['connection.serverUrl', previous.serverUrl ?? ''],
+          ['connection.runtimeVersion', previous.runtimeVersion ?? ''],
+        ]).catch(() => undefined)
+        if (key !== undefined) await deps.desktopPairing?.save(origin, { version: 1, key })
+        await context.workspaceState.update('dsh.desktop.lastEndpoint', previousMarker)
+        if (deps.discoverAutomaticDesktop !== undefined)
+          await context.globalState.update(AUTOMATIC_DESKTOP_ORIGIN, previousAutomatic)
+      }
+      throw error
+    } finally {
+      configuringTransport = wasConfiguring
+    }
+  }
+  const persistPairedDesktop = (
+    origin: string,
+    endpoint: BackendEndpoint,
+    version: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<void> => {
+    const revision = configurationRevision
+    const run = (): Promise<void> => {
+      signal?.throwIfAborted()
+      if (revision !== configurationRevision)
+        throw new DOMException('Connection selection changed.', 'AbortError')
+      return persistPairedDesktopNow(origin, endpoint, version, signal)
+    }
+    // An explicit configure operation already owns this queue and awaits connect.
+    if (configuringTransport) return run()
+    const operation = configurationQueue.then(run)
+    configurationQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    )
+    return operation
+  }
   const reconnectOnTransportChange = (signal?: AbortSignal): Promise<unknown> => {
     if (configuringTransport || automaticConnectionPaused) return Promise.resolve(undefined)
+    configurationRevision++
     return reconnect(signal, true)
   }
   const configureConnection = async (
@@ -860,6 +1046,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
     ++resetRevision
     resettingConnection = true
     automaticConnectionPaused = true
+    connectionAbort?.abort(new DOMException('Connection was reset.', 'AbortError'))
     reconnectAbort?.abort(new DOMException('Connection was reset.', 'AbortError'))
     const operation = configurationQueue.then(async () => {
       configuringTransport = true
@@ -901,6 +1088,12 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
     reconnectOnTransportChange,
     configureConnection,
     resetConnection,
+    pauseAutomaticConnection: () => {
+      automaticConnectionPaused = true
+      configurationRevision++
+      connectionAbort?.abort(new DOMException('Desktop credentials were cleared.', 'AbortError'))
+      reconnectAbort?.abort(new DOMException('Desktop credentials were cleared.', 'AbortError'))
+    },
     isAutomaticConnectionPaused: () => automaticConnectionPaused,
   }
 }

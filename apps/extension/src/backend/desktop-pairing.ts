@@ -144,6 +144,10 @@ export class DesktopPairing {
   public async has(origin: string): Promise<boolean> {
     return (await this.read(origin)) !== undefined
   }
+  /** Host-only identity constraint for re-discovery; never publish or log this value. */
+  public async keyFor(origin: string): Promise<string | undefined> {
+    return (await this.read(origin))?.key
+  }
   public async save(origin: string, value: unknown): Promise<void> {
     if (
       this.platform !== 'win32' ||

@@ -159,13 +159,17 @@ export class DesktopAutoDiscovery {
   public async available(signal?: AbortSignal): Promise<boolean> {
     return (await this.records(signal)).length > 0
   }
-  public async discover(callerSignal?: AbortSignal): Promise<AutomaticDesktopConnection | undefined> {
+  public async discover(
+    callerSignal?: AbortSignal,
+    expectedKey?: string,
+  ): Promise<AutomaticDesktopConnection | undefined> {
     const signal = AbortSignal.any([AbortSignal.timeout(10_000), ...(callerSignal ? [callerSignal] : [])])
     const records = await this.records(signal)
     if (!records.length) return undefined
     const candidates = await (
       this.dependencies.candidates ?? ((s) => new WindowsDesktopDiscoveryProvider().discover(s))
     )(signal)
+    const found = new Map<string, AutomaticDesktopConnection>()
     for (const record of records) {
       signal.throwIfAborted()
       const verified = candidates.filter(
@@ -184,6 +188,7 @@ export class DesktopAutoDiscovery {
         const grant = JSON.parse(text) as Record<string, unknown>
         if (grant.version !== 1 || typeof grant.key !== 'string' || !/^[A-Za-z0-9_-]{43}$/u.test(grant.key))
           continue
+        if (expectedKey !== undefined && grant.key !== expectedKey) continue
         const url = await (this.dependencies.resolve ?? resolvePairedDesktop)(grant.key, signal)
         const launch = parseDesktopLaunchUrl(url)
         const owner = verified.find((candidate) => candidate.endpoint.baseUrl === launch.endpoint.baseUrl)
@@ -196,11 +201,21 @@ export class DesktopAutoDiscovery {
         )
           continue
         signal.throwIfAborted()
-        return { url, key: grant.key, endpoint: launch.endpoint, runtimeVersion: owner.runtimeVersion }
+        const connection = {
+          url,
+          key: grant.key,
+          endpoint: launch.endpoint,
+          runtimeVersion: owner.runtimeVersion,
+        }
+        if (expectedKey !== undefined) return connection
+        found.set(grant.key, connection)
+        // Without an existing pairing identity, selecting between Desktop profiles
+        // would silently switch conversations. Require a unique verified owner.
+        if (found.size > 1) return undefined
       } catch {
         signal.throwIfAborted()
       }
     }
-    return undefined
+    return found.size === 1 ? [...found.values()][0] : undefined
   }
 }

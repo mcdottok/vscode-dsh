@@ -57,6 +57,18 @@ export class DshConnectionCoordinator {
     return this.state
   }
 
+  /** Native pairing can fail before probe/connect starts; keep snapshots and watchers authoritative. */
+  public reportPreparationFailure(error: AppError): boolean {
+    if (
+      this.inFlight !== undefined ||
+      this.disconnectOperation !== undefined ||
+      !['idle', 'failed'].includes(this.state.kind)
+    )
+      return false
+    this.publish({ kind: 'failed', message: error.message, retryable: error.retryable })
+    return true
+  }
+
   public subscribe(listener: (state: BackendState) => void): () => void {
     this.listeners.add(listener)
     listener(this.state)

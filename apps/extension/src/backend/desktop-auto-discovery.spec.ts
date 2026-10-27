@@ -110,3 +110,38 @@ it('never replaces a manually selected endpoint, port list or local runtime', ()
   expect(allowsAutomaticDesktop({ mode: 'new-isolated' })).toBe(false)
   expect(allowsAutomaticDesktop({ mode: 'custom', serverUrl: endpoint.baseUrl }, endpoint.baseUrl)).toBe(true)
 })
+
+it('requires a unique verified profile unless constrained by the existing secret pairing identity', async () => {
+  const directory = await fixture()
+  await writeFile(
+    path.join(directory, `${now}-bbbbbbbbbbbbbbbbbbbbbbbb.json`),
+    JSON.stringify({
+      version: 1,
+      pid: 18,
+      createdAt: now,
+      updatedAt: now,
+      protectedKey: Buffer.alloc(49).toString('base64'),
+    }),
+  )
+  const otherKey = 'L'.repeat(43)
+  const otherEndpoint = { host: '127.0.0.1', port: 43121, baseUrl: 'http://127.0.0.1:43121' }
+  const resolve = vi.fn((value: string) =>
+    Promise.resolve((value === key ? endpoint : otherEndpoint).baseUrl + '/?token=fixture'),
+  )
+  const discovery = new DesktopAutoDiscovery({
+    directory,
+    platform: 'win32',
+    now: () => now,
+    candidates: () => Promise.resolve([candidate, { ...candidate, pid: 18, endpoint: otherEndpoint }]),
+    unprotect: (value) =>
+      Promise.resolve(
+        JSON.stringify({ version: 1, key: value === Buffer.alloc(48).toString('base64') ? key : otherKey }),
+      ),
+    resolve,
+  })
+  expect(await discovery.discover()).toBeUndefined()
+  resolve.mockClear()
+  expect((await discovery.discover(undefined, key))?.key).toBe(key)
+  expect(resolve.mock.calls.every(([value]) => value === key)).toBe(true)
+  expect(await discovery.discover(undefined, 'M'.repeat(43))).toBeUndefined()
+})

@@ -197,6 +197,14 @@ Plugin 安装前的二次 inspect、registry、Host 确认或 Adapter 本地验�
 
 本机安装包选择显式写入 `new-isolated` 与 `runtime.autoStart: true`，通过已定位的全局包或所选可执行文件启动插件拥有的服务；清空 Desktop 端点和版本覆盖，避免错误附加到桌面端。未受信任工作区不能启动本机服务。版本安装仅修改本机包，不升级 Desktop，安装后由用户点击启动连接。Desktop 端点在 Host 侧单独记忆，切回时可复用已保存凭据。
 
+### 桌面端的自动恢复
+
+Windows 同机的桌面连接使用既有 connect owner-only 配对接口与加密命名管道，不增加上游 RPC。已保存的配对身份通过 SecretStorage 读取，只允许重新发现同一 key 对应的桌面端；新地址仍须与已验证进程、物理包身份及其监听端点一致。读取的地址和 token 只在 Host 内完成授权，恢复后同步保存新 origin、版本和配对绑定。没有配对信息的旧 loopback 地址先尝试原目标，失败后只有唯一经验证的本机桌面端可被接续；多 profile 不按新旧顺序猜测。
+
+断线事件可立即启动恢复，原有观察器继续检查桌面端返回与地址变化。一次恢复最多五次尝试，总窗口有界；期间只展示连接进度，不将瞬时失败投影为终态错误。耗尽后发布真实失败与手动恢复入口；桌面端随后重新可用时仍可重新尝试，而不是在相同不可用状态下持续弹出失败界面。IPC 在 Coordinator 启动前失败也会记录到权威状态，避免停留在 idle 后再也不观察恢复。
+
+远程 custom 地址、独立本机运行和明确的端口列表保持原选择。取消、失去信任、重置、替换连接设置或扩展释放终止旧任务；恢复的设置写入串行且受选择 revision 保护，失败回滚，不把凭据、key 或 origin 送入 Webview。此改动的自动契约测试不代替真实桌面重启验收，CN-05 保持 `PARTIAL`。
+
 ### 冷会话目录标题
 
 已核对本机 `0.2.1-rc.2` 发布包的 `dsh-api-session-controller`：`session/list` 的冷会话分支只读取 `sessionProjectionCache.cachedSnapshot` / `cachedPredecessorTitle`，未命中时可省略标题；`session/projections` 通过只读 `sessionQuery.observeSession` 重建精确投影并释放观察，不激活 Agent。alpha.2 及继承该精确 union 的入口在目录标题投影缺失时，最多并发三次补读；仅把验证后的 title 与序号写入现有投影缓存，旧列表不得覆盖较新标题。迁移必需的会话不因目录装饰而打开或迁移，取消沿请求传递，失败保留可用目录。此补偿仅改善插件目录，不修改上游 Web 界面或全局安装包。

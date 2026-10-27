@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as vscode from 'vscode'
+import { AppError } from '@dsh-vscode/domain'
 
 vi.mock('vscode', () => ({
   workspace: {
-    isTrusted: true,
+    get isTrusted() {
+      return harness.isTrusted
+    },
     getConfiguration: () => ({
       inspect: (key: string) => ({
         globalValue:
@@ -41,6 +44,7 @@ vi.mock('vscode', () => ({
 
 const harness = vi.hoisted(() => {
   const state = {
+    isTrusted: true,
     configuration: {
       connection: { mode: 'auto' as 'auto' | 'custom' | 'attach-only', serverUrl: '', runtimeVersion: '' },
       runtime: { autoStart: false },
@@ -125,6 +129,7 @@ function lifecycle(
 describe('connection.configure reconnect', () => {
   afterEach(() => vi.unstubAllEnvs())
   beforeEach(() => {
+    harness.isTrusted = true
     harness.connects.length = 0
     harness.transportListeners.length = 0
     harness.configuration.connection.mode = 'auto'
@@ -452,6 +457,10 @@ describe('connection.configure reconnect', () => {
     authorize: ReturnType<typeof vi.fn>
     clearAll: ReturnType<typeof vi.fn>
     clearPair: ReturnType<typeof vi.fn>
+    connect: ReturnType<typeof vi.fn>
+    resolve: ReturnType<typeof vi.fn>
+    savePair: ReturnType<typeof vi.fn>
+    recovery: ReturnType<typeof vi.fn>
   } {
     const global = new Map<string, unknown>()
     const workspace = new Map<string, unknown>()
@@ -475,17 +484,32 @@ describe('connection.configure reconnect', () => {
     })
     const authorizePaired = vi.fn().mockResolvedValue(undefined)
     const authorize = vi.fn().mockResolvedValue(undefined)
+    const resolve = vi.fn(() => Promise.resolve('http://127.0.0.1:43120/?token=fixture-auto'))
+    const savePair = vi.fn((origin: string) => {
+      pairedOrigin = origin
+      return Promise.resolve()
+    })
+    const recovery = vi.fn()
+    const connect = vi.fn((request: unknown) => {
+      harness.connects.push(request as never)
+      return Promise.resolve({
+        backend: {
+          connection: { endpoint: { host: '127.0.0.1', port: 43120, baseUrl: 'http://127.0.0.1:43120' } },
+        },
+        state: { kind: 'connected' },
+      })
+    })
     const subject = createConnectionLifecycle({
       context: { workspaceState: storage(workspace), globalState: storage(global) },
       configuration: { read: () => harness.configuration },
       discoverAutomaticDesktop: discover,
+      discoverDesktopVersion: harness.desktopVersion,
+      onDesktopRecoveryState: recovery,
       desktopPairing: {
         has: (origin: string) => Promise.resolve(origin === pairedOrigin),
-        save: (origin: string) => {
-          pairedOrigin = origin
-          return Promise.resolve()
-        },
-        resolve: () => Promise.resolve('http://127.0.0.1:43120/?token=fixture-auto'),
+        keyFor: (origin: string) => Promise.resolve(origin === pairedOrigin ? 'K'.repeat(43) : undefined),
+        save: savePair,
+        resolve,
         clear: clearPair,
       },
       externalConnection: {
@@ -496,15 +520,7 @@ describe('connection.configure reconnect', () => {
         revision: 0,
       },
       coordinator: {
-        connect: (request: unknown) => {
-          harness.connects.push(request as never)
-          return Promise.resolve({
-            backend: {
-              connection: { endpoint: { host: '127.0.0.1', port: 43120, baseUrl: 'http://127.0.0.1:43120' } },
-            },
-            state: { kind: 'connected' },
-          })
-        },
+        connect,
         disconnect: () => Promise.resolve(),
       },
       currentWorkspaceFolders: () => [],
@@ -515,7 +531,20 @@ describe('connection.configure reconnect', () => {
       detachSessionAdapters: () => undefined,
     } as never)
     harness.transportListeners.push(subject.reconnectOnTransportChange)
-    return { subject, discover, global, workspace, authorizePaired, authorize, clearAll, clearPair }
+    return {
+      subject,
+      discover,
+      global,
+      workspace,
+      authorizePaired,
+      authorize,
+      clearAll,
+      clearPair,
+      connect,
+      resolve,
+      savePair,
+      recovery,
+    }
   }
 
   it('resets saved settings and credentials offline without reconnecting, then permits a fresh first connection', async () => {
@@ -618,10 +647,154 @@ describe('connection.configure reconnect', () => {
   it('restores an empty automatic selection if secure grant persistence fails', async () => {
     const f = automaticFixture()
     f.authorizePaired.mockRejectedValueOnce(new Error('Secure storage unavailable'))
-    await expect(f.subject.connect()).rejects.toThrow('Secure storage unavailable')
+    await expect(f.subject.connect()).rejects.toThrow('could not be recovered automatically')
     expect(harness.configuration.connection.mode).toBe('auto')
     expect(harness.configuration.connection.serverUrl).toBe('')
     expect(f.global.get('dsh.desktop.automaticOrigin.v1')).toBeUndefined()
     expect(harness.connects).toHaveLength(0)
+  })
+
+  it('recovers an unavailable legacy saved address, refreshes authorization and enrolls it for future restarts', async () => {
+    vi.useFakeTimers()
+    try {
+      harness.configuration.connection = {
+        mode: 'custom',
+        serverUrl: 'http://127.0.0.1:49999',
+        runtimeVersion: '0.2.1-rc.2',
+      }
+      const f = automaticFixture()
+      f.connect.mockRejectedValueOnce(
+        new AppError({ code: 'BACKEND_UNREACHABLE', message: 'Old address unavailable', retryable: true }),
+      )
+      const result = f.subject.connect()
+      await vi.advanceTimersByTimeAsync(750)
+      expect(await result).toEqual({ connected: true })
+      expect(f.discover).toHaveBeenCalledOnce()
+      expect(f.authorize).not.toHaveBeenCalled()
+      expect(f.authorizePaired).toHaveBeenCalled()
+      expect(harness.configuration.connection.serverUrl).toBe('http://127.0.0.1:43120')
+      expect(f.workspace.get('dsh.desktop.lastEndpoint')).toBe('http://127.0.0.1:43120')
+      expect(f.recovery.mock.calls).toEqual([[true], [false]])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('persists a paired restart address and newly detected version without prompting', async () => {
+    const f = automaticFixture()
+    await f.subject.connect()
+    f.resolve.mockResolvedValue('http://127.0.0.1:43121/?token=fixture-restarted')
+    harness.desktopVersion.mockResolvedValue('0.2.1-rc.3')
+    f.discover.mockClear()
+    f.authorizePaired.mockClear()
+    await f.subject.reconnect()
+    expect(harness.configuration.connection).toMatchObject({
+      serverUrl: 'http://127.0.0.1:43121',
+      runtimeVersion: '0.2.1-rc.3',
+    })
+    expect(f.workspace.get('dsh.desktop.lastEndpoint')).toBe('http://127.0.0.1:43121')
+    expect(f.global.get('dsh.desktop.automaticOrigin.v1')).toBe('http://127.0.0.1:43121')
+    expect(f.savePair).toHaveBeenLastCalledWith('http://127.0.0.1:43121', { version: 1, key: 'K'.repeat(43) })
+    expect(f.authorizePaired).toHaveBeenCalledWith(
+      expect.objectContaining({ port: 43121 }),
+      'fixture-restarted',
+      expect.any(AbortSignal),
+    )
+    expect(f.discover).not.toHaveBeenCalled()
+    expect(f.authorize).not.toHaveBeenCalled()
+  })
+
+  it('re-discovers only the original pairing identity when its IPC is temporarily unavailable', async () => {
+    vi.useFakeTimers()
+    try {
+      const f = automaticFixture()
+      await f.subject.connect()
+      f.discover.mockClear()
+      f.resolve.mockRejectedValueOnce(new Error('Paired Desktop unavailable'))
+      const result = f.subject.reconnect()
+      await vi.advanceTimersByTimeAsync(750)
+      await result
+      expect(f.discover).toHaveBeenCalledWith(expect.any(AbortSignal), 'K'.repeat(43))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('cancels a stale-address retry when the person selects another connection', async () => {
+    vi.useFakeTimers()
+    try {
+      harness.configuration.connection = {
+        mode: 'custom',
+        serverUrl: 'http://127.0.0.1:49999',
+        runtimeVersion: '0.2.1-rc.2',
+      }
+      const f = automaticFixture()
+      f.connect.mockRejectedValueOnce(
+        new AppError({ code: 'BACKEND_UNREACHABLE', message: 'Unavailable', retryable: true }),
+      )
+      const initial = f.subject.connect()
+      const cancelled = expect(initial).rejects.toMatchObject({ name: 'AbortError' })
+      await vi.advanceTimersByTimeAsync(0)
+      await f.subject.configureConnection('custom', 'http://127.0.0.1:43121')
+      await cancelled
+      await vi.runAllTimersAsync()
+      expect(f.discover).not.toHaveBeenCalled()
+      expect(harness.configuration.connection.serverUrl).toBe('http://127.0.0.1:43121')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('stops late automatic grants after credentials are explicitly cleared', async () => {
+    const pending = deferred<unknown>()
+    const f = automaticFixture(vi.fn().mockReturnValue(pending.promise))
+    const initial = f.subject.connect()
+    const cancelled = expect(initial).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.waitFor(() => expect(f.discover).toHaveBeenCalled())
+    f.subject.pauseAutomaticConnection()
+    pending.resolve({
+      url: 'http://127.0.0.1:43120/?token=fixture',
+      key: 'K'.repeat(43),
+      endpoint: { host: '127.0.0.1', port: 43120, baseUrl: 'http://127.0.0.1:43120' },
+      runtimeVersion: '0.2.1-rc.2',
+    })
+    await cancelled
+    expect(f.subject.isAutomaticConnectionPaused()).toBe(true)
+    expect(f.savePair).not.toHaveBeenCalled()
+    expect(f.authorizePaired).not.toHaveBeenCalled()
+  })
+
+  it('rejects late grants when workspace trust is revoked', async () => {
+    const pending = deferred<unknown>()
+    const f = automaticFixture(vi.fn().mockReturnValue(pending.promise))
+    const initial = f.subject.connect()
+    const cancelled = expect(initial).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.waitFor(() => expect(f.discover).toHaveBeenCalled())
+    harness.isTrusted = false
+    pending.resolve({
+      url: 'http://127.0.0.1:43120/?token=fixture',
+      key: 'K'.repeat(43),
+      endpoint: { host: '127.0.0.1', port: 43120, baseUrl: 'http://127.0.0.1:43120' },
+      runtimeVersion: '0.2.1-rc.2',
+    })
+    await cancelled
+    expect(f.savePair).not.toHaveBeenCalled()
+    expect(f.authorizePaired).not.toHaveBeenCalled()
+  })
+
+  it('rolls back the recovered endpoint, version and identity if pairing persistence fails', async () => {
+    const f = automaticFixture()
+    await f.subject.connect()
+    f.resolve.mockResolvedValue('http://127.0.0.1:43121/?token=fixture-restarted')
+    harness.desktopVersion.mockResolvedValue('0.2.1-rc.3')
+    f.savePair.mockRejectedValueOnce(new Error('Secure storage unavailable'))
+    await expect(f.subject.reconnect()).rejects.toThrow('could not be recovered automatically')
+    expect(harness.configuration.connection).toMatchObject({
+      serverUrl: 'http://127.0.0.1:43120',
+      runtimeVersion: '0.2.1-rc.2',
+    })
+    expect(f.workspace.get('dsh.desktop.lastEndpoint')).toBe('http://127.0.0.1:43120')
+    expect(f.global.get('dsh.desktop.automaticOrigin.v1')).toBe('http://127.0.0.1:43120')
+    expect(f.savePair).toHaveBeenLastCalledWith('http://127.0.0.1:43120', { version: 1, key: 'K'.repeat(43) })
   })
 })

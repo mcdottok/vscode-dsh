@@ -85,6 +85,31 @@ function dependencies(
 }
 
 describe('DshConnectionCoordinator', () => {
+  it('records native preparation failure before discovery without overwriting an active or connected operation', async () => {
+    const discovery = deferred<readonly BackendCandidate[]>()
+    const coordinator = new DshConnectionCoordinator(
+      dependencies({
+        discovery: { discover: () => discovery.promise },
+        probe: { probe: async () => fakeConnectedBackend() },
+      }),
+    )
+    const failure = new AppError({
+      code: 'BACKEND_UNREACHABLE',
+      message: 'Paired Desktop unavailable',
+      retryable: true,
+    })
+    expect(coordinator.reportPreparationFailure(failure)).toBe(true)
+    expect(coordinator.getState()).toMatchObject({ kind: 'failed', message: failure.message })
+    const connecting = coordinator.connect({ mode: 'attach-only', autoStart: false })
+    await vi.waitFor(() => expect(coordinator.getState().kind).toBe('discovering'))
+    expect(coordinator.reportPreparationFailure(failure)).toBe(false)
+    discovery.resolve([fakeCandidate()])
+    await connecting
+    expect(coordinator.reportPreparationFailure(failure)).toBe(false)
+    expect(coordinator.getState().kind).toBe('connected')
+    await coordinator.disconnect()
+  })
+
   it('treats cache misses as unavailable candidates and starts a managed instance only after discovery', async () => {
     const candidates: readonly BackendCandidate[] = [
       fakeCandidate(4110),

@@ -16,6 +16,8 @@ export interface BackendAttachDependencies {
   readonly extensionVersion: string
   readonly diagnostics: RedactedDiagnostics
   readonly publishRecoveredState?: (backend: DshBackend) => void
+  /** Start a replacement connection before exposing a recoverable Desktop loss to the view. */
+  readonly recoverDesktop?: () => boolean
   readonly stopAllJobFollows: (this: void) => void
   readonly invalidateCurrentWorkspaceSessionDetails: (this: void) => void
   readonly changeTracker: ChangeSetTracker
@@ -131,6 +133,7 @@ export function createBackendAttach(deps: BackendAttachDependencies): BackendAtt
         void disposeAccountLifecycleHost()
         invalidateCurrentWorkspaceSessionDetails()
         detachSessionAdapters()
+        if (deps.recoverDesktop?.()) return
       }
       void postBackendEvent(backend, event)
     })
