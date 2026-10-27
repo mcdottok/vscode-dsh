@@ -2,7 +2,7 @@
   "name": "vscode-dsh",
   "displayName": "DSH Coding Agent",
   "description": "%extension.description%",
-  "version": "0.1.76",
+  "version": "0.1.77",
   "publisher": "mcdottok",
   "icon": "resources/dsh.png",
   "license": "MIT",

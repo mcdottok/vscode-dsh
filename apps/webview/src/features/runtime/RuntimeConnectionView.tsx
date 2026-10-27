@@ -36,25 +36,40 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
   }, [step])
   const timedOut = step !== undefined && step === expiredStep
   const failure = terminalFailure || timedOut
-  const title = failure
-    ? t(
-        timedOut
-          ? 'runtime.posture.timeoutTitle'
-          : props.draftPending
-            ? 'runtime.posture.draftDisconnected'
-            : 'runtime.connectionProgress.failureTitle',
-      )
-    : connectionTitle(props.state, catalogLoading, t)
+  const latestAttempt =
+    props.output?.findLastIndex((entry) => entry.phase === 'connect' && entry.status === 'started') ?? -1
+  const attemptOutput = latestAttempt < 0 ? [] : (props.output?.slice(latestAttempt) ?? [])
+  const savedAddressFailure =
+    props.state.kind === 'failed' &&
+    attemptOutput[0]?.mode === 'custom' &&
+    attemptOutput.some(
+      (entry) =>
+        entry.phase === 'connect' && entry.status === 'failed' && entry.code === 'BACKEND_UNREACHABLE',
+    )
+  const updateAddress = savedAddressFailure && props.onConnectDesktop !== undefined
+  const title = savedAddressFailure
+    ? t('runtime.posture.savedAddressTitle')
+    : failure
+      ? t(
+          timedOut
+            ? 'runtime.posture.timeoutTitle'
+            : props.draftPending
+              ? 'runtime.posture.draftDisconnected'
+              : 'runtime.connectionProgress.failureTitle',
+        )
+      : connectionTitle(props.state, catalogLoading, t)
   const loading = pending && !timedOut
   const retryable =
     timedOut ||
     idle ||
     ((props.state.kind === 'failed' || props.state.kind === 'port-conflict') && props.state.retryable)
-  const message = timedOut
-    ? t('runtime.posture.timeoutHelp')
-    : props.state.kind === 'failed' || props.state.kind === 'port-conflict'
-      ? props.state.message
-      : undefined
+  const message = savedAddressFailure
+    ? t('runtime.posture.savedAddressError')
+    : timedOut
+      ? t('runtime.posture.timeoutHelp')
+      : props.state.kind === 'failed' || props.state.kind === 'port-conflict'
+        ? props.state.message
+        : undefined
   const [outputFailed, setOutputFailed] = useState(false)
   const [desktopBusy, setDesktopBusy] = useState(false)
   const [desktopFailed, setDesktopFailed] = useState(false)
@@ -84,13 +99,15 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
           {title}
         </h2>
         <p className="dsh-runtime-connection__subtitle">
-          {t(
-            failure || idle
-              ? props.draftPending
-                ? 'runtime.posture.draftHelp'
-                : 'runtime.posture.help'
-              : 'runtime.posture.wait',
-          )}
+          {savedAddressFailure
+            ? t('runtime.posture.savedAddressHelp')
+            : t(
+                failure || idle
+                  ? props.draftPending
+                    ? 'runtime.posture.draftHelp'
+                    : 'runtime.posture.help'
+                  : 'runtime.posture.wait',
+              )}
         </p>
       </div>
       <div className="dsh-runtime-connection__actions">
@@ -101,7 +118,7 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
             type="button"
             disabled={desktopBusy}
             onClick={() => {
-              if (props.onOpenSettings !== undefined) {
+              if (!updateAddress && props.onOpenSettings !== undefined) {
                 props.onOpenSettings()
                 return
               }
@@ -114,7 +131,23 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
             }}
           >
             <Icon name="open-in-editor" />
-            {t(props.onOpenSettings === undefined ? 'runtime.connectDesktop' : 'runtime.chooseConnection')}
+            {t(
+              updateAddress
+                ? 'runtime.updateConnectionAddress'
+                : props.onOpenSettings === undefined
+                  ? 'runtime.connectDesktop'
+                  : 'runtime.chooseConnection',
+            )}
+          </button>
+        )}
+        {!updateAddress || props.onOpenSettings === undefined ? null : (
+          <button
+            className="dsh-button dsh-button--secondary"
+            type="button"
+            disabled={desktopBusy}
+            onClick={props.onOpenSettings}
+          >
+            {t('runtime.chooseConnection')}
           </button>
         )}
         {!retryable || props.onRetry === undefined ? null : (
