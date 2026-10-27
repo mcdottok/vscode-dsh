@@ -431,7 +431,7 @@ describe('SettingsDrawer', () => {
     await screen.findByRole('heading', { name: 'Connection source' })
     const environment = screen.getByText('Environment details').closest('details')!
     fireEvent.click(within(environment).getByText('Environment details'))
-    expect(within(environment).getByText('Local DSH package')).toBeDefined()
+    expect(within(environment).getByText('Local DSH package (npm)')).toBeDefined()
     expect(screen.getByText('0.1.3')).toBeDefined()
     expect(screen.getByText('0.6.0')).toBeDefined()
     expect(screen.getByText('deepseek/deepseek-chat')).toBeDefined()

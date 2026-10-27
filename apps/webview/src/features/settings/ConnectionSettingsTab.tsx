@@ -166,7 +166,32 @@ export function ConnectionSettingsTab(input: GeneralSettingsTabProps): ReactElem
                   </label>
                 ) : null}
                 {connectionChoice === 'custom' ? (
-                  <p className="dsh-settings__connection-notice">{t('settings.connectionDesktopHelp')}</p>
+                  <>
+                    <p className="dsh-settings__connection-notice">
+                      {t('settings.connectionDesktopRequirement')}{' '}
+                      <a
+                        href="https://github.com/mcdottok/dsh-vscode-connect"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <strong>dsh-vscode-connect</strong>
+                      </a>
+                    </p>
+                    <p className="dsh-settings__connection-notice">{t('settings.connectionDesktopHelp')}</p>
+                  </>
+                ) : null}
+                {connectionChoice === 'auto' ? (
+                  <>
+                    <p className="dsh-settings__connection-notice">{t('settings.connectionLocalHelp')}</p>
+                    <p
+                      className="dsh-settings__connection-notice"
+                      role="note"
+                      aria-label={t('settings.connectionSessionNoticeTitle')}
+                    >
+                      <strong>{t('settings.connectionSessionNoticeTitle')}</strong>{' '}
+                      {t('settings.connectionSessionNotice')}
+                    </p>
+                  </>
                 ) : null}
                 {connectionChoice === 'unchanged' ? (
                   <p className="dsh-settings__connection-notice">{t('settings.connectionUnchangedHint')}</p>
