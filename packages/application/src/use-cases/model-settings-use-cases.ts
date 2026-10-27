@@ -11,6 +11,7 @@ import { AppError } from '@dsh-vscode/domain'
 import type { BackendService } from '../services/backend-service.js'
 import {
   resolveSessionConfigurationForRoster,
+  normalizeSessionConfiguration,
   type SessionConfigurationInput,
 } from './session-configuration.js'
 
@@ -66,7 +67,11 @@ export class ModelSettingsUseCases {
   ): Promise<void> {
     signal?.throwIfAborted()
     const backend = this.backendService.requireBackend()
-    const resolved = await this.resolveSessionConfiguration(configuration, signal)
+    const resolved = normalizeSessionConfiguration(configuration)
+    // Existing-session edits do not depend on optional preset discovery.
+    // Retain a cancellation/backend-identity boundary before sending a mutation.
+    await Promise.resolve()
+    signal?.throwIfAborted()
     if (this.backendService.requireBackend() !== backend)
       throw new AppError({
         code: 'REQUEST_CANCELLED',

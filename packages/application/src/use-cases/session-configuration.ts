@@ -24,10 +24,17 @@ export function resolveSessionConfigurationForRoster(
     candidates.find((preset) => preset.isDefault) ??
     candidates[0]
 
+  // Defaults apply to creation only. Updating an existing session must not
+  // replace a preserved preset merely because its plugin is absent here.
+  return normalizeSessionConfiguration(requested, selected?.id ?? '')
+}
+
+export function normalizeSessionConfiguration(
+  requested: SessionConfigurationInput,
+  preset = requested.preset,
+): AgentConfiguration {
   return {
-    // An empty optional roster leaves composition to DSH. The adapter omits
-    // this sentinel from the wire instead of inventing a preset identifier.
-    preset: selected?.id ?? '',
+    preset,
     toolMode: requested.toolMode,
     permissionPreset: requested.permissionPreset,
     planMode: requested.planMode,

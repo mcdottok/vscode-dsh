@@ -117,12 +117,12 @@ describe('session configuration routes', () => {
   })
 
   it.each(['session.create', 'session.configure'] as const)(
-    '%s applies the same Application rules and preserves Host projection',
+    '%s preserves Host scope and uses preset defaults only for session creation',
     async (type) => {
       const { gateway, sent, list, create, setConfiguration, guard } = harness()
       await gateway.router.handle(request(type))
 
-      const signal = list.mock.calls[0]?.[0]
+      const signal = type === 'session.create' ? list.mock.calls[0]?.[0] : guard.mock.calls[0]?.[1]
       expect(signal).toBeInstanceOf(AbortSignal)
       const resolved = { ...configuration, preset: 'deployed-default' }
       if (type === 'session.create') {
@@ -135,7 +135,8 @@ describe('session configuration routes', () => {
         expect(JSON.stringify(sent)).not.toContain('/project/private')
       } else {
         expect(guard).toHaveBeenCalledExactlyOnceWith('session', signal)
-        expect(setConfiguration).toHaveBeenCalledExactlyOnceWith('session', resolved, signal)
+        expect(setConfiguration).toHaveBeenCalledExactlyOnceWith('session', configuration, signal)
+        expect(list).not.toHaveBeenCalled()
         expect(create).not.toHaveBeenCalled()
         expect(sent[0]).toMatchObject({ ok: true })
       }

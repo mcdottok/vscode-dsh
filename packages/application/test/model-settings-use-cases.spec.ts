@@ -136,17 +136,21 @@ describe('ModelSettingsUseCases configuration', () => {
     expect(setConfiguration).not.toHaveBeenCalled()
   })
 
-  it('uses the same resolution rules before writing a session configuration', async () => {
+  it('preserves an existing preset when updating a model instead of substituting the host default', async () => {
     const { list, setConfiguration, useCases } = harness()
     const controller = new AbortController()
 
     await useCases.setSessionConfiguration('session', { ...requested, preset: 'missing' }, controller.signal)
 
-    expect(list).toHaveBeenCalledExactlyOnceWith(controller.signal)
-    expect(setConfiguration).toHaveBeenCalledExactlyOnceWith('session', requested, controller.signal)
+    expect(list).not.toHaveBeenCalled()
+    expect(setConfiguration).toHaveBeenCalledExactlyOnceWith(
+      'session',
+      { ...requested, preset: 'missing' },
+      controller.signal,
+    )
   })
 
-  it('propagates a roster failure without applying a guessed configuration', async () => {
+  it('does not let an unavailable optional roster block an existing-session model update', async () => {
     const { list, setConfiguration, useCases } = harness()
     const error = new AppError({
       code: 'BACKEND_UNREACHABLE',
@@ -155,8 +159,9 @@ describe('ModelSettingsUseCases configuration', () => {
     })
     list.mockRejectedValue(error)
 
-    await expect(useCases.setSessionConfiguration('session', requested)).rejects.toBe(error)
-    expect(setConfiguration).not.toHaveBeenCalled()
+    await expect(useCases.setSessionConfiguration('session', requested)).resolves.toBeUndefined()
+    expect(list).not.toHaveBeenCalled()
+    expect(setConfiguration).toHaveBeenCalledExactlyOnceWith('session', requested, undefined)
   })
 
   it('does not read or write when the operation is already cancelled', async () => {
@@ -171,38 +176,32 @@ describe('ModelSettingsUseCases configuration', () => {
     expect(setConfiguration).not.toHaveBeenCalled()
   })
 
-  it('does not write a late roster response after cancellation', async () => {
+  it('honors cancellation before dispatching an existing-session mutation', async () => {
     const { list, setConfiguration, useCases } = harness()
     const controller = new AbortController()
-    list.mockImplementation(() => {
-      controller.abort()
-      return Promise.resolve({ presets: [defaultPreset], authorable: false })
-    })
-
-    await expect(
-      useCases.setSessionConfiguration('session', requested, controller.signal),
-    ).rejects.toHaveProperty('name', 'AbortError')
+    const updating = useCases.setSessionConfiguration('session', requested, controller.signal)
+    controller.abort()
+    await expect(updating).rejects.toHaveProperty('name', 'AbortError')
+    expect(list).not.toHaveBeenCalled()
     expect(setConfiguration).not.toHaveBeenCalled()
   })
 
-  it('does not apply a late configuration to a replacement backend with the same session id', async () => {
+  it('does not apply a queued configuration to a replacement backend with the same session id', async () => {
     const { list, setConfiguration, useCases, service } = harness()
     const replacementWrite = vi.fn<DshBackend['sessions']['setConfiguration']>()
-    list.mockImplementation(() => {
-      service.attach(
-        {
-          events: { subscribe: () => () => undefined },
-          sessions: { setConfiguration: replacementWrite },
-        } as unknown as DshBackend,
-        () => undefined,
-      )
-      return Promise.resolve({ presets: [defaultPreset], authorable: false })
-    })
-
-    await expect(useCases.setSessionConfiguration('session', requested)).rejects.toMatchObject({
+    const updating = useCases.setSessionConfiguration('session', requested)
+    service.attach(
+      {
+        events: { subscribe: () => () => undefined },
+        sessions: { setConfiguration: replacementWrite },
+      } as unknown as DshBackend,
+      () => undefined,
+    )
+    await expect(updating).rejects.toMatchObject({
       code: 'REQUEST_CANCELLED',
     })
     expect(setConfiguration).not.toHaveBeenCalled()
+    expect(list).not.toHaveBeenCalled()
     expect(replacementWrite).not.toHaveBeenCalled()
   })
 })

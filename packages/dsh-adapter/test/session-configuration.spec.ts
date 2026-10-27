@@ -2,12 +2,48 @@ import { describe, expect, it, vi } from 'vitest'
 import { AppError } from '@dsh-vscode/domain'
 import { configuration, configurationFixture, deferred } from './support/session-configuration-fixture.js'
 import { normalizeTransportError } from '../src/transport-errors.js'
+import { BackendService, ModelSettingsUseCases } from '@dsh-vscode/application'
+import type { DshBackend } from '@dsh-vscode/domain'
 
 async function flushContinuations(): Promise<void> {
   for (let index = 0; index < 20; index += 1) await Promise.resolve()
 }
 
 describe('session configuration transactions', () => {
+  it('switches away from a missing plugin provider without changing the existing session preset', async () => {
+    const h = configurationFixture()
+    const state = h.state.get('s1')!
+    state.provider = 'missing-plugin-provider'
+    state.model = 'plugin-model'
+    const current = await h.repository.get('s1')
+    expect(current.configuration.model.providerId).toBe('missing-plugin-provider')
+    const list = vi.fn().mockResolvedValue({
+      presets: [{ id: 'different-host-default', trust: 'system', isDefault: true }],
+      authorable: false,
+    })
+    const backend = {
+      sessions: h.repository,
+      presets: { list },
+      events: { subscribe: () => () => undefined },
+    } as unknown as DshBackend
+    const service = new BackendService()
+    service.attach(backend, () => undefined)
+    const replacement = { providerId: 'available-provider', modelId: 'available-model' }
+    await new ModelSettingsUseCases(service).setSessionConfiguration('s1', {
+      ...current.configuration,
+      model: replacement,
+    })
+    expect(list).not.toHaveBeenCalled()
+    expect(h.calls.filter((call) => call.method === 'session.selectModel')).toMatchObject([
+      { provider: 'available-provider' },
+    ])
+    expect(h.calls.filter((call) => call.line)).toEqual([])
+    const updated = await h.repository.get('s1')
+    expect(updated.configuration.model).toEqual(replacement)
+    expect(updated.configuration.preset).toBe(current.configuration.preset)
+    expect(updated.configuration.permissionPreset).toBe(current.configuration.permissionPreset)
+  })
+
   it('does not write an unknown plan fallback during a model-only update', async () => {
     const h = configurationFixture({
       planExposed: false,

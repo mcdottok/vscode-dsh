@@ -163,6 +163,8 @@ Alpha Remote Event 的发起客户端在交互结算后可能不会收到取消�
 
 `session.rename` 应答中的 `{ title, seq }` 是宿主清理并持久化后的标题，UI 必须使用回执标题，不能保留用户原始输入。空白会话显示本地化新会话名，持久标题仍来自日志事件。
 
+已有会话的模型、权限和计划更新只归一化用户提交的配置，保留其原有预设 ID，不通过当前后端的可选预设目录重新推导默认值。跨 Desktop / npm 后端时，缺少原插件预设或预设目录暂时失败，不得把模型编辑变成隐式切换 Agent 预设；用户显式改变预设仍由目标仓储和 DSH 校验。新建会话才按当前目录选择默认预设。所有配置写入前检查取消与后端身份，不能将排队中的更新发到替换后的后端。
+
 `session.models` 的 `{ current, routable, groups, failures }` 必须完整保留：Provider 部分枚举失败不使其他分组失效，`failures` 不是空目录；`routable` 是宿主的路由判定，不能由 `groups` 猜。推理强度显示宿主 `name`，提交其 `id`；未显式选择时只展示 `defaultEffort` 或“由提供方决定”，不把列表首项写回。目录中找不到 `current` 不能据此宣称模型不可用。
 
 Alpha `session/modelCatalog` 的部署默认、可路由 Provider、分组与失败须结合会话持久 `modelSelection`：`current` 取 `next ?? lastUsed`，仅投影没有选择时才整份回落部署默认；`next: null` 不等于重置默认。读不到会话选择时整次读取失败，不能用默认冒充用户选择。UI 展示的当前路由不写回 `configuration.model`。目录读取失败不显示“没有模型”；保留上次成功目录并提供重读，若退回全局目录须告知原因。
