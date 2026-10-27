@@ -1,5 +1,5 @@
 {
-  "name": "vscode-dsh",
+  "name": "dsh-coding-agent",
   "displayName": "DSH Coding Agent",
   "description": "%extension.description%",
   "version": "0.1.80",

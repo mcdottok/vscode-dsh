@@ -47,7 +47,7 @@ npm install --global @deepseek-ai/dsh
 
 ## 开发
 
-见[构建说明](BUILD.md)、[贡献指南](CONTRIBUTING.md)和[开发者文档](docs/README.md)。此社区版本使用 `mcdottok.vscode-dsh` 标识。此前手动安装的 `dsh-local.vscode-dsh` 是独立扩展，升级前请先卸载旧版，再安装新版；可能需要重新配置连接。
+见[构建说明](BUILD.md)、[贡献指南](CONTRIBUTING.md)和[开发者文档](docs/README.md)。此社区版本使用 `mcdottok.dsh-coding-agent` 标识。此前手动安装的 `mcdottok.vscode-dsh` 和 `dsh-local.vscode-dsh` 是独立扩展，升级前请先卸载旧版，再安装新版；可能需要重新配置连接。
 
 开发历程和版本变更见[更新日志](CHANGELOG.md)。
 

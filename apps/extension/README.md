@@ -38,7 +38,7 @@ Chat in the side bar or an editor tab. Available models, tools and advanced feat
 
 ## Upgrading from the local build
 
-This extension uses the ID `mcdottok.vscode-dsh`. If you previously installed `dsh-local.vscode-dsh` from a VSIX, uninstall that extension before installing this one to avoid loading both copies. VS Code treats them as separate extensions, so you may need to configure the connection again. Your DSH sessions remain in DSH.
+This extension uses the ID `mcdottok.dsh-coding-agent`. If you previously installed `mcdottok.vscode-dsh` or `dsh-local.vscode-dsh` from a VSIX, uninstall the old extension before installing this one to avoid loading both copies. VS Code treats them as separate extensions, so you may need to configure the connection again. Your DSH sessions remain in DSH.
 
 ## License and credits
 

@@ -47,7 +47,7 @@ The extension attaches to your running DSH by default. Advanced features depend 
 
 ## Development
 
-See [build instructions](BUILD.md), [contributing](CONTRIBUTING.md) and [developer documentation](docs/README.md). This community build uses `mcdottok.vscode-dsh`. The earlier manually installed `dsh-local.vscode-dsh` is a separate extension: uninstall it before installing the new build. You may need to configure the connection again.
+See [build instructions](BUILD.md), [contributing](CONTRIBUTING.md) and [developer documentation](docs/README.md). This community build uses `mcdottok.dsh-coding-agent`. Earlier manually installed `mcdottok.vscode-dsh` and `dsh-local.vscode-dsh` builds are separate extensions: uninstall them before installing the new build. You may need to configure the connection again.
 
 See the [changelog](CHANGELOG.md) for this fork’s development history and version changes.
 

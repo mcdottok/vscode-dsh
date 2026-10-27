@@ -7,7 +7,7 @@ pnpm install --frozen-lockfile
 pnpm package:vsix
 ```
 
-On Windows, after installing dependencies, run `.\build.cmd`. It builds the editor companion, Webview and extension, then writes a versioned VSIX to `artifacts/`. It does not install dependencies or plugins.
+On Windows, after installing dependencies, run `.\build.cmd`. It builds the editor companion, Webview and extension, then writes a versioned VSIX (`dsh-coding-agent-<version>.vsix`) to `artifacts/`. It does not install dependencies or plugins.
 
 Run `pnpm check` for the standard quality gates. Live DSH and VS Code checks require explicit setup; see [quality](docs/quality.md). Known capability limitations remain in the [matrix](docs/capability-matrix.md).
 
