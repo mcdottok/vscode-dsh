@@ -784,6 +784,81 @@
   border-radius: 8px;
 }
 
+/* Keep the controls in one compact row; the model receives the remaining space. */
+@container dsh-composer (max-width: 42rem) {
+  .dsh-app[data-conversation-layout='focused']
+    .dsh-unified-composer
+    .dsh-composer__toolbar:has(.dsh-session-controls) {
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+    grid-template-areas: 'start controls submit';
+  }
+
+  .dsh-app[data-conversation-layout='focused']
+    .dsh-unified-composer
+    .dsh-composer__toolbar
+    .dsh-session-controls,
+  .dsh-app[data-conversation-layout='focused']
+    .dsh-unified-composer
+    .dsh-composer__toolbar
+    .dsh-session-controls__selectors {
+    flex-wrap: nowrap;
+  }
+
+  .dsh-app[data-conversation-layout='focused'] .dsh-composer__toolbar,
+  .dsh-app[data-conversation-layout='focused'] .dsh-composer__toolbar-start,
+  .dsh-app[data-conversation-layout='focused'] .dsh-session-controls--model,
+  .dsh-app[data-conversation-layout='focused'] .dsh-session-controls__selectors {
+    gap: 4px;
+  }
+
+  .dsh-app[data-conversation-layout='focused'] .dsh-composer__toolbar-start {
+    flex-wrap: nowrap;
+  }
+
+  .dsh-app[data-conversation-layout='focused'] .dsh-session-controls--model {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  .dsh-app[data-conversation-layout='focused'] .dsh-session-controls--model .dsh-session-controls__selectors {
+    flex: 1 1 auto;
+  }
+
+  .dsh-app[data-conversation-layout='focused'] .dsh-session-controls--model .dsh-model-picker {
+    max-width: 100%;
+  }
+
+  /* The ring still opens the full context details without crowding the model. */
+  .dsh-app[data-conversation-layout='focused'] .dsh-context-meter__label {
+    display: none;
+  }
+}
+
+/* Use labelled icons in very narrow sidebars instead of sacrificing the model. */
+@container dsh-composer (max-width: 26rem) {
+  .dsh-app[data-conversation-layout='focused']
+    .dsh-session-controls--permission
+    .dsh-select-menu__trigger-label {
+    display: none;
+  }
+}
+
+@container dsh-composer (max-width: 22rem) {
+  .dsh-app[data-conversation-layout='focused'] .dsh-session-controls__mode .dsh-select-menu__trigger-label {
+    display: none;
+  }
+
+  .dsh-app[data-conversation-layout='focused']
+    .dsh-unified-composer
+    .dsh-composer__toolbar-controls
+    .dsh-session-controls__selectors
+    > .dsh-session-controls__mode
+    .dsh-select-menu__trigger
+    > svg:not(.dsh-select-menu__chevron) {
+    display: block;
+  }
+}
+
 /* Context details share the same compact rail in either layout. */
 @container dsh-composer (max-width: 36rem) {
   .dsh-app[data-conversation-layout='focused'] .dsh-session-controls--model .dsh-session-controls__metrics {
