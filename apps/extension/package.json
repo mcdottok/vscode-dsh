@@ -2,7 +2,7 @@
   "name": "vscode-dsh",
   "displayName": "DSH Coding Agent",
   "description": "%extension.description%",
-  "version": "0.1.79",
+  "version": "0.1.80",
   "publisher": "mcdottok",
   "icon": "resources/dsh.png",
   "license": "MIT",
@@ -16,7 +16,7 @@
   },
   "categories": [
     "AI",
-    "Other"
+    "Chat"
   ],
   "keywords": [
     "deepseek",
