@@ -76,7 +76,7 @@ describe('Timeline', () => {
       )
       expect(container.querySelector('pre')?.textContent).toBe('const captured = true\n// original code')
       expect(screen.queryByRole('dialog')).toBeNull()
-    expect(document.activeElement).toBe(container.querySelector('.dsh-message-context > summary'))
+      expect(document.activeElement).toBe(container.querySelector('.dsh-message-context > summary'))
       fireEvent.click(screen.getByText('deleted.ts#1–2'))
       await waitFor(() =>
         expect(container.querySelector<HTMLDetailsElement>('.dsh-message-context')?.open).toBe(false),
