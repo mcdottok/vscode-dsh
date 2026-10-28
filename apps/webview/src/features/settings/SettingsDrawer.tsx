@@ -325,16 +325,6 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
   const applyConnection = useStableCallback((): void => {
     if (connectionBusy || connectionChoice === 'unchanged') return
     const endpoint = connectionEndpoint.trim()
-    if (
-      connectionChoice === 'custom' &&
-      endpoint === '' &&
-      settingsState?.value?.connection.customEndpointConfigured !== true &&
-      settingsState?.value?.connection.desktopEndpointConfigured !== true
-    ) {
-      setConnectionError(t('settings.connectionEndpointRequired'))
-      setConnectionNotice(undefined)
-      return
-    }
     setConnectionBusy(true)
     setConnectionError(undefined)
     setConnectionNotice(undefined)

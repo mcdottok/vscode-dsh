@@ -584,7 +584,7 @@ describe('SettingsDrawer', () => {
     expect(await screen.findByRole('status', { name: '' })).toBeDefined()
   })
 
-  it('requires an address before connecting to Desktop', async () => {
+  it('allows Desktop discovery without requiring a saved or pasted address', async () => {
     const onConfigureConnection = vi.fn().mockResolvedValue(undefined)
     renderDrawer({ onConfigureConnection })
     fireEvent.click(screen.getByRole('tab', { name: 'Connection' }))
@@ -593,10 +593,8 @@ describe('SettingsDrawer', () => {
     fireEvent.click(screen.getByRole('radio', { name: /DSH Desktop/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Connect to Desktop' }))
 
-    expect(onConfigureConnection).not.toHaveBeenCalled()
-    expect((await screen.findByRole('alert')).textContent).toContain(
-      'Paste the full connection address from the connect plugin.',
-    )
+    await waitFor(() => expect(onConfigureConnection).toHaveBeenCalledWith('desktop', undefined))
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 
   it('clears a Desktop login address even when the Host rejects the connection', async () => {

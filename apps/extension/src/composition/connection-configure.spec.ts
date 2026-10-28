@@ -458,8 +458,8 @@ describe('connection.configure reconnect', () => {
     clearAll: ReturnType<typeof vi.fn>
     clearPair: ReturnType<typeof vi.fn>
     connect: ReturnType<typeof vi.fn>
-    resolve: ReturnType<typeof vi.fn>
-    savePair: ReturnType<typeof vi.fn>
+    resolve: ReturnType<typeof vi.fn<() => Promise<string>>>
+    savePair: ReturnType<typeof vi.fn<(origin: string) => Promise<void>>>
     recovery: ReturnType<typeof vi.fn>
   } {
     const global = new Map<string, unknown>()
@@ -596,6 +596,103 @@ describe('connection.configure reconnect', () => {
     expect(f.authorizePaired).not.toHaveBeenCalled()
     expect(harness.connects).toHaveLength(0)
     expect(f.subject.isAutomaticConnectionPaused()).toBe(true)
+  })
+
+  it('discovers Desktop after switching to npm and reloading without a remembered endpoint', async () => {
+    const previous = automaticFixture()
+    await previous.subject.configureConnection('local', undefined)
+    harness.transportListeners.length = 0
+    const reloaded = automaticFixture()
+    await reloaded.subject.configureConnection('desktop', undefined)
+    expect(reloaded.discover).toHaveBeenCalledOnce()
+    expect(reloaded.authorizePaired).toHaveBeenCalled()
+    expect(harness.configuration.connection).toMatchObject({
+      mode: 'custom',
+      serverUrl: 'http://127.0.0.1:43120',
+    })
+    expect(harness.configuration.runtime.autoStart).toBe(false)
+    expect(reloaded.connect).toHaveBeenCalledOnce()
+    expect(reloaded.connect).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'custom', autoStart: false }),
+      expect.anything(),
+    )
+  })
+
+  it('retains Desktop credentials and restores the saved endpoint across npm mode and reload', async () => {
+    const previous = automaticFixture()
+    await previous.subject.connect()
+    await previous.subject.configureConnection('local', undefined)
+    expect(previous.workspace.get('dsh.desktop.lastEndpoint')).toBe('http://127.0.0.1:43120')
+    expect(previous.clearPair).not.toHaveBeenCalled()
+    harness.transportListeners.length = 0
+    const reloaded = automaticFixture()
+    for (const [key, value] of previous.workspace) reloaded.workspace.set(key, value)
+    await reloaded.savePair('http://127.0.0.1:43120')
+    await reloaded.subject.configureConnection('desktop', undefined)
+    expect(reloaded.resolve).toHaveBeenCalledWith('http://127.0.0.1:43120', expect.anything())
+    expect(reloaded.authorize).not.toHaveBeenCalled()
+    expect(reloaded.clearPair).not.toHaveBeenCalled()
+    expect(harness.configuration.runtime.autoStart).toBe(false)
+    expect(harness.configuration.connection.serverUrl).toBe('http://127.0.0.1:43120')
+  })
+
+  it('refreshes an obsolete remembered Desktop address while switching back from npm', async () => {
+    vi.useFakeTimers()
+    try {
+      const f = automaticFixture()
+      await f.subject.connect()
+      await f.subject.configureConnection('local', undefined)
+      f.resolve.mockImplementation(() =>
+        Promise.resolve(`${harness.configuration.connection.serverUrl}/?token=fixture-auto`),
+      )
+      f.connect.mockRejectedValueOnce(
+        new AppError({
+          code: 'BACKEND_UNREACHABLE',
+          message: 'Old Desktop address unavailable',
+          retryable: true,
+        }),
+      )
+      f.discover.mockResolvedValue({
+        url: 'http://127.0.0.1:43121/?token=fixture-refreshed',
+        key: 'K'.repeat(43),
+        endpoint: { host: '127.0.0.1', port: 43121, baseUrl: 'http://127.0.0.1:43121' },
+        runtimeVersion: '0.2.1-rc.3',
+      })
+      const switching = f.subject.configureConnection('desktop', undefined)
+      await vi.advanceTimersByTimeAsync(750)
+      await switching
+      expect(harness.configuration.connection.serverUrl).toBe('http://127.0.0.1:43121')
+      expect(f.workspace.get('dsh.desktop.lastEndpoint')).toBe('http://127.0.0.1:43121')
+      expect(f.discover).toHaveBeenLastCalledWith(expect.anything(), 'K'.repeat(43))
+      expect(harness.configuration.runtime.autoStart).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('discards late Desktop discovery when the user switches back to npm', async () => {
+    const pending = deferred<undefined>()
+    const f = automaticFixture(vi.fn().mockReturnValue(pending.promise))
+    const desktop = f.subject.configureConnection('desktop', undefined)
+    const cancelled = expect(desktop).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.waitFor(() => expect(f.discover).toHaveBeenCalledOnce())
+    const local = f.subject.configureConnection('local', undefined)
+    pending.resolve(undefined)
+    await local
+    await cancelled
+    expect(harness.configuration.connection.mode).toBe('new-isolated')
+    expect(f.savePair).not.toHaveBeenCalled()
+  })
+
+  it('does not connect to npm when explicit Desktop discovery finds no running Desktop', async () => {
+    const f = automaticFixture(vi.fn().mockResolvedValue(undefined))
+    await f.subject.configureConnection('local', undefined)
+    f.connect.mockClear()
+    await expect(f.subject.configureConnection('desktop', undefined)).rejects.toMatchObject({
+      code: 'BACKEND_UNREACHABLE',
+    })
+    expect(f.connect).not.toHaveBeenCalled()
+    expect(harness.configuration.runtime.autoStart).toBe(false)
   })
 
   it('automatically enrolls a verified enabled Desktop without requiring address entry', async () => {

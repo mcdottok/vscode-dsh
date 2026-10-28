@@ -922,29 +922,38 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
     // returned to the Webview. Only its origin is persisted; credentials stay
     // in Host SecretStorage via ExternalConnectionAccess.
     let reuseDesktopCredentials = false
+    let discoverDesktopSelection = false
     if (mode === 'desktop') {
       const saved = configuration.read().connection
       const remembered = context.workspaceState.get<unknown>('dsh.desktop.lastEndpoint')
       const savedEndpoint =
         saved.mode === 'custom' ? saved.serverUrl : typeof remembered === 'string' ? remembered : undefined
       reuseDesktopCredentials = !endpoint?.trim() && savedEndpoint !== undefined
-      const launch = parseDesktopLaunchUrl(reuseDesktopCredentials ? (savedEndpoint ?? '') : (endpoint ?? ''))
-      endpoint = launch.endpoint.baseUrl
-      const verifiedVersion = await deps.discoverDesktopVersion?.(launch.endpoint, signal).catch(() => {
+      if (!endpoint?.trim() && !savedEndpoint) {
+        // An empty Desktop choice means discovery, never a managed npm launch.
+        discoverDesktopSelection = true
+        mode = 'auto'
+      } else {
+        const launch = parseDesktopLaunchUrl(
+          reuseDesktopCredentials ? (savedEndpoint ?? '') : (endpoint ?? ''),
+        )
+        endpoint = launch.endpoint.baseUrl
+        const verifiedVersion = await deps.discoverDesktopVersion?.(launch.endpoint, signal).catch(() => {
+          signal?.throwIfAborted()
+          return undefined
+        })
         signal?.throwIfAborted()
-        return undefined
-      })
-      signal?.throwIfAborted()
-      if (revision !== configurationRevision)
-        throw new DOMException('Connection settings changed.', 'AbortError')
-      const savedVersion = saved.serverUrl === launch.endpoint.baseUrl ? saved.runtimeVersion : undefined
-      const runtimeVersion = verifiedVersion ?? savedVersion ?? ''
-      if (!reuseDesktopCredentials) desktop = { launchToken: launch.token, runtimeVersion }
-      else if (runtimeVersion !== '') {
-        // Reusing credentials must still retain or refresh this origin's exact wire identity.
-        desktop = { launchToken: '', runtimeVersion }
+        if (revision !== configurationRevision)
+          throw new DOMException('Connection settings changed.', 'AbortError')
+        const savedVersion = saved.serverUrl === launch.endpoint.baseUrl ? saved.runtimeVersion : undefined
+        const runtimeVersion = verifiedVersion ?? savedVersion ?? ''
+        if (!reuseDesktopCredentials) desktop = { launchToken: launch.token, runtimeVersion }
+        else {
+          // Reusing credentials must still retain or refresh this origin's exact wire identity.
+          desktop = { launchToken: '', runtimeVersion }
+        }
+        mode = 'custom'
       }
-      mode = 'custom'
     }
     if (mode === 'local' && currentWorkspaceFolders().length > 0 && !vscode.workspace.isTrusted) {
       throw new AppError({
@@ -990,6 +999,12 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
         // until the user explicitly chooses a mode here.
         ['connection.mode', mode],
         ['connection.serverUrl', ''],
+        ...(discoverDesktopSelection
+          ? ([
+              ['connection.runtimeVersion', ''],
+              ['runtime.autoStart', false],
+            ] as const)
+          : []),
       ]
     }
     // Serialize settings writes, while a newer submission cancels an obsolete
@@ -1020,7 +1035,6 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
         if (revision !== configurationRevision)
           throw new DOMException('Connection settings changed.', 'AbortError')
         signal?.throwIfAborted()
-        return await reconnect(signal, true)
       } finally {
         configuringTransport = false
       }
@@ -1029,7 +1043,23 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
       () => undefined,
       () => undefined,
     )
-    return operation
+    // Reconnect only after releasing the settings queue. Desktop recovery may
+    // itself need to enqueue refreshed addresses and credentials.
+    await operation
+    signal?.throwIfAborted()
+    if (revision !== configurationRevision)
+      throw new DOMException('Connection selection changed.', 'AbortError')
+    if (discoverDesktopSelection && !(await enrollAutomaticDesktop(signal)))
+      throw new AppError({
+        code: 'BACKEND_UNREACHABLE',
+        message:
+          'No enabled local Desktop was found. Start Desktop and enable VS Code connection, or paste its connection address.',
+        retryable: true,
+      })
+    signal?.throwIfAborted()
+    if (revision !== configurationRevision)
+      throw new DOMException('Connection selection changed.', 'AbortError')
+    return reconnect(signal, true)
   }
   let resetOperation: Promise<void> | undefined
   const resetConnection = (): Promise<void> => {
