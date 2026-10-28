@@ -155,7 +155,23 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
         return { opened: true }
       }
       const document = await vscode.workspace.openTextDocument(vscode.Uri.file(resolved.path))
-      await vscode.window.showTextDocument(document, { preview: true })
+      const selection =
+        resolved.range === undefined
+          ? undefined
+          : document.validateRange(
+              new vscode.Range(
+                resolved.range.start.line,
+                resolved.range.start.column,
+                resolved.range.end.line,
+                resolved.range.end.column,
+              ),
+            )
+      const editor = await vscode.window.showTextDocument(document, {
+        preview: true,
+        ...(selection === undefined ? {} : { selection }),
+      })
+      if (selection !== undefined)
+        editor.revealRange(selection, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
       return { opened: true }
     } catch {
       return { opened: false, message: 'The linked workspace file could not be opened.' }

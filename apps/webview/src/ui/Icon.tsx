@@ -15,6 +15,7 @@ export type IconName =
   | 'chevron-right'
   | 'clock'
   | 'close'
+  | 'code'
   | 'copy'
   | 'edit'
   | 'file'
@@ -72,6 +73,8 @@ export function Icon({ name, className }: IconProps): ReactElement {
 
 function renderIcon(name: IconName): ReactElement {
   switch (name) {
+    case 'code':
+      return <path d="m7 7-5 5 5 5m10-10 5 5-5 5M14 4l-4 16" />
     case 'analysis':
       return (
         <>

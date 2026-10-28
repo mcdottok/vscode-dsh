@@ -150,20 +150,21 @@ describe('Host transcript windows', () => {
 
   it('bounds sent context previews and restores the complete captured attachment through full content', async () => {
     const text = 'const value = 1\n'.repeat(400) + 'captured-tail'
+    const sourceLink = `src/${'%E4%BD%A0'.repeat(600)}.ts#L1C1-L401C1`
     const events = [
       row(1, {
         type: 'message.user',
         sessionId,
         messageId: 'with-context',
         markdown: 'Review this selection',
-        attachments: [{ name: 'index.ts:1-401', previewText: text }],
+        attachments: [{ name: 'index.ts:1-401', previewText: text, sourceLink }],
       }),
     ]
     const client = fixture(vi.fn().mockResolvedValue({ events, hasMore: false }))
     const window = client.open(events)
     const node = window.nodes[0]!
     expect(node).toMatchObject({
-      attachments: [{ previewText: text.slice(0, 4096), previewTruncated: true }],
+      attachments: [{ previewText: text.slice(0, 4096), previewTruncated: true, sourceLink }],
     })
     expect(transcriptWindowSchema.safeParse(window).success).toBe(true)
     expect(window.omittedNodeIds).toContain(node.id)

@@ -1289,7 +1289,7 @@ function preview(value: TimelineNode, budget: number): { value: TimelineNode; om
       return null
     }
     if (typeof input === 'string') {
-      const limit = Math.max(0, Math.min(4096, remaining))
+      const limit = Math.max(0, Math.min(field === 'sourceLink' ? 16384 : 4096, remaining))
       // Keep upstream recovery/overflow text at the end of tool summaries.
       // This is presentation clipping, without parsing or inventing a locator.
       const output =
@@ -1313,6 +1313,8 @@ function preview(value: TimelineNode, budget: number): { value: TimelineNode; om
     const output = Object.create(null) as Record<string, unknown>
     for (const [key, entry] of Object.entries(input).slice(0, 64)) {
       output[key] = visit(entry, depth + 1, key)
+      // Navigation metadata must remain whole; a clipped path could point at a different file.
+      if (key === 'sourceLink' && output[key] !== entry) delete output[key]
       if (key === 'previewText' && typeof entry === 'string' && output[key] !== entry)
         output.previewTruncated = true
     }

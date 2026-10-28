@@ -220,6 +220,7 @@ export const transcriptNodeSchema = z.discriminatedUnion('kind', [
               mimeType: opt,
               previewText: z.string().max(4096).optional(),
               previewTruncated: z.boolean().optional(),
+              sourceLink: z.string().max(16384).optional(),
             })
             .strict(),
         )

@@ -13,7 +13,36 @@ describe('Timeline', () => {
     vi.unstubAllGlobals()
   })
 
-  it('opens a captured code attachment without navigating to or rereading the live file', () => {
+  it('opens sent selection references at their captured file and exact range without a code panel', () => {
+    const openLink = vi.fn()
+    const { container } = render(
+      <Timeline
+        sessionId="session-1"
+        nodes={[
+          {
+            kind: 'user-message',
+            id: 'selection',
+            markdown: 'Review this',
+            attachments: [
+              {
+                name: 'main.ts:14-22',
+                previewText: 'const captured = true',
+                sourceLink: 'src/main.ts#L14C3-L22C7',
+              },
+            ],
+          },
+        ]}
+        streaming={false}
+        onOpenLink={openLink}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /main.ts#14–22/u }))
+    expect(openLink).toHaveBeenCalledWith('src/main.ts#L14C3-L22C7')
+    expect(container.querySelector('.dsh-message-context')).toBeNull()
+    expect(container.querySelector('pre')).toBeNull()
+  })
+
+  it('keeps legacy context without a source target readable as captured text', () => {
     const openLink = vi.fn()
     const { container } = render(
       <Timeline

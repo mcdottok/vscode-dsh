@@ -174,6 +174,8 @@ export type MessageAttachment = Pick<PromptAttachment, 'name' | 'mimeType'> & {
   /** Text captured in the adapter-owned attachment envelope, never a live file read. */
   readonly previewText?: string
   readonly previewTruncated?: boolean
+  /** Validated workspace-relative link with the exact captured selection range. */
+  readonly sourceLink?: string
 }
 
 /** Durable image reference used by the upstream conversation image surface. */

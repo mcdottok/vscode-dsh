@@ -294,7 +294,21 @@ function renderNode(
             {node.attachments === undefined || node.attachments.length === 0 ? null : (
               <div className="dsh-timeline__attachments" aria-label={t('timeline.attachedFiles')}>
                 {node.attachments.map((attachment, index) =>
-                  attachment.previewText === undefined ? (
+                  attachment.sourceLink !== undefined && onOpenLink !== undefined ? (
+                    <button
+                      className="dsh-code-context"
+                      type="button"
+                      key={`${attachment.name}:${index}`}
+                      title={t('timeline.revealCodeSelection', { name: attachment.name })}
+                      onClick={() => {
+                        if (attachment.sourceLink !== undefined) onOpenLink(attachment.sourceLink)
+                      }}
+                    >
+                      <Icon name="code" />
+                      <span>{attachment.name.replace(/:(\d+)-(\d+)$/u, '#$1–$2')}</span>
+                      <Icon name="chevron-right" />
+                    </button>
+                  ) : attachment.previewText === undefined ? (
                     <span
                       className="dsh-timeline__attachment dsh-timeline__attachment--static"
                       key={`${attachment.name}:${index}`}

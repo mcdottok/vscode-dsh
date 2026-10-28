@@ -413,6 +413,19 @@ export function createFeatureActions(host: FeatureActionHost): FeatureActions {
       if (typeof client.featureRequest !== 'function') return undefined
       const item = readState().editorContext.find((candidate) => candidate.ref.contextRef === contextRef)
       if (item === undefined) return undefined
+      if (item.ref.kind === 'selection' && item.ref.range !== undefined) {
+        await client.featureRequest<unknown>({
+          type: 'navigation.open',
+          requestId: requestId(),
+          payload: {
+            workspaceFolderId: item.ref.workspaceFolderId,
+            relativePath: item.ref.relativePath,
+            range: item.ref.range,
+            reveal: 'focus',
+          },
+        })
+        return undefined
+      }
       const result = object(
         await client.featureRequest<unknown>({
           type: 'editor.context.preview',

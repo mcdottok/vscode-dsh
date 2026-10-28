@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import {
   AppError,
   EDITOR_CONTEXT_LIMITS,
+  encodeEditorSelectionAttachment,
   isCanonicalWorkspaceRelativePath,
   isValidEditorContextRange,
   type EditorContextItem,
@@ -256,7 +257,15 @@ export class EditorContextStore {
           contentHash: hashBytes(content.bytes),
           sizeBytes: content.bytes.byteLength,
           attachment: {
-            uri: `data:${entry.mimeType};base64,${Buffer.from(content.bytes).toString('base64')}`,
+            uri: `data:${entry.mimeType};base64,${Buffer.from(
+              entry.ref.kind === 'selection' && entry.ref.range !== undefined
+                ? encodeEditorSelectionAttachment(
+                    entry.ref.relativePath,
+                    entry.ref.range,
+                    Buffer.from(content.bytes).toString('utf8'),
+                  )
+                : content.bytes,
+            ).toString('base64')}`,
             name:
               entry.ref.kind === 'selection' && entry.ref.range !== undefined
                 ? `${entry.ref.relativePath}:${entry.ref.range.start.line + 1}-${

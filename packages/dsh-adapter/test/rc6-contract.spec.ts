@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RpcMethodMap } from '@deepseek-ai/dsh-host-apiproxy/api/rpc-map'
-import { AppError } from '@dsh-vscode/domain'
+import { AppError, encodeEditorSelectionAttachment } from '@dsh-vscode/domain'
 import type { DshTransport } from '../src/contracts.js'
 import { VersionedBackendFactory } from '../src/backend-factory.js'
 import { callRpc } from '../src/versions/rc6/rpc.js'
@@ -942,6 +942,38 @@ describe('DeepSeek Harness 0.1.0-rc.6 contract', () => {
         },
       }),
     ).toMatchObject({ type: 'message.completed', messageId: 'assistant-message-real-1' })
+  })
+
+  it('restores an exact editor selection target from its persisted attachment metadata', () => {
+    const text = encodeEditorSelectionAttachment(
+      'src/nested/same name.ts',
+      { start: { line: 13, column: 2 }, end: { line: 21, column: 6 } },
+      'const captured = true',
+    )
+    expect(
+      rc6Mapper.event('user/message', {
+        sessionId: 's1',
+        data: {
+          message: {
+            id: 'with-selection',
+            content: [
+              {
+                type: 'text',
+                text: `\n\nAttached file: same name.ts:14-22\n\n${text}\n\nEnd of attached file: same name.ts:14-22`,
+              },
+            ],
+          },
+        },
+      }),
+    ).toMatchObject({
+      attachments: [
+        {
+          name: 'same name.ts:14-22',
+          previewText: 'const captured = true',
+          sourceLink: 'src/nested/same%20name.ts#L14C3-L22C7',
+        },
+      ],
+    })
   })
 
   it('projects adapter-owned text file blocks as compact user attachment metadata', () => {

@@ -1368,6 +1368,7 @@
   "timeline.yourMessage": "Your message",
   "timeline.referenceSummary": "Recalled sessions: {labels}",
   "timeline.attachedFiles": "Attached files",
+  "timeline.revealCodeSelection": "Reveal selected code: {name}",
   "timeline.attachmentPreviewTruncated": "Preview shortened. Use the message’s full content action to view the complete attachment.",
   "timeline.attachedImages": "Attached images",
   "timeline.openImage": "Open image {name}",

@@ -1368,6 +1368,7 @@
   "timeline.yourMessage": "你的消息",
   "timeline.referenceSummary": "引用会话：{labels}",
   "timeline.attachedFiles": "已附加文件",
+  "timeline.revealCodeSelection": "在编辑器中选中代码：{name}",
   "timeline.attachmentPreviewTruncated": "预览已截短，可通过消息的完整内容入口查看全部附件内容。",
   "timeline.attachedImages": "已附加图片",
   "timeline.openImage": "打开图片 {name}",

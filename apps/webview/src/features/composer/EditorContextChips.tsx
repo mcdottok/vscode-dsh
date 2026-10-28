@@ -78,23 +78,34 @@ export function EditorContextChips(props: EditorContextChipsProps): ReactElement
               ? item.label.trim() === ''
                 ? item.ref.relativePath
                 : item.label
-              : `selection: ${item.ref.relativePath}:${firstLine}–${lastLine}`
+              : `${item.ref.relativePath.split('/').at(-1)}#${firstLine}–${lastLine}`
           return (
             <span
-              className={`dsh-composer__context-chip${item.stale ? ' dsh-composer__context-chip--stale' : ''}`}
+              className={`dsh-composer__context-chip${range === undefined ? '' : ' dsh-composer__context-chip--selection'}${item.stale ? ' dsh-composer__context-chip--stale' : ''}`}
               key={item.ref.contextRef}
-              title={item.stale ? t('composer.contextStale') : label}
+              title={
+                item.stale
+                  ? t('composer.contextStale')
+                  : range === undefined
+                    ? label
+                    : `${item.ref.relativePath}:${firstLine}–${lastLine}`
+              }
             >
               <button
                 className="dsh-composer__context-preview"
                 type="button"
                 disabled={props.disabled || item.stale || !item.previewAvailable || previewLoading}
-                aria-label={t('composer.contextPreview', { name: label })}
+                aria-label={t(
+                  range === undefined ? 'composer.contextPreview' : 'timeline.revealCodeSelection',
+                  { name: label },
+                )}
                 onClick={() => previewItem(item)}
               >
                 <Icon name={item.stale ? 'alert' : editorContextIcon(item.ref.kind)} />
                 <span>{label}</span>
-                <small>{t('composer.contextBytes', { size: formatByteSize(item.ref.sizeBytes) })}</small>
+                {range === undefined ? (
+                  <small>{t('composer.contextBytes', { size: formatByteSize(item.ref.sizeBytes) })}</small>
+                ) : null}
               </button>
               <button
                 className="dsh-icon-button dsh-composer__context-remove"
@@ -162,10 +173,10 @@ export function EditorContextChips(props: EditorContextChipsProps): ReactElement
   )
 }
 
-function editorContextIcon(kind: EditorContextItem['ref']['kind']): 'edit' | 'file' | 'alert' | 'target' {
+function editorContextIcon(kind: EditorContextItem['ref']['kind']): 'code' | 'file' | 'alert' | 'target' {
   switch (kind) {
     case 'selection':
-      return 'edit'
+      return 'code'
     case 'file':
       return 'file'
     case 'diagnostic':

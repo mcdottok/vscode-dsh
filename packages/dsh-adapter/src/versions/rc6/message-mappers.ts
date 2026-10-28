@@ -10,7 +10,8 @@ import type {
   UserQuestionReplyView,
 } from '@dsh-vscode/domain'
 
-import { attachedFileEnvelope } from '../../attachment-codec.js'
+import { attachedFileEnvelope, type AttachedFileEnvelope } from '../../attachment-codec.js'
+import { parseEditorSelectionAttachment } from '@dsh-vscode/domain'
 import {
   array,
   contentEntries,
@@ -114,7 +115,7 @@ export function userMessageContent(value: Record<string, unknown> | undefined): 
     const parsed = attachedFileEnvelope(text)
     return parsed === undefined
       ? { markdown: text, attachments: [], images: [] }
-      : { markdown: '', attachments: [{ name: parsed.name, previewText: parsed.text }], images: [] }
+      : { markdown: '', attachments: [textAttachment(parsed)], images: [] }
   }
 
   const textParts: string[] = []
@@ -125,7 +126,7 @@ export function userMessageContent(value: Record<string, unknown> | undefined): 
     if (block?.type === 'text' && typeof block.text === 'string') {
       const parsed = attachedFileEnvelope(block.text)
       if (parsed !== undefined) {
-        attachments.push({ name: parsed.name, previewText: parsed.text })
+        attachments.push(textAttachment(parsed))
         continue
       }
       textParts.push(block.text)
@@ -150,6 +151,15 @@ export function userMessageContent(value: Record<string, unknown> | undefined): 
     if (text !== '') textParts.push(text)
   }
   return { markdown: textParts.join('\n'), attachments, images: uniqueImages(images) }
+}
+
+function textAttachment(parsed: AttachedFileEnvelope): MessageAttachment {
+  const selection = parseEditorSelectionAttachment(parsed.text)
+  return {
+    name: parsed.name,
+    previewText: selection?.text ?? parsed.text,
+    ...(selection === undefined ? {} : { sourceLink: selection.sourceLink }),
+  }
 }
 
 /**

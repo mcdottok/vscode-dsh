@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { isValidEditorContextRange, type EditorContextRange } from '@dsh-vscode/domain'
 
 import { isPathWithin } from '../backend/path-safety.js'
 import { isAbsoluteFilePath, isWindowsFilePath } from '../backend/runtime-paths.js'
@@ -19,7 +20,7 @@ export interface LinkTargetRequest {
 
 export type LinkTarget =
   | { readonly kind: 'external'; readonly url: string }
-  | { readonly kind: 'file'; readonly path: string }
+  | { readonly kind: 'file'; readonly path: string; readonly range?: EditorContextRange }
   | { readonly kind: 'rejected'; readonly message: string }
 
 /**
@@ -68,7 +69,16 @@ export function resolveLinkTarget(request: LinkTargetRequest): LinkTarget {
   }
   if (!request.roots.some((root) => isOwnedPath(root, filePath)))
     return rejected('Only files inside the current workspace can be opened.')
-  return { kind: 'file', path: filePath }
+  const fragment = target.includes('#') ? target.slice(target.indexOf('#')) : ''
+  if (!/^#L\d+C/u.test(fragment)) return { kind: 'file', path: filePath }
+  const match = /^#L(\d+)C(\d+)-L(\d+)C(\d+)$/u.exec(fragment)
+  if (match === null) return rejected('The selected code range is not valid.')
+  const range = {
+    start: { line: Number(match[1]) - 1, column: Number(match[2]) - 1 },
+    end: { line: Number(match[3]) - 1, column: Number(match[4]) - 1 },
+  }
+  if (!isValidEditorContextRange(range)) return rejected('The selected code range is not valid.')
+  return { kind: 'file', path: filePath, range }
 }
 
 /**

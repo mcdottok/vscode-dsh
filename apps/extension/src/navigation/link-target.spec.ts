@@ -37,6 +37,23 @@ function open(href: string, roots: readonly string[] = [workspace], basePath = w
 }
 
 describe('link target resolution', () => {
+  it('preserves exact selection columns and rejects malformed or escaping selection links', () => {
+    expect(open('src/same%20name.ts#L14C3-L22C7')).toEqual({
+      kind: 'file',
+      path: path.join(workspace, 'src/same name.ts'),
+      range: { start: { line: 13, column: 2 }, end: { line: 21, column: 6 } },
+    })
+    for (const href of [
+      'src/main.ts#L0C1-L2C1',
+      'src/main.ts#L3C2-L2C3',
+      'src/main.ts#L1C2-L1C1',
+      'src/main.ts#L1C2-broken',
+      '../outside.ts#L1C1-L2C1',
+    ])
+      expect(open(href).kind).toBe('rejected')
+    expect(open('src/main.ts#L14')).toEqual({ kind: 'file', path: path.join(workspace, 'src/main.ts') })
+  })
+
   it('opens http(s) links externally and refuses any other scheme', () => {
     expect(open('https://example.test/page')).toEqual({
       kind: 'external',

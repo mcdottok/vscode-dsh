@@ -443,6 +443,11 @@
   animation: dsh-overlay-fade-in var(--dsh-motion-duration-fast) var(--dsh-motion-ease-enter) backwards;
 }
 
+.dsh-unified-composer .dsh-composer__context-chip--selection {
+  border-radius: var(--dsh-radius-sm);
+  background: transparent;
+}
+
 .dsh-unified-composer .dsh-composer__attachment {
   flex: 0 0 auto;
   min-width: min(10rem, 100%);

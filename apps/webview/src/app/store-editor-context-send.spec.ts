@@ -62,6 +62,7 @@ class HostClient {
   public readonly releasedContextRefs: (readonly string[])[] = []
   public readonly sentContextRefs: (readonly string[])[] = []
   public readonly executedCommands: string[] = []
+  public readonly navigations: unknown[] = []
   private captured = 1
   private readonly items: Record<string, unknown>[] = []
   private releaseSend: (() => void) | undefined
@@ -97,6 +98,10 @@ class HostClient {
   }
 
   public featureRequest<T>(request: FeatureRequest): Promise<T> {
+    if (request.type === 'navigation.open') {
+      this.navigations.push(request.payload)
+      return Promise.resolve({ kind: 'operation', operationId: request.requestId, state: 'completed' } as T)
+    }
     if (request.type === 'editor.context.release') {
       const refs = request.payload.contextRefs
       this.releasedContextRefs.push(refs)
@@ -116,6 +121,11 @@ class HostClient {
     }
     if (request.type === 'editor.context.capture') {
       const item = contextItem(`context-${this.captured}`, this.captured)
+      if (request.payload.kind === 'selection') {
+        item.kind = 'selection'
+        item.range = { start: { line: 13, column: 2 }, end: { line: 21, column: 6 } }
+        item.previewAvailable = true
+      }
       this.captured += 1
       this.items.push(item)
       return Promise.resolve({ kind: 'editor.context', items: [item], availableKinds: [] } as T)
@@ -198,6 +208,26 @@ function refs(store: ReturnType<typeof createAppStore>): readonly string[] {
 }
 
 describe('AppStore editor-context admission', () => {
+  it('returns a draft selection to its original editor range without fetching a preview', async () => {
+    const { client, store } = open()
+    try {
+      await store.refreshSessions()
+      await store.openSession(SESSION_ID)
+      await store.captureEditorContext('selection')
+      expect(await store.previewEditorContext('context-1')).toBeUndefined()
+      expect(client.navigations).toEqual([
+        {
+          workspaceFolderId: WORKSPACE_FOLDER_ID,
+          relativePath: 'src/app.ts',
+          range: { start: { line: 13, column: 2 }, end: { line: 21, column: 6 } },
+          reveal: 'focus',
+        },
+      ])
+    } finally {
+      store.dispose()
+    }
+  })
+
   it.each(['session', 'subagent', 'draft'] as const)(
     'opens a %s without waiting for old context cleanup or restoring its handles',
     async (target) => {
