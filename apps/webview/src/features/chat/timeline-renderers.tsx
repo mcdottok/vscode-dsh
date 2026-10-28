@@ -8,6 +8,7 @@ import type {
 } from '@dsh-vscode/domain'
 import { MarkdownContent } from './MarkdownContent.js'
 import { MessageImages } from './MessageImages.js'
+import { CodeContextAttachment } from './CodeContextAttachment.js'
 import { MessageActions } from './MessageActions.js'
 import { containsUserTextReferences, projectUserText } from './UserText.js'
 import { ReasoningDisclosure } from './ReasoningDisclosure.js'
@@ -47,7 +48,7 @@ function renderNode(
   expanded: ReadonlySet<string>,
   setExpanded: ExpandedDetailsSetter,
   assistantLabel = 'Model',
-  onOpenLink?: (href: string) => void,
+  onOpenLink?: (href: string, onFailure?: () => void) => void,
   onLoadImage?: (image: MessageImageReference) => Promise<string | undefined>,
   onShowInFolder?: (href: string) => void,
   onOpenSession?: (sessionId: string) => void,
@@ -295,19 +296,12 @@ function renderNode(
               <div className="dsh-timeline__attachments" aria-label={t('timeline.attachedFiles')}>
                 {node.attachments.map((attachment, index) =>
                   attachment.sourceLink !== undefined && onOpenLink !== undefined ? (
-                    <button
-                      className="dsh-code-context"
-                      type="button"
+                    <CodeContextAttachment
                       key={`${attachment.name}:${index}`}
-                      title={t('timeline.revealCodeSelection', { name: attachment.name })}
-                      onClick={() => {
-                        if (attachment.sourceLink !== undefined) onOpenLink(attachment.sourceLink)
-                      }}
-                    >
-                      <Icon name="code" />
-                      <span>{attachment.name.replace(/:(\d+)-(\d+)$/u, '#$1–$2')}</span>
-                      <Icon name="chevron-right" />
-                    </button>
+                      attachment={attachment}
+                      onOpenLink={onOpenLink}
+                      translate={t}
+                    />
                   ) : attachment.previewText === undefined ? (
                     <span
                       className="dsh-timeline__attachment dsh-timeline__attachment--static"

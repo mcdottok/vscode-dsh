@@ -42,6 +42,49 @@ describe('Timeline', () => {
     expect(container.querySelector('pre')).toBeNull()
   })
 
+  it.each(['sync', 'async'] as const)(
+    'expands captured code when its source fails to open (%s)',
+    async (failure) => {
+      const onOpenLink = vi.fn(() => {
+        if (failure === 'sync') throw new Error('Source file no longer exists')
+        return Promise.reject(new Error('Source file no longer exists'))
+      })
+      const { container } = render(
+        <Timeline
+          sessionId="session-1"
+          nodes={[
+            {
+              kind: 'user-message',
+              id: 'missing-source',
+              markdown: 'Review this',
+              attachments: [
+                {
+                  name: 'deleted.ts:1-2',
+                  sourceLink: 'src/deleted.ts#L1C1-L2C3',
+                  previewText: 'const captured = true\n// original code',
+                },
+              ],
+            },
+          ]}
+          streaming={false}
+          onOpenLink={onOpenLink}
+        />,
+      )
+      fireEvent.click(screen.getByRole('button', { name: /deleted.ts#1–2/u }))
+      await waitFor(() =>
+        expect(container.querySelector<HTMLDetailsElement>('.dsh-message-context')?.open).toBe(true),
+      )
+      expect(container.querySelector('pre')?.textContent).toBe('const captured = true\n// original code')
+      expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(container.querySelector('.dsh-message-context > summary'))
+      fireEvent.click(screen.getByText('deleted.ts#1–2'))
+      await waitFor(() =>
+        expect(container.querySelector<HTMLDetailsElement>('.dsh-message-context')?.open).toBe(false),
+      )
+      expect(onOpenLink).toHaveBeenCalledTimes(1)
+    },
+  )
+
   it('keeps legacy context without a source target readable as captured text', () => {
     const openLink = vi.fn()
     const { container } = render(

@@ -243,7 +243,7 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
   const [openLinkError, setOpenLinkError] = useState<{ readonly href: string; readonly message: string }>()
   const [openLinkBusy, setOpenLinkBusy] = useState(false)
   const requestOpenLink = useCallback(
-    (href: string): void => {
+    (href: string, onFailure?: () => void): void => {
       if (!hasOpenLink) return
       const normalized = href.trim()
       if (normalized === '') return
@@ -253,6 +253,11 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
       try {
         operation = stableOnOpenLink(normalized)
       } catch (reason: unknown) {
+        if (onFailure !== undefined) {
+          onFailure()
+          setOpenLinkBusy(false)
+          return
+        }
         setOpenLinkError({
           href: normalized,
           message: reason instanceof Error ? reason.message : t('app.error.openLink'),
@@ -262,6 +267,10 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
       }
       void Promise.resolve(operation)
         .catch((reason: unknown) => {
+          if (onFailure !== undefined) {
+            onFailure()
+            return
+          }
           setOpenLinkError({
             href: normalized,
             message: reason instanceof Error ? reason.message : t('app.error.openLink'),
