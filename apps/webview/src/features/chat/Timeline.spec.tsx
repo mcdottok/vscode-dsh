@@ -13,6 +13,32 @@ describe('Timeline', () => {
     vi.unstubAllGlobals()
   })
 
+  it('opens a captured code attachment without navigating to or rereading the live file', () => {
+    const openLink = vi.fn()
+    const { container } = render(
+      <Timeline
+        sessionId="session-1"
+        nodes={[
+          {
+            kind: 'user-message',
+            id: 'with-selection',
+            markdown: 'Review this',
+            attachments: [{ name: 'README.md:41-41', previewText: '<script>captured text</script>' }],
+          },
+        ]}
+        streaming={false}
+        onOpenLink={openLink}
+      />,
+    )
+    const details = container.querySelector<HTMLDetailsElement>('.dsh-message-context')!
+    expect(details.open).toBe(false)
+    fireEvent.click(within(details).getByText('README.md:41-41'))
+    expect(details.open).toBe(true)
+    expect(details.querySelector('pre')?.textContent).toBe('<script>captured text</script>')
+    expect(details.querySelector('script')).toBeNull()
+    expect(openLink).not.toHaveBeenCalled()
+  })
+
   it('keeps a bottom-pinned conversation at the latest item when the sidebar narrows', async () => {
     vi.useFakeTimers()
     let resize: ResizeObserverCallback = () => undefined

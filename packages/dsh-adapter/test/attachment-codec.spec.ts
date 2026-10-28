@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { AppError } from '@dsh-vscode/domain'
 
 import {
+  attachedFileEnvelope,
   decodeCanonicalBase64,
   encodeImageAttachments,
   encodePromptContent,
@@ -22,6 +23,21 @@ function errorFrom(run: () => unknown): AppError {
 }
 
 describe('attachment codec', () => {
+  it('restores captured attachment text without interpreting it and rejects mismatched wrappers', () => {
+    const body = '  const value = "<script>"\n\n  return value\n'
+    expect(
+      attachedFileEnvelope(
+        `\n\nAttached file: index.ts:2-5\n\n${body}\n\nEnd of attached file: index.ts:2-5`,
+      ),
+    ).toEqual({ name: 'index.ts:2-5', text: body })
+    expect(attachedFileEnvelope('Attached file: a.ts\n\ntext\n\nEnd of attached file: b.ts')).toBeUndefined()
+    expect(attachedFileEnvelope('ordinary message')).toBeUndefined()
+    expect(attachedFileEnvelope('Attached file: empty.txt\n\n\n\nEnd of attached file: empty.txt')).toEqual({
+      name: 'empty.txt',
+      text: '',
+    })
+  })
+
   it('keeps data URI parsing and canonical decoding strict', () => {
     expect(parseBase64DataUri('data:text/plain;base64,SGk=')).toEqual({
       mediaType: 'text/plain',

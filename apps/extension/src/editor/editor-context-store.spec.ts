@@ -147,6 +147,7 @@ describe('EditorContextStore', () => {
     const resolved = await store.resolveForPrompt(input)
     expect(resolved).toHaveLength(1)
     expect(resolved[0]?.attachment.uri).toContain('data:text/typescript;base64,')
+    expect(resolved[0]?.attachment.name).toBe('src/index.ts:1-1')
     expect((await store.list(owner))[0]?.ref.sessionId).toBe('session-1')
 
     current = Buffer.from('const value = 2')

@@ -212,7 +212,18 @@ export const transcriptNodeSchema = z.discriminatedUnion('kind', [
       source: opt,
       sourceForm: opt,
       sourceSummary: opt,
-      attachments: z.array(z.object({ name: text, mimeType: opt }).strict()).optional(),
+      attachments: z
+        .array(
+          z
+            .object({
+              name: text,
+              mimeType: opt,
+              previewText: z.string().max(4096).optional(),
+              previewTruncated: z.boolean().optional(),
+            })
+            .strict(),
+        )
+        .optional(),
       sessionReferenceLabels: strings.optional(),
       questionReply: z
         .object({

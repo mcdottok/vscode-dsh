@@ -966,7 +966,7 @@ describe('DeepSeek Harness 0.1.0-rc.6 contract', () => {
       sessionId: 's1',
       messageId: 'user-1',
       markdown: '概括文件内容',
-      attachments: [{ name: '思路4.md' }],
+      attachments: [{ name: '思路4.md', previewText: '# 很长的正文' }],
     })
   })
 

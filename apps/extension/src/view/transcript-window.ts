@@ -436,6 +436,18 @@ export class TranscriptWindowService {
       })
     const node = timeline.nodes.find((candidate) => candidate.id === nodeId)
     if (node === undefined) throw stale()
+    if (node.kind === 'user-message' && node.attachments?.some((item) => item.previewText !== undefined)) {
+      const content = [
+        node.markdown,
+        ...node.attachments.map((item) =>
+          item.previewText === undefined ? item.name : `${item.name}\n\n${item.previewText}`,
+        ),
+      ].join('\n\n')
+      const safe = this.deps.publicValue({ text: content }, displayed.cwd)
+      return typeof safe === 'object' && safe !== null && 'text' in safe && typeof safe.text === 'string'
+        ? safe.text
+        : ''
+    }
     const safe = this.deps.publicValue(node, displayed.cwd)
     return typeof safe === 'object' &&
       safe !== null &&
@@ -1299,7 +1311,11 @@ function preview(value: TimelineNode, budget: number): { value: TimelineNode; om
       return output
     }
     const output = Object.create(null) as Record<string, unknown>
-    for (const [key, entry] of Object.entries(input).slice(0, 64)) output[key] = visit(entry, depth + 1, key)
+    for (const [key, entry] of Object.entries(input).slice(0, 64)) {
+      output[key] = visit(entry, depth + 1, key)
+      if (key === 'previewText' && typeof entry === 'string' && output[key] !== entry)
+        output.previewTruncated = true
+    }
     if (Object.keys(input).length > 64) omitted = true
     return output
   }

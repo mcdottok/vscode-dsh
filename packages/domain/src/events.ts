@@ -169,8 +169,12 @@ export interface ModelRetrySignal {
   readonly message?: string
 }
 
-/** Safe, presentation-only metadata for a file represented in a user turn. */
-export type MessageAttachment = Pick<PromptAttachment, 'name' | 'mimeType'>
+/** Presentation data for a file represented in a user turn; Host bounds public text previews. */
+export type MessageAttachment = Pick<PromptAttachment, 'name' | 'mimeType'> & {
+  /** Text captured in the adapter-owned attachment envelope, never a live file read. */
+  readonly previewText?: string
+  readonly previewTruncated?: boolean
+}
 
 /** Durable image reference used by the upstream conversation image surface. */
 export type MessageImageMediaType = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'

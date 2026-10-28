@@ -257,7 +257,15 @@ export class EditorContextStore {
           sizeBytes: content.bytes.byteLength,
           attachment: {
             uri: `data:${entry.mimeType};base64,${Buffer.from(content.bytes).toString('base64')}`,
-            name: entry.ref.relativePath,
+            name:
+              entry.ref.kind === 'selection' && entry.ref.range !== undefined
+                ? `${entry.ref.relativePath}:${entry.ref.range.start.line + 1}-${
+                    entry.ref.range.end.line +
+                    (entry.ref.range.end.column === 0 && entry.ref.range.end.line > entry.ref.range.start.line
+                      ? 0
+                      : 1)
+                  }`
+                : entry.ref.relativePath,
             mimeType: entry.mimeType,
           },
         })

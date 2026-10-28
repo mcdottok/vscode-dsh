@@ -99,8 +99,8 @@ interface UserMessageContent {
  * Project the user-facing part of a durable message without changing what
  * DSH received. rc.6 has no text-file attachment block: promptContent sends
  * text files as a deliberately marked text block so the model can read them.
- * Recognize only that exact adapter-owned envelope and keep its filename as
- * metadata; ordinary user text is left untouched.
+ * Recognize only that exact adapter-owned envelope and keep its captured text
+ * for an explicit attachment preview; ordinary user text is left untouched.
  *
  * A newer host admits real `file` parts instead, and the same filename chip
  * reports them: the bytes stay host-side, so a message whose only content is a
@@ -114,7 +114,7 @@ export function userMessageContent(value: Record<string, unknown> | undefined): 
     const parsed = attachedFileEnvelope(text)
     return parsed === undefined
       ? { markdown: text, attachments: [], images: [] }
-      : { markdown: '', attachments: [{ name: parsed.name }], images: [] }
+      : { markdown: '', attachments: [{ name: parsed.name, previewText: parsed.text }], images: [] }
   }
 
   const textParts: string[] = []
@@ -125,7 +125,7 @@ export function userMessageContent(value: Record<string, unknown> | undefined): 
     if (block?.type === 'text' && typeof block.text === 'string') {
       const parsed = attachedFileEnvelope(block.text)
       if (parsed !== undefined) {
-        attachments.push({ name: parsed.name })
+        attachments.push({ name: parsed.name, previewText: parsed.text })
         continue
       }
       textParts.push(block.text)

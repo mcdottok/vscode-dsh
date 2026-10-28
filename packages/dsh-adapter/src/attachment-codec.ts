@@ -196,17 +196,18 @@ export function encodePromptContent(
  * export all read the same shape back.
  */
 const ATTACHED_FILE_BLOCK =
-  /^\s*Attached file: ([^\r\n]+)\r?\n\r?\n[\s\S]*\r?\n\r?\nEnd of attached file: \1\s*$/u
+  /^\s*Attached file: ([^\r\n]+)\r?\n\r?\n([\s\S]*)\r?\n\r?\nEnd of attached file: \1\s*$/u
 
 export interface AttachedFileEnvelope {
   readonly name: string
+  readonly text: string
 }
 
-/** Returns the file's display name for an inlined text-file envelope. */
+/** Returns the display name and captured body of an exact inlined text-file envelope. */
 export function attachedFileEnvelope(value: string): AttachedFileEnvelope | undefined {
   const match = ATTACHED_FILE_BLOCK.exec(value)
   const name = match?.[1]?.trim()
-  return name === undefined || name === '' ? undefined : { name }
+  return name === undefined || name === '' ? undefined : { name, text: match?.[2] ?? '' }
 }
 
 export function isTextAttachment(mediaType: string, name: string, bytes: Buffer): boolean {

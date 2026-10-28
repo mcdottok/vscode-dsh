@@ -293,16 +293,30 @@ function renderNode(
           >
             {node.attachments === undefined || node.attachments.length === 0 ? null : (
               <div className="dsh-timeline__attachments" aria-label={t('timeline.attachedFiles')}>
-                {node.attachments.map((attachment, index) => (
-                  <span
-                    className="dsh-timeline__attachment"
-                    key={`${attachment.name}:${index}`}
-                    title={attachment.name}
-                  >
-                    <Icon name={attachment.mimeType?.startsWith('image/') === true ? 'image' : 'file'} />
-                    <span>{attachment.name}</span>
-                  </span>
-                ))}
+                {node.attachments.map((attachment, index) =>
+                  attachment.previewText === undefined ? (
+                    <span
+                      className="dsh-timeline__attachment dsh-timeline__attachment--static"
+                      key={`${attachment.name}:${index}`}
+                      title={attachment.name}
+                    >
+                      <Icon name={attachment.mimeType?.startsWith('image/') === true ? 'image' : 'file'} />
+                      <span>{attachment.name}</span>
+                    </span>
+                  ) : (
+                    <details className="dsh-message-context" key={`${attachment.name}:${index}`}>
+                      <summary title={attachment.name}>
+                        <Icon name="file" />
+                        <span>{attachment.name}</span>
+                        <Icon name="chevron-down" />
+                      </summary>
+                      <pre tabIndex={0}>{attachment.previewText}</pre>
+                      {attachment.previewTruncated === true ? (
+                        <p>{t('timeline.attachmentPreviewTruncated')}</p>
+                      ) : null}
+                    </details>
+                  ),
+                )}
               </div>
             )}
             {node.questionReply !== undefined ? (

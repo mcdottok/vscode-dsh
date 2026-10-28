@@ -148,6 +148,36 @@ describe('Host transcript windows', () => {
     client.service.dispose()
   })
 
+  it('bounds sent context previews and restores the complete captured attachment through full content', async () => {
+    const text = 'const value = 1\n'.repeat(400) + 'captured-tail'
+    const events = [
+      row(1, {
+        type: 'message.user',
+        sessionId,
+        messageId: 'with-context',
+        markdown: 'Review this selection',
+        attachments: [{ name: 'index.ts:1-401', previewText: text }],
+      }),
+    ]
+    const client = fixture(vi.fn().mockResolvedValue({ events, hasMore: false }))
+    const window = client.open(events)
+    const node = window.nodes[0]!
+    expect(node).toMatchObject({
+      attachments: [{ previewText: text.slice(0, 4096), previewTruncated: true }],
+    })
+    expect(transcriptWindowSchema.safeParse(window).success).toBe(true)
+    expect(window.omittedNodeIds).toContain(node.id)
+    const full = await client.service.content(
+      sessionId,
+      node.id,
+      window.revision,
+      new AbortController().signal,
+    )
+    expect(full).toContain(text)
+    expect(full).toContain('index.ts:1-401')
+    client.service.dispose()
+  })
+
   it('bounds escaped oversized prose with an explicit ellipsis and rereads its authorized full text', async () => {
     const markdown = 'Quote " and backslash \\\n'.repeat(30_000) + 'oversized-answer-tail'
     const events = [message(1, markdown)]
