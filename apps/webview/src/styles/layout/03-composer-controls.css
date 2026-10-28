@@ -489,6 +489,61 @@
   padding: var(--dsh-space-1);
 }
 
+/* Images have their own preview tiles; file/context chips keep their compact row. */
+.dsh-unified-composer .dsh-composer__attachment--image {
+  position: relative;
+  display: block;
+  flex: 0 0 104px;
+  width: 104px;
+  min-width: 0;
+  max-width: 100%;
+  height: 104px;
+  box-sizing: border-box;
+  border-radius: var(--dsh-radius-md);
+  background: var(--dsh-surface-soft);
+}
+
+.dsh-unified-composer .dsh-composer__attachment--image .dsh-composer__attachment-content {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border-radius: inherit;
+}
+
+.dsh-unified-composer .dsh-composer__attachment--image .dsh-composer__attachment-thumb {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: inherit;
+  background: var(--dsh-surface-soft);
+}
+
+.dsh-unified-composer .dsh-composer__attachment--image .dsh-composer__attachment-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.dsh-unified-composer .dsh-composer__attachment--image .dsh-composer__attachment-name {
+  display: none;
+}
+
+.dsh-unified-composer .dsh-composer__attachment--image .dsh-composer__attachment-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  border: var(--dsh-border);
+  color: var(--dsh-text);
+  background: var(--dsh-surface-raised);
+}
+
 .dsh-unified-composer .dsh-composer__context-preview {
   display: inline-flex;
   align-items: center;

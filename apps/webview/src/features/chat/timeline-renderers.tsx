@@ -282,6 +282,11 @@ function renderNode(
       const projected = containsUserTextReferences(node.markdown, sessionReferenceLabels)
       return (
         <div className="dsh-timeline__message-stack dsh-timeline__message-stack--user">
+          <MessageImages
+            images={node.images ?? []}
+            {...(onLoadImage === undefined ? {} : { loadImage: onLoadImage })}
+            translate={t}
+          />
           <article
             className="dsh-timeline__card dsh-timeline__card--user"
             aria-label={t('timeline.yourMessage')}
@@ -300,11 +305,6 @@ function renderNode(
                 ))}
               </div>
             )}
-            <MessageImages
-              images={node.images ?? []}
-              {...(onLoadImage === undefined ? {} : { loadImage: onLoadImage })}
-              translate={t}
-            />
             {node.questionReply !== undefined ? (
               <section className="dsh-question-reply" data-question-reply={node.questionReply.callId}>
                 <strong className="dsh-question-reply__title">{t('question.replyTitle')}</strong>

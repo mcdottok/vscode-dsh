@@ -54,7 +54,10 @@ export function ComposerAttachmentsRail({
           const isImage = attachment.mimeType?.startsWith('image/') === true
           const preview = previews[attachment.uri]
           return (
-            <li className="dsh-composer__attachment dsh-composer__context-chip" key={attachment.uri}>
+            <li
+              className={`dsh-composer__attachment dsh-composer__context-chip${isImage ? ' dsh-composer__attachment--image' : ''}`}
+              key={attachment.uri}
+            >
               <span className="dsh-composer__attachment-content">
                 {isImage ? (
                   <button
