@@ -81,7 +81,7 @@
   padding: 10px 16px;
   border: 0;
   border-radius: var(--dsh-radius-lg);
-  background: var(--dsh-surface-soft);
+  background: var(--dsh-user-message-bg, var(--dsh-surface-soft));
 }
 
 .dsh-timeline[data-conversation-layout='focused'] .dsh-markdown {

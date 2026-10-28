@@ -110,6 +110,13 @@ html[data-dsh-theme='system']:has(body.vscode-high-contrast-light) {
   --dsh-theme-scrollbar-thumb-active: #737e90;
 }
 
+:root[data-dsh-theme='light'],
+.dsh-app[data-dsh-theme='light'],
+:root[data-dsh-theme='system']:has(body.vscode-light) {
+  --dsh-theme-user-message-bg: #e0eaff;
+  --dsh-user-message-bg: var(--dsh-theme-user-message-bg);
+}
+
 :root[data-dsh-theme='dark']:not(:has(body:is(.vscode-dark, .vscode-high-contrast))),
 :root:not(:has(body:is(.vscode-dark, .vscode-high-contrast))) .dsh-app[data-dsh-theme='dark'] {
   --dsh-theme-border: #3a3d42;
@@ -119,6 +126,7 @@ html[data-dsh-theme='system']:has(body.vscode-high-contrast-light) {
   --dsh-theme-surface: #25272a;
   --dsh-theme-surface-raised: #2c2f33;
   --dsh-theme-surface-soft: #30343a;
+  --dsh-theme-user-message-bg: #30343a;
   --dsh-theme-surface-hover: #373b42;
   --dsh-theme-input-bg: #1e2023;
   --dsh-theme-input-border: #6d7580;
@@ -170,6 +178,7 @@ html[data-dsh-theme='system']:has(body.vscode-high-contrast-light) {
   --dsh-surface: var(--dsh-theme-surface);
   --dsh-surface-raised: var(--dsh-theme-surface-raised);
   --dsh-surface-soft: var(--dsh-theme-surface-soft);
+  --dsh-user-message-bg: var(--dsh-theme-user-message-bg);
   --dsh-surface-hover: var(--dsh-theme-surface-hover);
   --dsh-input-bg: var(--dsh-theme-input-bg);
   --dsh-input-text: var(--dsh-theme-text);

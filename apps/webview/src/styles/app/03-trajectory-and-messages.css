@@ -423,7 +423,7 @@
   max-width: min(88%, 42rem);
   margin-inline-start: auto;
   color: var(--dsh-text);
-  background: var(--dsh-surface-soft);
+  background: var(--dsh-user-message-bg, var(--dsh-surface-soft));
 }
 
 .dsh-timeline__user-text {

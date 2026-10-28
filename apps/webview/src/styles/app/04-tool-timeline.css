@@ -371,6 +371,10 @@
   gap: var(--dsh-space-2);
 }
 
+.dsh-timeline__attachments:has(.dsh-code-context, .dsh-message-context):not(:last-child) {
+  margin-bottom: calc(var(--dsh-space-1) * 1.5);
+}
+
 /* Compact selection references navigate back to the editor. Legacy text
  * attachments without source metadata retain a lightweight disclosure. */
 .dsh-code-context {
@@ -381,6 +385,7 @@
   max-width: 100%;
   padding: var(--dsh-space-1) var(--dsh-space-2);
   border: var(--dsh-border);
+  border-color: color-mix(in srgb, var(--dsh-text) 18%, var(--dsh-border-color));
   border-radius: var(--dsh-radius-sm);
   color: var(--dsh-text);
   background: transparent;
@@ -407,7 +412,9 @@
 .dsh-message-context {
   min-width: 0;
   max-width: 100%;
+  overflow: hidden;
   border: var(--dsh-border);
+  border-color: color-mix(in srgb, var(--dsh-text) 18%, var(--dsh-border-color));
   border-radius: var(--dsh-radius-sm);
   background: transparent;
 }
@@ -417,7 +424,8 @@
   align-items: center;
   gap: var(--dsh-space-2);
   min-width: 0;
-  padding: var(--dsh-space-2);
+  padding: var(--dsh-space-1) var(--dsh-space-2);
+  border-radius: inherit;
   color: var(--dsh-text);
   font-size: var(--dsh-font-size-2xs);
   cursor: pointer;
