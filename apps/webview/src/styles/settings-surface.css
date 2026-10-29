@@ -68,6 +68,77 @@ html[data-dsh-theme='dark']:has(body:is(.vscode-dark, .vscode-high-contrast)) .d
   letter-spacing: 0.01em;
 }
 
+.dsh-settings__header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--dsh-space-2);
+  margin-inline-start: auto;
+}
+
+.dsh-settings__feedback-anchor {
+  position: relative;
+  display: inline-flex;
+  margin-inline-end: 12px;
+}
+
+.dsh-app .dsh-settings .dsh-settings__feedback-tip {
+  position: absolute;
+  z-index: 10;
+  inset-block-start: calc(100% + 8px);
+  inset-inline-end: 0;
+  width: min(360px, calc(100vw - 96px));
+  /* Text spans normally inherit max-width: 100% from the foundation. This
+   * floating panel must not be capped by the much narrower feedback label. */
+  max-width: none;
+  padding: 10px 12px;
+  border: 1px solid var(--stg-line-soft);
+  border-radius: 8px;
+  background: var(--dsh-widget-bg);
+  color: var(--dsh-text);
+  box-shadow: 0 4px 16px #00000024;
+  font-size: var(--dsh-font-size-xs);
+  font-weight: 400;
+  line-height: 1.6;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.dsh-settings__feedback-anchor:is(:hover, :focus-within) .dsh-settings__feedback-tip {
+  visibility: visible;
+  opacity: 1;
+}
+
+.dsh-app .dsh-settings .dsh-settings__feedback {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--dsh-control-height-compact);
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsh-muted);
+  font-size: var(--dsh-font-size-sm);
+  font-weight: 400;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.dsh-app .dsh-settings .dsh-settings__feedback:hover {
+  color: var(--dsh-text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.dsh-app .dsh-settings .dsh-settings__feedback:focus-visible {
+  outline: 2px solid var(--dsh-focus-ring);
+  outline-offset: 2px;
+}
+
 /* Tabs read as one segmented rail; the wide layout keeps a vertical rail. */
 .dsh-app .dsh-settings .dsh-settings__tabs {
   gap: 2px;

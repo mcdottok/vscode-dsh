@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactElement } from 'react'
 import type { ExtensionSettingsSummary, ModelDescriptor } from '@dsh-vscode/domain'
 import { ModalWrapper } from '../../components/common/PopoverCard.js'
 import { useDismissibleLayer } from '../../components/common/useDismissibleLayer.js'
@@ -40,6 +40,7 @@ interface LoadedSettings {
 
 export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
   const { t } = useI18n()
+  const feedbackHintId = useId()
   const { onLoadAccountDetails, onAcknowledgeAccountBonus, onOpenAccountPage } = props
   const refreshAccountDetails = useCallback((): void => {
     void onLoadAccountDetails?.()
@@ -599,16 +600,32 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
       >
         <header className="dsh-settings__header">
           <h2 id="settings-title">{t('settings.title')}</h2>
-          <button
-            ref={closeRef}
-            className="dsh-icon-button"
-            type="button"
-            aria-label={t('settings.close')}
-            title={t('settings.close')}
-            onClick={() => props.onOpenChange(false)}
-          >
-            <Icon name="close" />
-          </button>
+          <div className="dsh-settings__header-actions">
+            <span className="dsh-settings__feedback-anchor">
+              <a
+                className="dsh-settings__feedback"
+                href="https://github.com/mcdottok/vscode-dsh/issues"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-describedby={feedbackHintId}
+              >
+                <span>{t('settings.feedback')}</span>
+              </a>
+              <span id={feedbackHintId} className="dsh-settings__feedback-tip" role="tooltip">
+                {t('settings.feedbackHint')}
+              </span>
+            </span>
+            <button
+              ref={closeRef}
+              className="dsh-icon-button"
+              type="button"
+              aria-label={t('settings.close')}
+              title={t('settings.close')}
+              onClick={() => props.onOpenChange(false)}
+            >
+              <Icon name="close" />
+            </button>
+          </div>
         </header>
         <SettingsTabs
           panels={{
