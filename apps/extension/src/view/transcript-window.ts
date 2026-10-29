@@ -177,6 +177,20 @@ export class TranscriptWindowService {
       throw stale('open-superseded')
     if (this.pending.overflow) throw stale('open-buffer-overflow')
     const resident = this.project(sessionId, page, this.pending.child, undefined, cwd)
+    // Refuse an incomplete replacement before mutating the Host baseline.
+    // Keeping only the renderer's old rows would leave its next patch based
+    // on a different window and repeatedly trigger session.open/resync.
+    if (
+      page.hasMore &&
+      resident.timeline.nodes.length === 0 &&
+      this.displayed?.sessionId === sessionId &&
+      this.displayed.timeline.nodes.length > 0
+    )
+      throw new AppError({
+        code: 'BACKEND_UNREACHABLE',
+        message: 'The session history is not ready. Retry reading it before continuing.',
+        retryable: true,
+      })
     if (
       this.pending.cwdKnown &&
       (this.pending.cwdSequence === undefined ||

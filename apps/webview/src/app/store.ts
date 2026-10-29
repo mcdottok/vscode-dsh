@@ -667,29 +667,51 @@ export function createAppStore(client = new ProtocolClient(getVsCodeApi())): App
    * same bounded backoff, and stop as soon as the user looks at something else
    * so the panel never jumps back to the view that failed.
    */
-  const resubscribeActiveView = async (): Promise<void> => {
+  let activeReopen: { version: number; readonly identity: string | undefined } | undefined
+  const resubscribeActiveView = async (owner: {
+    version: number
+    readonly identity: string | undefined
+  }): Promise<void> => {
+    const isCurrent = (): boolean =>
+      !disposed &&
+      state.backend.kind === 'connected' &&
+      manualOpenOwner === undefined &&
+      activeReopen === owner &&
+      owner.version === openVersion &&
+      owner.identity === projectionSequences.connectionIdentity
     for (let attempt = 1; ; attempt += 1) {
-      if (disposed) return
+      if (!isCurrent()) return
       const subagent = state.activeSubagent
       const sessionId = subagent === undefined ? state.activeSessionId : subagent.entry.id
       if (sessionId === undefined) return
       try {
-        if (subagent === undefined) await open(sessionId)
-        else await openSubagent(subagent.entry, subagent.parentAvailable)
+        const opened =
+          subagent === undefined ? open(sessionId) : openSubagent(subagent.entry, subagent.parentAvailable)
+        owner.version = openVersion
+        await opened
         return
       } catch {
         const stillCurrent =
           subagent === undefined
             ? state.activeSubagent === undefined && state.activeSessionId === sessionId
             : state.activeSubagent?.entry.id === sessionId
-        if (disposed || attempt >= OPEN_RETRY_ATTEMPTS || !stillCurrent) return
+        if (!isCurrent() || attempt >= OPEN_RETRY_ATTEMPTS || !stillCurrent) return
         if (!(await retryDelays.wait(OPEN_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1)))) return
       }
     }
   }
   const reopenActiveView = (): void => {
     if (manualOpenOwner !== undefined) return
-    void resubscribeActiveView()
+    if (
+      activeReopen?.version === openVersion &&
+      activeReopen.identity === projectionSequences.connectionIdentity
+    )
+      return
+    const owner = { version: openVersion, identity: projectionSequences.connectionIdentity }
+    activeReopen = owner
+    void resubscribeActiveView(owner).finally(() => {
+      if (activeReopen === owner) activeReopen = undefined
+    })
     // The replacement process may expose a different catalog entirely; the
     // session switcher has to reflect that backend, not the previous one.
     void refresh().catch(() => undefined)

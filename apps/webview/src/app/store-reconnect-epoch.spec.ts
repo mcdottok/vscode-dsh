@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { HostMessage } from '@dsh-vscode/webview-protocol'
 import type { ProtocolClient } from './protocol-client.js'
 import {
@@ -297,7 +297,62 @@ const waitFor = async (predicate: () => boolean, timeoutMs = 3000): Promise<void
 }
 
 describe('AppStore connection restart', () => {
-  afterEach(() => document.body.replaceChildren())
+  afterEach(() => {
+    vi.useRealTimers()
+    document.body.replaceChildren()
+  })
+
+  it('coalesces repeated invalidations while an automatic reopen is pending', async () => {
+    vi.useFakeTimers()
+    let finishOpen: ((value: unknown) => void) | undefined
+    let delayed = false
+    const client = new FakeClient((request) => {
+      if (request.type !== 'session.open') return baseResponse(request)
+      return delayed
+        ? new Promise((resolve) => {
+            finishOpen = resolve
+          })
+        : sessionOpenResponse(false)
+    })
+    const store = createAppStore(client as unknown as ProtocolClient)
+    client.emit(connectionSnapshot(1, 'connected'))
+    await store.openSession(activeSession.id)
+    delayed = true
+    client.emit(connectionSnapshot(2, 'stopping'))
+    client.emit(connectionSnapshot(3, 'connected'))
+    for (let sequence = 4; sequence < 10; sequence++)
+      client.emit(hostEvent(sequence, 'session.transcript.invalidated', { sessionId: activeSession.id }))
+    expect(sessionOpens(client)).toHaveLength(2)
+    expect(userMessageNodes(store.getState())).toHaveLength(5)
+    finishOpen!(sessionOpenResponse(false))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sessionOpens(client)).toHaveLength(2)
+    store.dispose()
+  })
+
+  it('retires a delayed reopen retry after a manual open of the same session', async () => {
+    vi.useFakeTimers()
+    let rejectOpen = false
+    const client = new FakeClient((request) => {
+      if (request.type !== 'session.open') return baseResponse(request)
+      if (rejectOpen) throw Object.assign(new Error('workspace not ready'), { retryable: false })
+      return sessionOpenResponse(false)
+    })
+    const store = createAppStore(client as unknown as ProtocolClient)
+    client.emit(connectionSnapshot(1, 'connected'))
+    await store.openSession(activeSession.id)
+    rejectOpen = true
+    client.emit(connectionSnapshot(2, 'stopping'))
+    client.emit(connectionSnapshot(3, 'connected'))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(sessionOpens(client)).toHaveLength(2)
+    rejectOpen = false
+    await store.openSession(activeSession.id)
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(sessionOpens(client)).toHaveLength(3)
+    expect(userMessageNodes(store.getState())).toHaveLength(5)
+    store.dispose()
+  })
 
   it('reopens the session and drops process-local surfaces when the connection restarts', async () => {
     const { store, client } = makeStore()

@@ -58,6 +58,36 @@ function fixture(
 afterEach(() => vi.useRealTimers())
 
 describe('Host transcript windows', () => {
+  it('preserves the Host baseline when a replacement history read is incomplete', async () => {
+    vi.useFakeTimers()
+    const client = fixture()
+    client.open([message(1)])
+    const generation = client.service.begin(sessionId)
+    expect(() => client.service.installPage(sessionId, { events: [], hasMore: true }, generation)).toThrow(
+      expect.objectContaining({ code: 'BACKEND_UNREACHABLE', retryable: true }),
+    )
+    client.service.cancel(generation)
+
+    // A subsequent control/stream event must publish against the retained
+    // history, rather than an empty baseline the renderer already rejected.
+    client.service.accept({
+      type: 'message.completed',
+      sessionId,
+      messageId: 'next',
+      markdown: 'Next',
+      sequence: 2,
+    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(client.posted.at(-1)?.nodes).toMatchObject([{ markdown: 'Answer 1' }, { markdown: 'Next' }])
+    const restored = client.open([message(1), message(2)])
+    expect(restored.nodes).toHaveLength(2)
+    // A different, genuinely empty session remains openable.
+    expect(
+      client.service.installPage('new', { events: [], hasMore: false }, client.service.begin('new')).nodes,
+    ).toEqual([])
+    client.service.dispose()
+  })
+
   it('carries the authoritative turn clock in the parsed initial window', () => {
     const { open } = fixture()
     const window = transcriptWindowSchema.parse(
