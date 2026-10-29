@@ -422,13 +422,20 @@ function response(
   })
 }
 
+/**
+ * Requests that write to a Session's agent. DSH protects each Session with one
+ * writer, so an instance that does not own the Session still reads its history
+ * but fails these calls with `session/writer-held`.
+ */
+const SESSION_WRITE_REQUESTS = new Set(['session.configure', 'session.sendPrompt', 'subagent.send'])
+
 function publicError(
   error: unknown,
   requestType: string,
 ): { code: string; message: string; retryable: boolean } {
   if (
     error instanceof AppError &&
-    requestType === 'session.configure' &&
+    SESSION_WRITE_REQUESTS.has(requestType) &&
     error.code === 'BACKEND_BUSY' &&
     error.context?.rpcCode === 'writer-held' &&
     (error.context.wireCode === undefined || error.context.wireCode === 'session/writer-held')
@@ -436,7 +443,7 @@ function publicError(
     return {
       code: 'SESSION_WRITER_HELD',
       message:
-        'This session is open in another DSH instance. Release it there (exit that instance if needed), then retry. You can also create a new session or connect to the Desktop that owns this session.',
+        'This session is open in another DSH instance, so it cannot be written here yet. Release it there (close that session or exit that instance), then retry. You can also create a new session or connect to the instance that owns this session.',
       retryable: true,
     }
   if (error instanceof AppError)
