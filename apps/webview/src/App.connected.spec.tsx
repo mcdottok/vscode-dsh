@@ -855,7 +855,13 @@ describe('App connected rendering', () => {
       await submission.catch(() => undefined)
     })
 
-    expect(await screen.findByText('Prompt failed.')).toBeDefined()
+    expect(await screen.findByText(/^Prompt failed\./)).toBeDefined()
+    // One Session has one writer across instances; unexplained failures must
+    // still suggest checking for it rather than leaving a silent draft.
+    expect(screen.getByText(/If sending keeps failing/)).toBeDefined()
+    // The report belongs to the draft it failed to deliver, not to the timed
+    // toolbar toast that would vanish before the user releases the Session.
+    expect(document.querySelector('.dsh-composer__submit-error')?.textContent).toContain('Prompt failed.')
     expect(screen.queryByText('Host delivery failed: raw prompt diagnostics')).toBeNull()
     expect(prompt.value).toBe('retry this prompt')
     expect(screen.getByRole('button', { name: 'Send message' }).hasAttribute('disabled')).toBe(false)
@@ -891,7 +897,8 @@ describe('App connected rendering', () => {
     const prompt = screen.getByRole('textbox', { name: 'Prompt' })
     fireEvent.keyDown(prompt, { key: 'Enter', ctrlKey: true })
     expect(steerAllQueued).toHaveBeenCalledTimes(1)
-    expect(await screen.findByText('Steering the queue failed.')).toBeDefined()
+    expect(await screen.findByText(/^Steering the queue failed\./)).toBeDefined()
+    expect(screen.getByText(/If sending keeps failing/)).toBeDefined()
     expect(screen.queryByText('raw queue transport diagnostic')).toBeNull()
 
     fireEvent.keyDown(prompt, { key: 'Enter', ctrlKey: true })
@@ -947,7 +954,7 @@ describe('App connected rendering', () => {
       rejectFirstSubmission?.(new Error('Host delivery failed: raw prompt diagnostics'))
       await firstSubmission.catch(() => undefined)
     })
-    expect(await screen.findByText('Prompt failed.')).toBeDefined()
+    expect(await screen.findByText(/^Prompt failed\./)).toBeDefined()
     expect(prompt.value).toBe('retry with the attachment')
     expect(screen.getByRole('button', { name: 'Remove notes.txt' })).toBeDefined()
 
@@ -2176,7 +2183,7 @@ describe('App connected rendering', () => {
       rejectSend(Object.assign(new Error('cancelled'), { code: 'REQUEST_CANCELLED' }))
       await send.catch(() => undefined)
     })
-    expect(await screen.findByText('Prompt failed.')).toBeDefined()
+    expect(await screen.findByText(/^Prompt failed\./)).toBeDefined()
     expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Prompt' }).value).toBe(
       'a prompt I do not want to retype',
     )

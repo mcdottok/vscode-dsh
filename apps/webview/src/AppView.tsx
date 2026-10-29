@@ -54,6 +54,7 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
     composerOnCommand,
     composerOnCommandQueryChange,
     composerOnConfigurationChange,
+    composerOnDismissSubmitError,
     composerOnExtrasOpenChange,
     composerOnIngestFiles,
     composerOnPickAttachment,
@@ -68,6 +69,7 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
     composerOnSubmit,
     composerOnToggleOpenFilePicker,
     composerStatus,
+    composerSubmitError,
     connectionKey,
     connectionMessage,
     contextPressure,
@@ -390,6 +392,8 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
                       onCancel={() => undefined}
                       onSteerQueue={() => undefined}
                       queue={[]}
+                      submitError={composerSubmitError}
+                      onDismissSubmitError={composerOnDismissSubmitError}
                     />
                   </div>
                 </section>
@@ -748,6 +752,8 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
                           onCancel={composerOnCancel}
                           onSteerQueue={composerOnSteerQueue}
                           queue={state.queue}
+                          submitError={composerSubmitError}
+                          onDismissSubmitError={composerOnDismissSubmitError}
                         />
                         {composerStatus === undefined ? null : (
                           <div className="dsh-composer__status">{composerStatus}</div>

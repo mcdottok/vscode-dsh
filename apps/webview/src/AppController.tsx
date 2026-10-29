@@ -33,7 +33,7 @@ import { sameShallowSelection, useAppStoreSelector } from './app/useAppStoreSele
 import { selectAppViewState } from './app/store/view-state.js'
 import { selectSessionModels } from './app/store/model-directory-state.js'
 import { readDraft, resetDraft, setDraft } from './app/draft-store.js'
-import { publicProtocolErrorMessage } from './app/protocol-client.js'
+import { publicProtocolErrorCode, publicProtocolErrorMessage } from './app/protocol-client.js'
 import { useDshSettings } from './app/useDshSettings.js'
 import { useComposerAttachments } from './app/useComposerAttachments.js'
 import { welcomeWasDismissed, dismissedRuntimeUpdateVersionFromStorage } from './app/dismissed-notices.js'
@@ -89,6 +89,13 @@ const useAppControllerImpl = () => {
   const [respondingInteractionId, setRespondingInteractionId] = useState<string | undefined>()
   const [branching, setBranching] = useState(false)
   const [error, setErrorState] = useState<string | undefined>()
+  /**
+   * Failures that the composer itself caused (a rejected prompt or queue steer)
+   * stay anchored above the input instead of joining the timed toolbar toast:
+   * the draft that will not leave is still on screen, and a writer-held Session
+   * only clears when the user acts elsewhere, not after eight seconds.
+   */
+  const [composerSubmitError, setComposerSubmitError] = useState<string | undefined>()
   /**
    * Every message owns its own dismissal window. Keyed on the message alone, a
    * repeat of the identical failure while the first toast is up would change no
@@ -415,6 +422,7 @@ const useAppControllerImpl = () => {
     store,
     t,
     setError,
+    setSubmitError: setComposerSubmitError,
     active,
     activeSessionId,
     imageLimits,
@@ -435,6 +443,8 @@ const useAppControllerImpl = () => {
     if (composerOwner === undefined || previousComposerOwner.current === composerOwner) return
     previousComposerOwner.current = composerOwner
     discardAttachmentDrafts()
+    // The failure belonged to the conversation that just left the screen.
+    setComposerSubmitError(undefined)
     if (state.pendingSession !== undefined) setDraft('')
   }, [composerOwner, discardAttachmentDrafts, state.pendingSession])
   // Runtime status and explicit Turn boundaries come from DSH. A settled
@@ -693,11 +703,21 @@ const useAppControllerImpl = () => {
       .cancelSession(active.id)
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : t('app.error.cancel')))
   })
-  const composerOnSteerQueue = useStableCallback((): Promise<void> =>
-    store.steerAllQueued().catch((reason: unknown) => {
-      if (mountedRef.current) setError(publicProtocolErrorMessage(reason) ?? t('app.error.steerAll'))
-    }),
-  )
+  const composerOnSteerQueue = useStableCallback((): Promise<void> => {
+    // A retry starts from a clean slate; the previous rejection is stale now.
+    setComposerSubmitError(undefined)
+    return store.steerAllQueued().catch((reason: unknown) => {
+      if (!mountedRef.current) return
+      if (publicProtocolErrorCode(reason) === 'SESSION_WRITER_HELD') {
+        setComposerSubmitError(t('app.error.sessionWriterHeld'))
+        return
+      }
+      setComposerSubmitError(
+        `${publicProtocolErrorMessage(reason) ?? t('app.error.steerAll')} ${t('app.error.promptOccupiedHint')}`,
+      )
+    })
+  })
+  const composerOnDismissSubmitError = useStableCallback((): void => setComposerSubmitError(undefined))
   const composerUsage = projectedTokenUsage ?? state.timeline.tokenUsage
   // Compact performance usage hides the line entirely (rather than upstream's
   // "speed + cache only" line): on this surface the setting is a visibility
@@ -902,6 +922,7 @@ const useAppControllerImpl = () => {
     composerOnCommand,
     composerOnCommandQueryChange,
     composerOnConfigurationChange,
+    composerOnDismissSubmitError,
     composerOnExtrasOpenChange,
     composerOnIngestFiles,
     composerOnPickAttachment,
@@ -916,6 +937,7 @@ const useAppControllerImpl = () => {
     composerOnSubmit,
     composerOnToggleOpenFilePicker,
     composerStatus,
+    composerSubmitError,
     connectionKey,
     connectionMessage,
     contextPressure,

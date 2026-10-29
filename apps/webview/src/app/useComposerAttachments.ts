@@ -7,7 +7,7 @@ import type {
   SubagentCatalog,
 } from '@dsh-vscode/domain'
 import type { AppStore, OpenFileCandidate, ReferenceCandidate } from './store.js'
-import { publicProtocolErrorMessage } from './protocol-client.js'
+import { publicProtocolErrorCode, publicProtocolErrorMessage } from './protocol-client.js'
 import { useStableCallback } from './useStableCallback.js'
 import { readFileAsBase64, formatByteSize } from './attachment-reader.js'
 import {
@@ -31,6 +31,12 @@ export interface ComposerAttachmentDependencies {
   readonly store: AppStore
   readonly t: Translate
   readonly setError: (message: string | undefined) => void
+  /**
+   * Submission outcomes belong above the input rather than in the timed
+   * toolbar toast: the draft is still visible there, and a Session held by
+   * another instance stays blocked until the user acts elsewhere.
+   */
+  readonly setSubmitError: (message: string | undefined) => void
   readonly active: SessionSummary | undefined
   readonly activeSessionId: string | undefined
   readonly imageLimits: ImageAttachmentLimits | undefined
@@ -77,8 +83,17 @@ function contextOpenFileIds(items: readonly EditorContextItem[]): string[] {
 }
 
 export function useComposerAttachments(deps: ComposerAttachmentDependencies): ComposerAttachments {
-  const { store, t, setError, active, activeSessionId, imageLimits, hasPendingSession, subagentEntries } =
-    deps
+  const {
+    store,
+    t,
+    setError,
+    setSubmitError,
+    active,
+    activeSessionId,
+    imageLimits,
+    hasPendingSession,
+    subagentEntries,
+  } = deps
   const mountedRef = deps.mountedRef
   const setDraft = deps.setDraft
   const [attachments, setAttachments] = useState<PromptAttachment[]>([])
@@ -351,6 +366,8 @@ export function useComposerAttachments(deps: ComposerAttachmentDependencies): Co
   }
   const submitPrompt = (mode: 'queue' | 'steer', signal?: AbortSignal): Promise<void> => {
     if (active === undefined && !hasPendingSession) return Promise.resolve()
+    // A retry starts from a clean slate; the previous rejection is stale now.
+    setSubmitError(undefined)
     const text = deps.readDraft()
     const attachmentSnapshot = attachments
     const before = store.getState()
@@ -428,11 +445,20 @@ export function useComposerAttachments(deps: ComposerAttachmentDependencies): Co
       .catch((reason: unknown) => {
         if (Boolean(signal?.aborted) || (reason instanceof DOMException && reason.name === 'AbortError'))
           return
-        if (mountedRef.current)
-          setError(
-            awaitingVisibility
-              ? t('app.error.promptTimeout')
-              : (publicProtocolErrorMessage(reason) ?? t('app.error.prompt')),
+        if (!mountedRef.current) return
+        if (awaitingVisibility) {
+          setSubmitError(t('app.error.promptTimeout'))
+          return
+        }
+        // One Session has one writer across DSH instances. Name that condition
+        // instead of forwarding the Host's generic busy text, and keep the
+        // slower hint on every other failure: the user otherwise only sees a
+        // draft that will not leave the composer.
+        if (publicProtocolErrorCode(reason) === 'SESSION_WRITER_HELD')
+          setSubmitError(t('app.error.sessionWriterHeld'))
+        else
+          setSubmitError(
+            `${publicProtocolErrorMessage(reason) ?? t('app.error.prompt')} ${t('app.error.promptOccupiedHint')}`,
           )
       })
   }

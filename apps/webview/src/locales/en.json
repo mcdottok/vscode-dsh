@@ -1268,6 +1268,8 @@
   "app.error.releaseAttachment": "Unable to release the attachment.",
   "app.error.attachPasted": "Unable to attach the pasted or dropped file.",
   "app.error.prompt": "Prompt failed.",
+  "app.error.sessionWriterHeld": "This session is open in another DSH instance, so messages cannot be sent here. Close that session (or exit that instance), then retry. You can also create a new session or use the Desktop connection.",
+  "app.error.promptOccupiedHint": "If sending keeps failing, check whether this session is held by another DSH instance (for example DSH Desktop): close it there or exit that instance and retry, or create a new session.",
   "app.error.promptTimeout": "The prompt response timed out. DSH may still have accepted it; check the session before retrying.",
   "app.error.listOpenFiles": "Unable to list open files.",
   "app.error.openFileGone": "The selected open file is no longer available.",

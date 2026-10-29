@@ -26,6 +26,52 @@
   overflow-wrap: anywhere;
 }
 
+/* A rejected submission stays above the input: the draft it failed to deliver
+   is still on screen, and a writer-held Session only clears elsewhere. */
+.dsh-composer__submit-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--dsh-space-2);
+  padding: var(--dsh-space-2) var(--dsh-space-3);
+  border: 1px solid color-mix(in srgb, var(--dsh-danger) 45%, var(--dsh-border-color));
+  border-radius: var(--dsh-radius-sm);
+  background: color-mix(in srgb, var(--dsh-danger) 10%, var(--dsh-surface-raised));
+  color: var(--dsh-danger);
+  font-size: var(--dsh-font-size-xs);
+}
+
+.dsh-composer__submit-error > svg {
+  flex: none;
+  margin-top: 0.15em;
+}
+
+.dsh-composer__submit-error > p {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--dsh-text);
+  overflow-wrap: anywhere;
+}
+
+.dsh-composer__submit-error-dismiss {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  line-height: 0;
+}
+
+.dsh-composer__submit-error-dismiss:hover {
+  color: var(--dsh-text);
+}
+
+.dsh-composer__submit-error-dismiss:focus-visible {
+  outline: 2px solid var(--dsh-focus-ring);
+  outline-offset: 2px;
+}
+
 .dsh-composer__textarea {
   display: block;
   width: 100%;

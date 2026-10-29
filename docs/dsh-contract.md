@@ -163,7 +163,7 @@ Alpha Remote Event 的发起客户端在交互结算后可能不会收到取消�
 
 `session.rename` 应答中的 `{ title, seq }` 是宿主清理并持久化后的标题，UI 必须使用回执标题，不能保留用户原始输入。空白会话显示本地化新会话名，持久标题仍来自日志事件。
 
-同一工作区可有不同 Session；Session 的单写入方保护不等于禁止同时打开工作区。模型写入返回明确的 `session/writer-held`（或其规范化的 `writer-held`）时，Host 向 Webview 投影 `SESSION_WRITER_HELD` 与固定操作建议，不传递原始 Session/进程信息。`REPLY_QUEUED`、`CALLER_NOT_LIVE` 等其他规范化忙碌原因不得据此误报跨实例占用。UI 保持原选择及可重试状态，不抢占或关闭外部实例；用户应释放原 Session、新建 Session，或连接实际持有它的桌面端。
+同一工作区可有不同 Session；Session 的单写入方保护不等于禁止同时打开工作区。写入 Session 的请求（模型/配置更新、`session.prompt` 发送、子代理发送）返回明确的 `session/writer-held`（或其规范化的 `writer-held`）时，Host 向 Webview 投影 `SESSION_WRITER_HELD` 与固定操作建议，不传递原始 Session/进程信息。`REPLY_QUEUED`、`CALLER_NOT_LIVE` 等其他规范化忙碌原因不得据此误报跨实例占用。模型配置失败留在选择器并保持原选择；发送失败固定在输入框上方，保留草稿与重试能力。都不抢占或关闭外部实例；用户应释放原 Session、新建 Session，或连接实际持有它的桌面端。
 
 已有会话的模型、权限和计划更新只归一化用户提交的配置，保留其原有预设 ID，不通过当前后端的可选预设目录重新推导默认值。跨 Desktop / npm 后端时，缺少原插件预设或预设目录暂时失败，不得把模型编辑变成隐式切换 Agent 预设；用户显式改变预设仍由目标仓储和 DSH 校验。新建会话才按当前目录选择默认预设。所有配置写入前检查取消与后端身份，不能将排队中的更新发到替换后的后端。
 

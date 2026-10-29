@@ -1268,6 +1268,8 @@
   "app.error.releaseAttachment": "无法释放附件。",
   "app.error.attachPasted": "无法添加粘贴或拖放的文件。",
   "app.error.prompt": "发送失败。",
+  "app.error.sessionWriterHeld": "此会话正被另一个 DSH 实例占用，无法发送消息。请在占用它的实例中关闭该会话（或退出该实例）后重试；也可新建会话，或改用桌面端连接。",
+  "app.error.promptOccupiedHint": "如果一直发送不出去，请检查该会话是否正被另一个 DSH 实例（如 DSH Desktop）占用：在该实例中关闭会话或退出后重试，也可以新建会话。",
   "app.error.promptTimeout": "提示词请求响应超时。DSH 可能已接收，请先检查会话再重试。",
   "app.error.listOpenFiles": "无法列出已打开的文件。",
   "app.error.openFileGone": "所选文件已不可用。",

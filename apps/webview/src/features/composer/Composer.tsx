@@ -163,6 +163,14 @@ export interface ComposerProps {
   readonly queue: readonly QueuedInput[]
   /** Plain-Enter behavior while the agent is busy; the accelerated chord uses its opposite. */
   readonly busyEnter?: RunningInputMode
+  /**
+   * A rejected submission. It stays anchored above the input rather than in the
+   * timed toolbar toast: the draft it failed to deliver is still on screen, and
+   * a Session held by another DSH instance remains blocked until the user
+   * releases it there.
+   */
+  readonly submitError?: string | undefined
+  readonly onDismissSubmitError?: (() => void) | undefined
 }
 
 export const Composer = memo(function Composer(props: ComposerProps): ReactElement {
@@ -581,6 +589,23 @@ export const Composer = memo(function Composer(props: ComposerProps): ReactEleme
           {t('composer.modelUnavailable')}
         </p>
       ) : null}
+      {props.submitError === undefined ? null : (
+        <div className="dsh-composer__submit-error" role="alert">
+          <Icon name="alert" />
+          <p>{props.submitError}</p>
+          {props.onDismissSubmitError === undefined ? null : (
+            <button
+              type="button"
+              className="dsh-composer__submit-error-dismiss"
+              aria-label={t('app.dismissError')}
+              title={t('app.dismissError')}
+              onClick={props.onDismissSubmitError}
+            >
+              <Icon name="close" />
+            </button>
+          )}
+        </div>
+      )}
       <div className="dsh-composer__input-shell">
         <ComposerQuickTools
           disabled={props.disabled || inputBlocked || props.attachmentsDisabled === true}
