@@ -98,48 +98,127 @@
   list-style: none;
 }
 
+/* Delivered files follow the desktop Harness shape instead of a nested event
+   card: one compact card per file with an icon badge, the name as the open
+   action, a one-line description, and a single folder action. */
+.dsh-timeline__presented-card {
+  width: 100%;
+  min-width: 0;
+}
+
 .dsh-timeline__presented-files {
-  padding-top: var(--dsh-space-1);
+  display: grid;
+  gap: var(--dsh-space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .dsh-timeline__presented-file {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--dsh-space-1) var(--dsh-space-2);
+  gap: var(--dsh-space-1) var(--dsh-space-3);
   min-width: 0;
+  padding: var(--dsh-space-2) var(--dsh-space-3);
+  border: var(--dsh-border);
+  border-radius: var(--dsh-radius-md);
+  background: var(--dsh-surface-raised);
 }
 
-.dsh-timeline__presented-file-main {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  gap: var(--dsh-space-1);
+.dsh-timeline__presented-file-badge {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--dsh-radius-sm);
   color: var(--dsh-link);
+  background: color-mix(in srgb, var(--dsh-link) 14%, transparent);
 }
 
-.dsh-timeline__presented-file-main > .dsh-icon {
-  width: 20px;
-  height: 20px;
+.dsh-timeline__presented-file-badge .dsh-icon {
+  width: 1rem;
+  height: 1rem;
 }
 
-.dsh-timeline__presented-file-main > span {
+.dsh-timeline__presented-file-body {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  gap: 0.125rem;
+}
+
+.dsh-timeline__presented-file-name {
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  color: var(--dsh-link);
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  text-align: start;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.dsh-timeline__presented-file-name {
+  cursor: pointer;
+}
+
+button.dsh-timeline__presented-file-name:hover {
+  background: none;
+  text-decoration: underline;
+}
+
+button.dsh-timeline__presented-file-name:focus-visible {
+  outline: 2px solid var(--dsh-focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--dsh-radius-sm);
 }
 
 .dsh-timeline__presented-file-description {
-  grid-column: 1 / -1;
+  display: -webkit-box;
   min-width: 0;
   color: var(--dsh-muted);
   font-size: var(--dsh-font-size-2xs);
+  line-height: 1.4;
+  overflow: hidden;
   overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
-.dsh-timeline__presented-file-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--dsh-space-1);
+.dsh-timeline__presented-file-reveal {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: var(--dsh-control-height-compact);
+  height: var(--dsh-control-height-compact);
+  min-height: 0;
+  padding: 0;
+  border: var(--dsh-border);
+  border-radius: var(--dsh-radius-sm);
+  color: var(--dsh-muted);
+  background: var(--dsh-surface-soft);
+  cursor: pointer;
+}
+
+.dsh-timeline__presented-file-reveal .dsh-icon {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+button.dsh-timeline__presented-file-reveal:hover {
+  color: var(--dsh-text);
+  background: var(--dsh-surface-hover);
+}
+
+.dsh-timeline__presented-file-reveal:focus-visible {
+  outline: 2px solid var(--dsh-focus-ring);
+  outline-offset: 1px;
 }
 
 .dsh-timeline__tool-group-latest {
@@ -611,6 +690,16 @@
   white-space: nowrap;
 }
 
+/* The chips are one row tall; a row wider than the card scrolls sideways
+   rather than clipping, and the paging buttons only render when it does. */
+.dsh-timeline__produced-rail {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  min-width: 0;
+  gap: var(--dsh-space-1);
+}
+
 .dsh-timeline__produced-list {
   display: flex;
   flex: 1 1 auto;
@@ -619,6 +708,7 @@
   gap: var(--dsh-space-2);
   overflow-x: auto;
   overflow-y: hidden;
+  overscroll-behavior-x: contain;
   scrollbar-width: none;
 }
 
@@ -626,16 +716,51 @@
   display: none;
 }
 
+/* Borderless paging arrows: quiet by default, they pick up a hover surface so
+   the row keeps reading as one line of chips instead of three widgets. */
+.dsh-timeline__produced-page {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--dsh-radius-sm);
+  color: var(--dsh-muted);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    color var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard),
+    background var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard);
+}
+
+.dsh-timeline__produced-page .dsh-icon {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+button.dsh-timeline__produced-page:hover {
+  color: var(--dsh-text);
+  background: var(--dsh-surface-hover);
+}
+
+.dsh-timeline__produced-page:focus-visible {
+  outline: 2px solid var(--dsh-focus-ring);
+  outline-offset: 1px;
+}
+
 .dsh-timeline__produced-chip,
 .dsh-timeline__attachment {
   display: inline-flex;
   align-items: center;
-  gap: var(--dsh-space-1);
+  gap: 0.375rem;
   flex: 0 0 auto;
   min-width: 0;
   max-width: min(16rem, 100%);
-  min-height: 1.75rem;
-  padding: var(--dsh-space-1) var(--dsh-space-2);
+  min-height: 1.5rem;
+  padding: 0.125rem var(--dsh-space-2);
   border: var(--dsh-border);
   border-radius: 999px;
   color: var(--dsh-link);
@@ -646,15 +771,20 @@
   text-overflow: ellipsis;
 }
 
+.dsh-timeline__produced-chip > .dsh-icon,
+.dsh-timeline__attachment > .dsh-icon {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+button.dsh-timeline__produced-chip:hover {
+  background: var(--dsh-surface-hover);
+}
+
 .dsh-timeline__produced-chip > span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dsh-timeline__show-folder {
-  flex: 0 0 auto;
   white-space: nowrap;
 }
 

@@ -99,7 +99,6 @@ function renderNode(
         assistantLabel,
         onOpenLink,
         onLoadImage,
-        onShowInFolder,
         t,
         onBranch,
         branchUnavailable,
@@ -382,7 +381,6 @@ function renderNode(
         assistantLabel,
         onOpenLink,
         onLoadImage,
-        onShowInFolder,
         t,
         onBranch,
         branchUnavailable,
@@ -547,7 +545,6 @@ function renderAssistantTurn(
   assistantLabel: string,
   onOpenLink?: (href: string) => void,
   onLoadImage?: (image: MessageImageReference) => Promise<string | undefined>,
-  onShowInFolder?: (href: string) => void,
   t: Translate = (key) => key,
   onBranch?: (atSeq: number) => void,
   branchUnavailable = true,
@@ -603,7 +600,7 @@ function renderAssistantTurn(
           transcriptView,
           focused,
         )}
-        {renderProducedFiles(producedFiles, onOpenLink, onShowInFolder, t)}
+        {renderProducedFiles(producedFiles, onOpenLink, t)}
       </article>
       {turnUsage === undefined ? null : <TurnUsageDisclosure usage={turnUsage} translate={t} />}
       {node.markdown.trim() === '' || actionsUnavailable ? null : (

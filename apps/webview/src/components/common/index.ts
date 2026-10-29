@@ -7,6 +7,7 @@ export { Inline, Stack, Surface } from './Layout.js'
 export { useViewportMenuPosition } from './useViewportMenuPosition.js'
 export { useDismissibleLayer } from './useDismissibleLayer.js'
 export { useScrollFollow } from './useScrollFollow.js'
+export { useOverflowRail } from './useOverflowRail.js'
 export { useTailEntrance } from './useTailEntrance.js'
 export type {
   ScrollAnchor,

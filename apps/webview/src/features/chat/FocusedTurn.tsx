@@ -222,7 +222,6 @@ export function FocusedTurn(props: {
       {renderProducedFiles(
         producedFilePaths(node.nodes.flatMap((member) => (member.kind === 'tool' ? [member] : []))),
         context.onOpenLink === undefined ? undefined : context.requestOpenLink,
-        context.onShowInFolder,
         context.t,
       )}
     </section>

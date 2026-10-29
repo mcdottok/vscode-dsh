@@ -1380,6 +1380,8 @@
   "timeline.imageUnavailable": "Unable to load image",
   "timeline.imageUnnamed": "Image",
   "timeline.producedFiles": "Produced files",
+  "timeline.producedFilesPrevious": "Browse earlier produced files",
+  "timeline.producedFilesNext": "Browse later produced files",
   "timeline.deliverables": "Files ready to open",
   "timeline.openProduced": "Open {name}",
   "timeline.openPresented": "Open delivered file {name}",

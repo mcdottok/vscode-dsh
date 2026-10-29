@@ -32,11 +32,11 @@ import type { OpenFileCandidate, ReferenceCandidate } from '../../app/store.js'
 import { useI18n } from '../../i18n.js'
 import { Icon } from '../../ui/Icon.js'
 import { UnifiedComposer } from '../../components/common/UnifiedComposer.js'
+import { useOverflowRail } from '../../components/common/useOverflowRail.js'
 import { AttachmentLightbox } from '../attachments/AttachmentLightbox.js'
 import { COMMAND_MENU_ID, CommandPalette, commandMenuOptionId } from '../commands/CommandPalette.js'
 import type { PopupSelectRegistry } from '../commands/popupSelectRegistry.js'
 import { useAttachmentLightbox } from './useAttachmentLightbox.js'
-import { useAttachmentRail } from './useAttachmentRail.js'
 import { useComposerDragDrop } from './useComposerDragDrop.js'
 import { useComposerMenuState } from './useComposerMenuState.js'
 import { useComposerSubmit } from './useComposerSubmit.js'
@@ -183,9 +183,8 @@ export const Composer = memo(function Composer(props: ComposerProps): ReactEleme
   const hintId = useId()
   const pendingCursorRef = useRef<number | undefined>(undefined)
   const { restoreDraft } = useDraftHistory(props.draft, props.onDraftChange)
-  const { railRef: attachmentRailRef, scrollable: attachmentRailScrollable } = useAttachmentRail(
-    props.attachments.length,
-  )
+  const { railRef: attachmentRailRef, scrollable: attachmentRailScrollable } =
+    useOverflowRail<HTMLUListElement>(props.attachments.length)
   const inputBlocked = props.inputDisabled === true
   const { isSubmitting, isDirectSubmitting, cancelSubmission, submit, steerQueuedInputs } = useComposerSubmit(
     {

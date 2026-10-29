@@ -1380,6 +1380,8 @@
   "timeline.imageUnavailable": "图片加载失败",
   "timeline.imageUnnamed": "图片",
   "timeline.producedFiles": "产出文件",
+  "timeline.producedFilesPrevious": "向左浏览产出文件",
+  "timeline.producedFilesNext": "向右浏览产出文件",
   "timeline.deliverables": "可打开的交付文件",
   "timeline.openProduced": "打开 {name}",
   "timeline.openPresented": "打开交付文件 {name}",

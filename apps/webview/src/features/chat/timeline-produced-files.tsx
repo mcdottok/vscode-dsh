@@ -1,6 +1,6 @@
-import type { ReactElement } from 'react'
+import { useEffect, type ReactElement } from 'react'
 import type { Translate } from '../../i18n.js'
-import { ContentFlow } from '../../components/common/index.js'
+import { ContentFlow, useOverflowRail } from '../../components/common/index.js'
 import { Icon } from '../../ui/Icon.js'
 import type { ToolTimelineNode } from './ToolCallCollection.js'
 import type { DisplayTimelineNode } from './timeline-shared.js'
@@ -12,52 +12,46 @@ export function renderDeliverables(
   t: Translate,
 ): ReactElement {
   return (
-    <section className="dsh-timeline__card dsh-timeline__card--event" aria-label={t('timeline.deliverables')}>
-      <header className="dsh-timeline__card-header">
-        <div className="dsh-timeline__card-heading">
-          <span className="dsh-message-avatar dsh-message-avatar--system" aria-hidden="true">
-            <Icon name="file" />
-          </span>
-          <strong>{t('timeline.deliverables')}</strong>
-        </div>
-        <span className="dsh-timeline__card-meta">{t('timeline.items', { count: node.files.length })}</span>
-      </header>
-      <ul className="dsh-timeline__event-list dsh-timeline__presented-files" data-presented-files-row="true">
+    <section className="dsh-timeline__presented-card" aria-label={t('timeline.deliverables')}>
+      <ul className="dsh-timeline__presented-files" data-presented-files-row="true">
         {node.files.map((file, index) => {
           const label = producedFileLabel(file.path)
           return (
             <li className="dsh-timeline__presented-file" key={`${file.path}:${index}`}>
-              <div className="dsh-timeline__presented-file-main" title={file.path}>
+              <span className="dsh-timeline__presented-file-badge" aria-hidden="true">
                 <Icon name="file" />
-                <ContentFlow as="span" variant="truncate">
-                  {label}
-                </ContentFlow>
-              </div>
-              {file.description === undefined || file.description.trim() === '' ? null : (
-                <span className="dsh-timeline__presented-file-description">{file.description}</span>
-              )}
-              <div className="dsh-timeline__presented-file-actions">
-                {onOpenLink === undefined ? null : (
+              </span>
+              <div className="dsh-timeline__presented-file-body">
+                {onOpenLink === undefined ? (
+                  <span className="dsh-timeline__presented-file-name" title={file.path}>
+                    {label}
+                  </span>
+                ) : (
                   <button
-                    className="dsh-button dsh-button--secondary dsh-button--compact"
+                    className="dsh-timeline__presented-file-name"
                     type="button"
+                    title={file.path}
                     aria-label={t('timeline.openPresented', { name: label })}
                     onClick={() => onOpenLink(file.path)}
                   >
-                    {t('timeline.openProduced', { name: label })}
+                    {label}
                   </button>
                 )}
-                {onShowInFolder === undefined ? null : (
-                  <button
-                    className="dsh-button dsh-button--secondary dsh-button--compact"
-                    type="button"
-                    aria-label={t('timeline.revealPresented', { name: label })}
-                    onClick={() => onShowInFolder(file.path)}
-                  >
-                    {t('timeline.showInFolder')}
-                  </button>
+                {file.description === undefined || file.description.trim() === '' ? null : (
+                  <span className="dsh-timeline__presented-file-description">{file.description}</span>
                 )}
               </div>
+              {onShowInFolder === undefined ? null : (
+                <button
+                  className="dsh-timeline__presented-file-reveal"
+                  type="button"
+                  title={t('timeline.showInFolder')}
+                  aria-label={t('timeline.revealPresented', { name: label })}
+                  onClick={() => onShowInFolder(file.path)}
+                >
+                  <Icon name="folder" />
+                </button>
+              )}
             </li>
           )
         })}
@@ -69,10 +63,49 @@ export function renderDeliverables(
 export function renderProducedFiles(
   paths: readonly string[],
   onOpenLink: ((href: string) => void) | undefined,
-  onShowInFolder: ((href: string) => void) | undefined,
   t: Translate,
 ): ReactElement | null {
   if (paths.length === 0) return null
+  return <ProducedFilesRow paths={paths} onOpenLink={onOpenLink} t={t} />
+}
+
+/**
+ * One row of produced-file chips. The labels stay one line tall, so a row that
+ * outgrows the card scrolls sideways instead of clipping: the paging buttons
+ * appear only when the rail actually overflows, and a plain wheel over the row
+ * travels sideways rather than dragging the conversation.
+ */
+function ProducedFilesRow({
+  paths,
+  onOpenLink,
+  t,
+}: {
+  readonly paths: readonly string[]
+  readonly onOpenLink: ((href: string) => void) | undefined
+  readonly t: Translate
+}): ReactElement {
+  const { railRef, scrollable } = useOverflowRail<HTMLDivElement>(paths.length)
+  const page = (direction: -1 | 1): void => {
+    const element = railRef.current
+    if (element === null) return
+    const distance = Math.max(160, Math.floor(element.clientWidth * 0.8))
+    element.scrollBy({ left: direction * distance, behavior: 'smooth' })
+  }
+  useEffect(() => {
+    const element = railRef.current
+    if (element === null) return
+    // React's synthetic wheel listener is passive, so this one is native: the
+    // conversation underneath must not scroll while the rail consumes the
+    // gesture.
+    const translate = (event: WheelEvent): void => {
+      if (event.deltaX !== 0 || event.deltaY === 0) return
+      if (element.scrollWidth <= element.clientWidth) return
+      event.preventDefault()
+      element.scrollLeft += event.deltaY
+    }
+    element.addEventListener('wheel', translate, { passive: false })
+    return () => element.removeEventListener('wheel', translate)
+  }, [railRef])
   return (
     <div
       className="dsh-timeline__produced-files"
@@ -80,42 +113,59 @@ export function renderProducedFiles(
       aria-label={t('timeline.producedFiles')}
     >
       <span className="dsh-timeline__produced-label">{t('timeline.producedFiles')}</span>
-      <div className="dsh-timeline__produced-list">
-        {paths.map((path) => {
-          const label = producedFileLabel(path)
-          return onOpenLink === undefined ? (
-            <span className="dsh-timeline__produced-chip" key={path} title={path}>
-              <Icon name="file" />
-              <ContentFlow as="span" variant="truncate">
-                {label}
-              </ContentFlow>
-            </span>
-          ) : (
-            <button
-              className="dsh-timeline__produced-chip"
-              key={path}
-              type="button"
-              title={path}
-              aria-label={t('timeline.openProduced', { name: path })}
-              onClick={() => onOpenLink(path)}
-            >
-              <Icon name="file" />
-              <ContentFlow as="span" variant="truncate">
-                {label}
-              </ContentFlow>
-            </button>
-          )
-        })}
+      <div className="dsh-timeline__produced-rail">
+        {scrollable ? (
+          <button
+            key="previous"
+            className="dsh-timeline__produced-page"
+            type="button"
+            aria-label={t('timeline.producedFilesPrevious')}
+            onClick={() => page(-1)}
+          >
+            <Icon name="chevron-left" />
+          </button>
+        ) : null}
+        {/* Keyed so inserting the paging buttons never remounts the scroll
+            element: a remount would reset its offset and its listeners. */}
+        <div className="dsh-timeline__produced-list" key="list" ref={railRef}>
+          {paths.map((path) => {
+            const label = producedFileLabel(path)
+            return onOpenLink === undefined ? (
+              <span className="dsh-timeline__produced-chip" key={path} title={path}>
+                <Icon name="file" />
+                <ContentFlow as="span" variant="truncate">
+                  {label}
+                </ContentFlow>
+              </span>
+            ) : (
+              <button
+                className="dsh-timeline__produced-chip"
+                key={path}
+                type="button"
+                title={path}
+                aria-label={t('timeline.openProduced', { name: path })}
+                onClick={() => onOpenLink(path)}
+              >
+                <Icon name="file" />
+                <ContentFlow as="span" variant="truncate">
+                  {label}
+                </ContentFlow>
+              </button>
+            )
+          })}
+        </div>
+        {scrollable ? (
+          <button
+            key="next"
+            className="dsh-timeline__produced-page"
+            type="button"
+            aria-label={t('timeline.producedFilesNext')}
+            onClick={() => page(1)}
+          >
+            <Icon name="chevron-right" />
+          </button>
+        ) : null}
       </div>
-      {onShowInFolder === undefined ? null : (
-        <button
-          className="dsh-button dsh-button--secondary dsh-button--compact dsh-timeline__show-folder"
-          type="button"
-          onClick={() => onShowInFolder(paths[0]!)}
-        >
-          {t('timeline.showInFolder')}
-        </button>
-      )}
     </div>
   )
 }
