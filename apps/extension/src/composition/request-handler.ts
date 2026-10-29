@@ -254,6 +254,15 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
       return { updated: true }
     }
     if (request.type === 'app.ready') {
+      // Preconnect may have published its progress before this Webview could
+      // receive it. Replay the current phase before joining the slow operation;
+      // surface assignment still waits for connection completion below.
+      const initial = coordinator.getState()
+      if (['locating-runtime', 'starting', 'discovering', 'connecting', 'stopping'].includes(initial.kind)) {
+        const snapshot = publicState(initial, diagnostics.connectionOutput?.())
+        if (surfaceId === undefined) await postEvent('connection.snapshot', snapshot)
+        else await postEventTo(surfaceId, 'connection.snapshot', snapshot, () => !signal.aborted)
+      }
       let connectionFailure: { readonly reason: unknown } | undefined
       try {
         const opening = openingConnection

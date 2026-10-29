@@ -12,6 +12,7 @@ export interface AppLifecycleActionDependencies {
   readonly client: ProtocolClient
   readonly invalidateFeedback: () => void
   readonly markStartupRestoreArmed: () => void
+  readonly setConnectionInitializing: (pending: boolean) => void
   readonly refresh: () => Promise<void>
 }
 
@@ -30,8 +31,13 @@ export function createAppLifecycleActions(
   return {
     initialize: async () => {
       let armed = false
+      deps.setConnectionInitializing(true)
       try {
-        await client.request<unknown>({ type: 'app.ready', requestId: requestId() })
+        try {
+          await client.request<unknown>({ type: 'app.ready', requestId: requestId() })
+        } finally {
+          deps.setConnectionInitializing(false)
+        }
         // Official ui-conversation row: the host-side busy-Enter preference is
         // the composer's plain-Enter policy while a turn is running. It is
         // independent of the session/catalog snapshot. Start it alongside the

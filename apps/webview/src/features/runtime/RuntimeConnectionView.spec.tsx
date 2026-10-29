@@ -28,6 +28,19 @@ function diagnosticLog(): HTMLElement {
 }
 
 describe('RuntimeConnectionView', () => {
+  it('shows preparation before the first Host snapshot and restores retry when initialization ends', () => {
+    const { rerender } = render(
+      <RuntimeConnectionView state={{ kind: 'idle' }} initializing onRetry={vi.fn()} />,
+    )
+    expect(screen.getByRole('progressbar', { name: 'Preparing DSH connection' })).toBeDefined()
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull()
+    rerender(<RuntimeConnectionView state={{ kind: 'locating-runtime' }} initializing onRetry={vi.fn()} />)
+    expect(screen.getByRole('progressbar', { name: 'Looking for DSH' })).toBeDefined()
+    rerender(<RuntimeConnectionView state={{ kind: 'idle' }} initializing={false} onRetry={vi.fn()} />)
+    expect(screen.queryByRole('progressbar')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeDefined()
+  })
+
   it.each([
     ['new-isolated', 'Local DSH is not connected', 'You selected the local DSH package (npm).'],
     ['custom', 'DSH Desktop is not connected', 'Keep DSH Desktop running with VS Code connection enabled'],

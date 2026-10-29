@@ -466,6 +466,34 @@ describe('request gateway editor surface routes', () => {
     ])
   })
 
+  it('replays preconnect progress before waiting for the connection to finish', async () => {
+    let finish!: () => void
+    let state: BackendState = { kind: 'idle' }
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    const connect = vi.fn(() => {
+      state = { kind: 'locating-runtime' }
+      return pending
+    })
+    harness = buildGateway({ getState: () => state, connect })
+    harness.openSidebar(false)
+    const ready = harness.gateway.router.handle(request('app.ready', 'slow-ready'), 'sidebar')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(harness.events).toContainEqual({
+      surfaceId: 'sidebar',
+      type: 'event',
+      name: 'connection.snapshot',
+      payload: { kind: 'locating-runtime' },
+    })
+    expect(harness.events.some((entry) => entry.name === 'ui.surface.assigned')).toBe(false)
+    expect(connect).toHaveBeenCalledOnce()
+    finish()
+    await ready
+    expect(harness.events.some((entry) => entry.name === 'ui.surface.assigned')).toBe(true)
+  })
+
   it.each([false, true])(
     'delivers a failed connection snapshot to a newly ready surface after early connect=%s',
     async (early) => {

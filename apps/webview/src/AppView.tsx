@@ -350,6 +350,7 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
                         {...(state.connectionOutput === undefined ? {} : { output: state.connectionOutput })}
                         state={backend}
                         onReadSettings={readConnectionSettings}
+                        initializing={state.connectionInitializing === true}
                         draftPending
                         onRetry={retryConnection}
                         onConnectDesktop={() => store.runtimeAction('connect-desktop')}
@@ -412,6 +413,7 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
                       {...(state.connectionOutput === undefined ? {} : { output: state.connectionOutput })}
                       state={backend}
                       onReadSettings={readConnectionSettings}
+                      initializing={state.connectionInitializing === true}
                       loadingSessionCatalog={backend.kind === 'connected'}
                       onRetry={retryConnection}
                       onConnectDesktop={() => store.runtimeAction('connect-desktop')}

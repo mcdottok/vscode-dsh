@@ -24,7 +24,9 @@ describe('connection startup priority', () => {
         return Promise.resolve()
       })
       const arm = vi.fn()
+      const startupStates: boolean[] = []
       const actions = createAppLifecycleActions({
+        setConnectionInitializing: (pending) => startupStates.push(pending),
         client: { request } as unknown as ProtocolClient,
         checkDshUpdates: updates,
         applyBusyEnterPreference: () => Promise.resolve(),
@@ -38,9 +40,11 @@ describe('connection startup priority', () => {
         : expect(initializing).resolves.toBeUndefined()
       expect(request).toHaveBeenCalledWith(expect.objectContaining({ type: 'app.ready' }))
       expect(updates).not.toHaveBeenCalled()
+      expect(startupStates).toEqual([true])
       finish?.()
       await settled
       expect(arm).toHaveBeenCalledOnce()
+      expect(startupStates).toEqual([true, false])
       expect(events).toEqual(failed ? ['ready', 'updates'] : ['ready', 'refresh', 'updates'])
     },
   )

@@ -8,6 +8,7 @@ export interface RuntimeConnectionViewProps {
   readonly state: WebviewBackendState
   readonly output?: readonly ConnectionLogEntry[]
   readonly loadingSessionCatalog?: boolean
+  readonly initializing?: boolean
   readonly draftPending?: boolean
   readonly onRetry?: () => void
   readonly onOpenSettings?: () => void
@@ -37,8 +38,10 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
   }, [onReadSettings])
   const catalogLoading = props.loadingSessionCatalog === true && props.state.kind === 'connected'
   const idle = props.state.kind === 'idle'
+  const initializing = idle && props.initializing === true
   const terminalFailure = ['failed', 'port-conflict', 'runtime-missing'].includes(props.state.kind)
-  const pending = catalogLoading || (!terminalFailure && !idle && props.state.kind !== 'connected')
+  const pending =
+    initializing || catalogLoading || (!terminalFailure && !idle && props.state.kind !== 'connected')
   const [attempt, setAttempt] = useState(0)
   const phase =
     props.state.kind === 'connecting' || props.state.kind === 'discovering' ? props.state.phase : undefined
@@ -93,13 +96,15 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
               ? 'runtime.posture.draftDisconnected'
               : 'runtime.connectionProgress.failureTitle',
         )
-      : idle && (local || desktop)
-        ? t(local ? 'runtime.posture.localIdleTitle' : 'runtime.posture.desktopIdleTitle')
-        : connectionTitle(props.state, catalogLoading, t)
+      : initializing
+        ? t('runtime.posture.preparingTitle')
+        : idle && (local || desktop)
+          ? t(local ? 'runtime.posture.localIdleTitle' : 'runtime.posture.desktopIdleTitle')
+          : connectionTitle(props.state, catalogLoading, t)
   const loading = pending && !timedOut
   const retryable =
     timedOut ||
-    idle ||
+    (idle && !initializing) ||
     ((props.state.kind === 'failed' || props.state.kind === 'port-conflict') && props.state.retryable)
   const message = savedAddressFailure
     ? t('runtime.posture.savedAddressError')
@@ -139,13 +144,15 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
         <p className="dsh-runtime-connection__subtitle">
           {savedAddressFailure
             ? t('runtime.posture.savedAddressHelp')
-            : t(
-                failure || idle
-                  ? props.draftPending
-                    ? 'runtime.posture.draftHelp'
-                    : helpKey
-                  : 'runtime.posture.wait',
-              )}
+            : initializing && !failure
+              ? t('runtime.posture.preparingHelp')
+              : t(
+                  failure || idle
+                    ? props.draftPending
+                      ? 'runtime.posture.draftHelp'
+                      : helpKey
+                    : 'runtime.posture.wait',
+                )}
         </p>
       </div>
       <div className="dsh-runtime-connection__actions">

@@ -18,6 +18,7 @@ export const EMPTY_SUBAGENT_CATALOG: SubagentCatalog = { entries: [], parentAvai
 export function createInitialState(composerPreferences: ComposerPreferences): AppState {
   return {
     backend: { kind: 'idle' },
+    connectionInitializing: true,
     connectionEpoch: 0,
     connectedDshVersion: undefined,
     subagentImagePrompts: false,

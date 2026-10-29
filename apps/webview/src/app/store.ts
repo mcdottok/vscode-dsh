@@ -832,6 +832,13 @@ export function createAppStore(client = new ProtocolClient(getVsCodeApi())): App
   }
   const { checkDshUpdates, installDshVersion } = createDshUpdateActions({ client, setState })
   const lifecycleActions = createAppLifecycleActions({
+    setConnectionInitializing: (pending) => {
+      setState((current) =>
+        current.connectionInitializing === pending
+          ? current
+          : { ...current, connectionInitializing: pending },
+      )
+    },
     applyBusyEnterPreference,
     checkDshUpdates,
     client,

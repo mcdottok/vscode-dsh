@@ -1846,6 +1846,8 @@
   "runtime.posture.savedAddressError": "保存的地址不可达，或未通过 DSH 服务检查。桌面端重启后端口可能变化；反复重试旧地址不会更新连接地址。",
   "runtime.updateConnectionAddress": "更新连接地址",
   "runtime.posture.help": "选择连接方式，或点击「重试」按已保存的配置重新连接。",
+  "runtime.posture.preparingTitle": "正在准备 DSH 连接",
+  "runtime.posture.preparingHelp": "正在读取连接配置并恢复上次使用的连接，请稍候。",
   "runtime.posture.localIdleTitle": "本机 DSH 尚未连接",
   "runtime.posture.desktopIdleTitle": "DSH Desktop 尚未连接",
   "runtime.posture.localHelp": "上次选择了本机 DSH 安装包（npm）。点击「重试」启动并连接；若仍无法连接，请在连接设置中检查安装包与版本。",

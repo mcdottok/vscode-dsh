@@ -1846,6 +1846,8 @@
   "runtime.posture.savedAddressError": "The saved address is unavailable or did not pass the DSH service check. Its port may have changed after a restart; retrying the old address will not update it.",
   "runtime.updateConnectionAddress": "Update connection address",
   "runtime.posture.help": "Choose a connection source, or retry using your saved settings.",
+  "runtime.posture.preparingTitle": "Preparing DSH connection",
+  "runtime.posture.preparingHelp": "Reading your connection settings and restoring the saved connection…",
   "runtime.posture.localIdleTitle": "Local DSH is not connected",
   "runtime.posture.desktopIdleTitle": "DSH Desktop is not connected",
   "runtime.posture.localHelp": "You selected the local DSH package (npm). Retry to start and connect. If connection still fails, check the package and version in connection settings.",

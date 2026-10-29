@@ -155,6 +155,8 @@ export interface AppState extends SessionModelDirectoryState {
   /** Recent direct sends, correlated with DSH inbox rows by request identity. */
   readonly directPromptRequestIds?: readonly string[]
   readonly backend: WebviewBackendState
+  /** Initial Host handshake is pending; idle does not yet mean disconnected. */
+  readonly connectionInitializing?: boolean
   readonly connectionOutput?: readonly ConnectionLogEntry[]
   /** Monotonic opaque counter for a newly observed connected backend epoch. */
   readonly connectionEpoch?: number
