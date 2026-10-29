@@ -218,6 +218,7 @@
  * so the page never pours the whole process into the transcript, whatever the
  * transcript view. */
 .dsh-focused-turn[data-compact-process='true'] .dsh-focused-turn__process {
+  position: relative;
   max-height: min(46vh, 340px);
   overflow: auto;
   overscroll-behavior: contain;

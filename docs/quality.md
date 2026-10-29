@@ -97,6 +97,8 @@ node --experimental-transform-types tests/vscode-e2e/run.ts
 
 激活未连接时不启动 DSH、不读取大目录；一个连接只保留一个上游流。增量及时投递并保留有界背压，历史有界分批传输并使用虚拟列表，加载旧消息不得淘汰已加载正文，实时回复保持连续；会话切换和释放清理对应展示缓存，导出和附件流式处理；断开后释放循环、timer、socket、listener 和 child handle。至少用 10,000 个 Timeline 节点检验首屏和交互，不能依赖全量 DOM；该检验属于压力套件，默认 CI 不执行，改动渲染窗口时用 `pnpm test:stress` 运行并记录结果。其他性能阈值由真实基线与测试固定。
 
+工作日志的嵌套滚动与裁切需运行真实 Chromium 布局回归，检查四种展示档位下展开、收起工具组是否撑高外层滚动区域。压力套件在 Windows 自动查找 Chrome / Edge，也可设置 `DSH_TEST_BROWSER` 指定 Chromium 可执行文件；找不到浏览器时该项跳过，不能将其视为浏览器验证通过。测试只启动隔离的本地页面和临时浏览器配置，不构建或安装扩展。
+
 Webview 入口保持可恢复；动态加载只用于可失败的非首屏资源，新增 Shiki 语言只更新有界 loader，不引入全量语法包或 wasm 引擎。VSIX 的 `.vscodeignore` 是包含清单；打包后用 `vsce ls --no-dependencies` 核对实际内容、sourcemap、许可证、隐私文案及无凭据/临时文件。Webview media sourcemap 不随包发布，Extension Host sourcemap 若发布须检查相对 source 路径。
 
 ## PR 与发布门禁

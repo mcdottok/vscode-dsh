@@ -1,0 +1,81 @@
+<!doctype html>
+<html>
+  <head></head>
+  <body class="vscode-dark">
+    <div id="root"></div>
+    <script type="module">
+      import React from 'react'
+      import { createRoot } from 'react-dom/client'
+      import { Timeline } from '/src/features/chat/Timeline.tsx'
+      import { ConversationLayoutProvider } from '/src/app/ConversationLayoutProvider.tsx'
+      import '@dsh-vscode/ui/styles.css'
+      import '/src/styles/app.css'
+      import '/src/styles/components.css'
+      import '/src/styles/layout.css'
+      import '/src/styles/theme.css'
+      import '/src/styles/focused-conversation.css'
+      import '/src/styles/focused-workbench.css'
+      import '/src/styles/focused-surfaces.css'
+      import '/src/styles/workbench-refinement.css'
+      const nodes = [{ kind: 'user-message', id: 'old-user', markdown: 'Investigate the project' }]
+      for (let i = 0; i < 85; i++) {
+        nodes.push({
+          kind: 'assistant-message',
+          id: 'r' + i,
+          markdown: '',
+          reasoning: { markdown: 'Inspect implementation ' + i, streaming: false },
+          streaming: false,
+          turn: 1,
+          step: i + 1,
+        })
+        nodes.push({
+          kind: 'tool',
+          id: 't' + i,
+          tool: {
+            id: 't' + i,
+            name: 'ops_bash',
+            category: 'execute',
+            title: 'Read claimsEndpoint logic ' + i,
+            status: 'completed',
+            turn: 1,
+            step: i + 1,
+            inputSummary: 'command ' + i,
+            outputSummary: 'result\n'.repeat(30),
+            metadata: {},
+          },
+        })
+      }
+      nodes.push(
+        { kind: 'user-message', id: 'user', markdown: 'Only reply hello' },
+        {
+          kind: 'assistant-message',
+          id: 'last',
+          markdown: 'Hello.',
+          streaming: false,
+          turn: 2,
+          turnCompleted: true,
+        },
+      )
+      createRoot(document.getElementById('root')).render(
+        React.createElement(
+          ConversationLayoutProvider,
+          { initialLayout: 'focused' },
+          React.createElement(
+            'div',
+            {
+              className: 'dsh-app',
+              'data-conversation-layout': 'focused',
+              style: { height: '100vh', display: 'flex', flexDirection: 'column' },
+            },
+            React.createElement(Timeline, {
+              sessionId: 'probe',
+              nodes,
+              streaming: false,
+              transcriptView: new URLSearchParams(location.search).get('mode') || 'compact',
+            }),
+          ),
+        ),
+      )
+    </script>
+  </body>
+</html>

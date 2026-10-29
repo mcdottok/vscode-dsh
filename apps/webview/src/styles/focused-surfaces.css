@@ -140,6 +140,8 @@
 
 .dsh-app[data-conversation-layout='focused'] .dsh-tool-row__read-window:has(.dsh-tool-code-preview) > h4 {
   position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
   width: 1px;
   height: 1px;
   overflow: hidden;
@@ -182,6 +184,10 @@
     .dsh-tool-card--completed .dsh-tool-card__status
   ) {
   position: absolute;
+  /* Keep visually hidden text out of the scrollable overflow, including
+   * when the tool is far below the inner work log's clipping boundary. */
+  inset-block-start: 0;
+  inset-inline-start: 0;
   width: 1px;
   height: 1px;
   padding: 0;
