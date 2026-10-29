@@ -1,5 +1,5 @@
 import { SessionStartupView } from './features/sessions/SessionStartupView.js'
-import { useState, type ReactElement } from 'react'
+import { useCallback, useState, type ReactElement } from 'react'
 import { AppErrorBoundary } from './features/errors/AppErrorBoundary.js'
 import { AppSettingsDrawer } from './features/settings/AppSettingsDrawer.js'
 import { ScheduleDrawer } from './features/schedules/ScheduleDrawer.js'
@@ -152,6 +152,7 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
     visibleReferenceLoading,
     welcomeVisible,
   } = props
+  const readConnectionSettings = useCallback(() => store.readSettings(), [store])
   const [inspectorReveal, setInspectorReveal] = useState<{
     readonly sessionKey: string
     readonly nodeId: string
@@ -348,6 +349,7 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
                       <RuntimeConnectionView
                         {...(state.connectionOutput === undefined ? {} : { output: state.connectionOutput })}
                         state={backend}
+                        onReadSettings={readConnectionSettings}
                         draftPending
                         onRetry={retryConnection}
                         onConnectDesktop={() => store.runtimeAction('connect-desktop')}
@@ -409,6 +411,7 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
                     <RuntimeConnectionView
                       {...(state.connectionOutput === undefined ? {} : { output: state.connectionOutput })}
                       state={backend}
+                      onReadSettings={readConnectionSettings}
                       loadingSessionCatalog={backend.kind === 'connected'}
                       onRetry={retryConnection}
                       onConnectDesktop={() => store.runtimeAction('connect-desktop')}

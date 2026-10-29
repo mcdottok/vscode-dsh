@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react'
-import type { ConnectionLogEntry } from '@dsh-vscode/domain'
+import type { ConnectionLogEntry, ExtensionSettingsSummary } from '@dsh-vscode/domain'
 import type { WebviewBackendState } from '../../app/store.js'
 import { useI18n } from '../../i18n.js'
 import { Icon } from '../../ui/Icon.js'
@@ -13,10 +13,28 @@ export interface RuntimeConnectionViewProps {
   readonly onOpenSettings?: () => void
   readonly onShowDiagnosticsOutput?: () => Promise<void>
   readonly onConnectDesktop?: () => Promise<void>
+  readonly onReadSettings?: () => Promise<ExtensionSettingsSummary | undefined>
 }
 
 export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactElement {
   const { t } = useI18n()
+  const { onReadSettings } = props
+  const [loadedSettings, setLoadedSettings] = useState<{
+    readonly reader: typeof onReadSettings
+    readonly value: ExtensionSettingsSummary | undefined
+  }>()
+  const settings = loadedSettings?.reader === onReadSettings ? loadedSettings?.value : undefined
+  useEffect(() => {
+    let current = true
+    void onReadSettings?.()
+      .then((value) => {
+        if (current) setLoadedSettings({ reader: onReadSettings, value })
+      })
+      .catch(() => undefined)
+    return () => {
+      current = false
+    }
+  }, [onReadSettings])
   const catalogLoading = props.loadingSessionCatalog === true && props.state.kind === 'connected'
   const idle = props.state.kind === 'idle'
   const terminalFailure = ['failed', 'port-conflict', 'runtime-missing'].includes(props.state.kind)
@@ -39,6 +57,24 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
   const latestAttempt =
     props.output?.findLastIndex((entry) => entry.phase === 'connect' && entry.status === 'started') ?? -1
   const attemptOutput = latestAttempt < 0 ? [] : (props.output?.slice(latestAttempt) ?? [])
+  const mode = idle
+    ? (settings?.connection.mode ?? attemptOutput[0]?.mode)
+    : (attemptOutput[0]?.mode ?? settings?.connection.mode)
+  const local = mode === 'new-isolated'
+  const desktop =
+    mode === 'custom' ||
+    mode === 'attach-only' ||
+    (mode === 'auto' && settings?.connection.mode === 'auto' && settings.runtime.autoStart === false)
+  const helpKey = local
+    ? 'runtime.posture.localHelp'
+    : desktop
+      ? 'runtime.posture.desktopHelp'
+      : 'runtime.posture.help'
+  const hintKey = local
+    ? 'runtime.posture.localHint'
+    : desktop
+      ? 'runtime.posture.desktopSelectedHint'
+      : 'runtime.posture.desktopHint'
   const savedAddressFailure =
     props.state.kind === 'failed' &&
     attemptOutput[0]?.mode === 'custom' &&
@@ -57,7 +93,9 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
               ? 'runtime.posture.draftDisconnected'
               : 'runtime.connectionProgress.failureTitle',
         )
-      : connectionTitle(props.state, catalogLoading, t)
+      : idle && (local || desktop)
+        ? t(local ? 'runtime.posture.localIdleTitle' : 'runtime.posture.desktopIdleTitle')
+        : connectionTitle(props.state, catalogLoading, t)
   const loading = pending && !timedOut
   const retryable =
     timedOut ||
@@ -105,7 +143,7 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
                 failure || idle
                   ? props.draftPending
                     ? 'runtime.posture.draftHelp'
-                    : 'runtime.posture.help'
+                    : helpKey
                   : 'runtime.posture.wait',
               )}
         </p>
@@ -166,7 +204,7 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
         )}
       </div>
       {props.onConnectDesktop === undefined || props.state.kind === 'connected' ? null : (
-        <p className="dsh-runtime-connection__hint">{t('runtime.posture.desktopHint')}</p>
+        <p className="dsh-runtime-connection__hint">{t(hintKey)}</p>
       )}
       {!desktopFailed ? null : (
         <p className="dsh-runtime-connection__error" role="alert">

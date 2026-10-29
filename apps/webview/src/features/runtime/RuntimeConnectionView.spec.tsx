@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ConnectionLogEntry } from '@dsh-vscode/domain'
+import type { ConnectionLogEntry, ExtensionSettingsSummary } from '@dsh-vscode/domain'
 import { RuntimeConnectionView } from './RuntimeConnectionView.js'
 
 const first: ConnectionLogEntry = {
@@ -28,6 +28,45 @@ function diagnosticLog(): HTMLElement {
 }
 
 describe('RuntimeConnectionView', () => {
+  it.each([
+    ['new-isolated', 'Local DSH is not connected', 'You selected the local DSH package (npm).'],
+    ['custom', 'DSH Desktop is not connected', 'Keep DSH Desktop running with VS Code connection enabled'],
+    ['auto', 'DSH Desktop is not connected', 'Keep DSH Desktop running with VS Code connection enabled'],
+  ] as const)(
+    'reads saved %s settings after reload before any connection log exists',
+    async (mode, title, help) => {
+      const value: ExtensionSettingsSummary = {
+        extensionVersion: '0.1.81',
+        connection: { mode, customEndpointConfigured: mode === 'custom' },
+        runtime: { customExecutableConfigured: false, autoStart: mode === 'new-isolated' },
+        security: { defaultPermissionPreset: 'workspace-write' },
+        defaultAgent: {
+          preset: 'standard',
+          toolMode: 'native',
+          permissionPreset: 'workspace-write',
+          planMode: false,
+          model: { providerId: 'fixture', modelId: 'model' },
+        },
+      }
+      const read = vi.fn().mockResolvedValue(value)
+      render(
+        <RuntimeConnectionView state={{ kind: 'idle' }} onReadSettings={read} onConnectDesktop={vi.fn()} />,
+      )
+      expect(
+        screen.getByText('Choose a connection source, or retry using your saved settings.'),
+      ).toBeDefined()
+      await screen.findByRole('heading', { name: title })
+      expect(screen.getByText((text) => text.startsWith(help))).toBeDefined()
+      expect(read).toHaveBeenCalledOnce()
+      if (mode === 'new-isolated')
+        expect(
+          screen.getByText(
+            'Connection source: local DSH package (npm). Desktop does not need to be running.',
+          ),
+        ).toBeDefined()
+    },
+  )
+
   it('offers Desktop authorization directly on the disconnected screen and prevents duplicate prompts', async () => {
     let finish!: () => void
     const connect = vi.fn(
