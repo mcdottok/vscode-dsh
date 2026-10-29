@@ -95,6 +95,28 @@
   white-space: nowrap;
 }
 
+/* The preview header is a caption band, not a dialog title bar: keep it low and
+   give the close control a visible chip so it reads against the image. */
+.dsh-lightbox__header {
+  padding: var(--dsh-space-2) var(--dsh-space-3);
+}
+
+.dsh-lightbox__name {
+  font-size: var(--dsh-font-size-md);
+}
+
+.dsh-icon-button.dsh-lightbox__close {
+  border-color: var(--dsh-border-color);
+  color: var(--dsh-text);
+  background: var(--dsh-surface-raised);
+}
+
+.dsh-icon-button.dsh-lightbox__close:hover:not(:disabled),
+.dsh-icon-button.dsh-lightbox__close:focus-visible {
+  color: var(--dsh-text);
+  background: var(--dsh-surface-hover);
+}
+
 .dsh-settings__layout {
   display: grid;
   grid-template-columns: minmax(10rem, 14rem) minmax(0, 1fr);

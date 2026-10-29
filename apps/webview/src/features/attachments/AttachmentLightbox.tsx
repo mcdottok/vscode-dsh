@@ -48,7 +48,7 @@ export function AttachmentLightbox(props: AttachmentLightboxProps): ReactElement
           </span>
           <button
             ref={closeRef}
-            className="dsh-icon-button"
+            className="dsh-icon-button dsh-lightbox__close"
             type="button"
             aria-label={t('composer.closePreview')}
             title={t('composer.closePreview')}
