@@ -19,6 +19,8 @@ import {
   TRANSCRIPT_MAX_CHARS,
   TRANSCRIPT_MAX_NODES,
   TRANSCRIPT_NODE_CHARS,
+  MAX_PROTOCOL_NODES,
+  protocolValueNodeCount,
   transcriptNodeSchema,
   transcriptPatchSchema,
   transcriptWindowSchema,
@@ -89,7 +91,14 @@ export class TranscriptWindowService {
   private pending: PendingOpen | undefined
   private tail: Resident | undefined
   private displayed: Resident | undefined
-  private readonly forward: (number | undefined)[] = []
+  private navigationGeneration = 0
+  private historyBefore: number | undefined
+  private historyHasMore = false
+  // Only locations/ownership are retained for older delivered rows, not bodies.
+  private readonly deliveredSources = new Map<
+    string,
+    { readonly from: number; readonly to: number; readonly cwd?: string }
+  >()
   private readonly sameSequence = new Set<string>()
   private identitySequence = -1
   private visible = true
@@ -119,7 +128,7 @@ export class TranscriptWindowService {
   >()
   private readonly previews = new WeakMap<
     TimelineNode,
-    { value: TimelineNode; omitted: boolean; size: number }
+    { value: TimelineNode; omitted: boolean; size: number; values: number }
   >()
 
   public constructor(
@@ -137,6 +146,7 @@ export class TranscriptWindowService {
     clearTimeout(this.textPublishTimer)
     this.textPublishTimer = undefined
     const generation = ++this.generation
+    this.deliveredSources.clear()
     this.published = undefined
     this.pending = { sessionId, generation, child, events: [], chars: 0, overflow: false }
     return generation
@@ -243,7 +253,8 @@ export class TranscriptWindowService {
     this.pending = undefined
     this.tail = resident
     this.displayed = resident
-    this.forward.length = 0
+    this.historyBefore = resident.before
+    this.historyHasMore = resident.hasMore
     this.invalidated = false
     this.recentEvents.clear()
     for (const entry of page.events) this.rememberIdentity(entry.event, entry.sequence)
@@ -364,89 +375,65 @@ export class TranscriptWindowService {
     direction: 'older' | 'newer' | 'latest',
     revision: number,
     signal: AbortSignal,
+    requestedBefore?: number,
   ): Promise<TranscriptWindow> {
-    if (this.tail?.sessionId !== sessionId || this.displayed === undefined || revision > this.revision)
+    signal.throwIfAborted()
+    if (
+      this.tail?.sessionId !== sessionId ||
+      this.displayed === undefined ||
+      revision > this.revision ||
+      this.pending !== undefined
+    )
       throw stale('navigate-window-mismatch')
-    // A live update can advance an expanded window before the renderer's next
-    // navigation arrives. Return the current window so it can retry from the
-    // authoritative cursor without discarding the loaded history.
-    if (this.displayed !== this.tail && revision !== this.revision) return this.snapshot()
-    if (direction === 'latest') {
+    const navigation = ++this.navigationGeneration
+    if (direction !== 'older') {
       if (this.invalidated) {
         const generation = this.begin(sessionId, this.tail.child)
         try {
           const page = await this.deps.read(sessionId, undefined, signal, this.tail.child)
           signal.throwIfAborted()
-          return this.installPage(sessionId, page, generation)
+          if (navigation !== this.navigationGeneration) throw stale('navigate-superseded')
+          return { ...this.installPage(sessionId, page, generation), delivery: 'replace' }
         } finally {
           this.cancel(generation)
         }
       }
-      this.displayed = this.tail
-      this.forward.length = 0
       this.revision++
       this.published = undefined
       return this.snapshot()
     }
-    signal.throwIfAborted()
+    const before = requestedBefore ?? this.historyBefore
+    if (before === undefined || (requestedBefore === undefined && !this.historyHasMore))
+      return this.snapshot()
     const generation = this.generation
-    const previous = this.displayed
-    if (direction === 'older' && (!previous.hasMore || previous.before === undefined)) return this.snapshot()
-    if (direction === 'newer' && this.forward.length === 0) {
-      this.displayed = this.tail
-      this.revision++
-      this.published = undefined
-      return this.snapshot()
-    }
-    const before = direction === 'older' ? previous.before : this.forward[this.forward.length - 1]
-    const page = await this.deps.read(sessionId, before, signal, previous.child)
-    if (signal.aborted || generation !== this.generation || this.displayed !== previous)
+    const tail = this.tail
+    const page = await this.deps.read(sessionId, before, signal, tail.child)
+    signal.throwIfAborted()
+    if (generation !== this.generation || this.tail !== tail || navigation !== this.navigationGeneration)
       throw stale('navigate-superseded')
-    if (direction === 'older') {
-      if (
-        page.beforeSequence !== undefined &&
-        previous.before !== undefined &&
-        page.beforeSequence >= previous.before
-      )
-        throw stale('history-cursor-not-advancing')
-      const older = this.project(sessionId, page, previous.child, before, previous.cwd)
-      const currentIds = new Set(previous.timeline.nodes.map((node) => node.id))
-      const merged: Resident = {
-        ...previous,
-        expanded: true,
-        timeline: {
-          ...previous.timeline,
-          nodes: [
-            ...older.timeline.nodes.filter((node) => !currentIds.has(node.id)),
-            ...previous.timeline.nodes,
-          ],
-          nodeChangeStart: 0,
-        },
-        hasMore: older.hasMore,
-        sources: new Map([...older.sources, ...previous.sources]),
-        omitted: new Set([...older.omitted, ...previous.omitted]),
-        facts: [
-          ...new Map([...older.facts, ...previous.facts].map((fact) => [fact.id, fact])).values(),
-        ].slice(-256),
-      }
-      if (older.before === undefined) delete merged.before
-      else merged.before = older.before
-      this.bound(merged, true)
-      // Keep receiving live changes in the expanded conversation. Only an
-      // actual budget eviction needs the separate live-tail fallback.
-      if (
-        previous === this.tail &&
-        previous.timeline.nodes.every((node) => merged.timeline.nodes.some((kept) => kept.id === node.id))
-      )
-        this.tail = merged
-      this.displayed = merged
-    } else {
-      this.forward.pop()
-      this.displayed = this.project(sessionId, page, previous.child, before, previous.cwd)
+    if (page.beforeSequence !== undefined && page.beforeSequence >= before)
+      throw stale('history-cursor-not-advancing')
+    const older = this.project(sessionId, page, tail.child, before, tail.cwd)
+    if (older.hasMore && (older.before === undefined || older.before >= before))
+      throw stale('history-cursor-not-advancing')
+    const liveIds = new Set(tail.timeline.nodes.map((node) => node.id))
+    older.timeline = {
+      ...older.timeline,
+      nodes: older.timeline.nodes.filter((node) => !liveIds.has(node.id)),
     }
+    if (this.historyBefore === undefined || older.before === undefined || older.before < this.historyBefore) {
+      this.historyBefore = older.before
+      this.historyHasMore = older.hasMore
+    }
+    // Retire an in-flight publication's baseline; the next stream update must
+    // send the live tail in full, independently of this older response batch.
+    ++this.generation
     this.revision++
     this.published = undefined
-    return this.snapshot()
+    this.pendingAcks.clear()
+    this.pendingChars = 0
+    this.budgetBlocked = false
+    return { ...this.snapshot(undefined, older), delivery: 'prepend' }
   }
 
   /** Full content is reread from DSH, never retained as a second renderer/Host body cache. */
@@ -457,11 +444,11 @@ export class TranscriptWindowService {
     signal: AbortSignal,
   ): Promise<string> {
     const displayed = this.displayed
+    const delivered = this.deliveredSources.get(nodeId)
     if (
       displayed?.sessionId !== sessionId ||
       revision > this.revision ||
-      (displayed !== this.tail && revision !== this.revision) ||
-      !displayed.timeline.nodes.some((node) => node.id === nodeId)
+      (delivered === undefined && !displayed.timeline.nodes.some((node) => node.id === nodeId))
     )
       throw stale()
     const generation = this.generation
@@ -472,7 +459,8 @@ export class TranscriptWindowService {
         ? safe.text
         : JSON.stringify(safe, null, 2)
     }
-    const source = displayed.sources.get(nodeId)
+    const source = delivered ?? displayed.sources.get(nodeId)
+    const cwd = delivered === undefined ? displayed.cwd : delivered.cwd
     const page = await this.deps.read(
       sessionId,
       source === undefined ? displayed.upper : source.to + 1,
@@ -497,12 +485,12 @@ export class TranscriptWindowService {
           item.previewText === undefined ? item.name : `${item.name}\n\n${item.previewText}`,
         ),
       ].join('\n\n')
-      const safe = this.deps.publicValue({ text: content }, displayed.cwd)
+      const safe = this.deps.publicValue({ text: content }, cwd)
       return typeof safe === 'object' && safe !== null && 'text' in safe && typeof safe.text === 'string'
         ? safe.text
         : ''
     }
-    const safe = this.deps.publicValue(node, displayed.cwd)
+    const safe = this.deps.publicValue(node, cwd)
     return typeof safe === 'object' &&
       safe !== null &&
       'markdown' in safe &&
@@ -555,7 +543,6 @@ export class TranscriptWindowService {
   public showLatest(sessionId: string): void {
     if (this.tail?.sessionId !== sessionId) return
     this.displayed = this.tail
-    this.forward.length = 0
     this.revision++
     this.published = undefined
     this.schedule()
@@ -568,7 +555,8 @@ export class TranscriptWindowService {
     this.pending = undefined
     this.tail = undefined
     this.displayed = undefined
-    this.forward.length = 0
+    this.historyBefore = undefined
+    this.historyHasMore = false
     this.sameSequence.clear()
     this.dirty = false
     this.pendingAcks.clear()
@@ -578,6 +566,7 @@ export class TranscriptWindowService {
     this.invalidated = false
     this.recentEvents.clear()
     this.notices.clear()
+    this.deliveredSources.clear()
     this.timingSamples.clear()
   }
 
@@ -824,6 +813,9 @@ export class TranscriptWindowService {
     const softChars = resident.expanded === true ? hardChars : 384 * 1024
     const softNodes = resident.expanded === true ? TRANSCRIPT_MAX_NODES - 32 : 224
     let remaining = hardChars
+    // Event facts, current Todos, omitted IDs and the response envelope also
+    // consume wire values. Reserve their bounded allowance before rows.
+    let remainingValues = MAX_PROTOCOL_NODES - 16_384
     const nodes: TimelineNode[] = []
     const source = resident.timeline.nodes
     const candidates = source.filter((node) => !resident.contextIds.has(node.id))
@@ -837,7 +829,9 @@ export class TranscriptWindowService {
     let keptAssistant = false
     let keptAnswer = false
     if (preferOlder) candidates.reverse()
-    const projectNode = (original: TimelineNode): { value: TimelineNode; omitted: boolean; size: number } => {
+    const projectNode = (
+      original: TimelineNode,
+    ): { value: TimelineNode; omitted: boolean; size: number; values: number } => {
       let clipped = this.previews.get(original)
       if (clipped === undefined) {
         const projected = preview(
@@ -845,7 +839,12 @@ export class TranscriptWindowService {
           isConversationText(original) ? CONVERSATION_NODE_CHARS : TRANSCRIPT_NODE_CHARS,
         )
         const node = projected.value
-        clipped = { value: node, omitted: projected.omitted, size: JSON.stringify(node).length }
+        clipped = {
+          value: node,
+          omitted: projected.omitted,
+          size: JSON.stringify(node).length,
+          values: protocolValueNodeCount(node),
+        }
         this.previews.set(original, clipped)
         this.previews.set(node, clipped)
       }
@@ -862,8 +861,9 @@ export class TranscriptWindowService {
         (!wantsAssistant || keptAssistant) &&
         (!wantsAnswer || keptAnswer)
       if (hasContext && (nodes.length >= softNodes || hardChars - remaining + size > softChars)) break
-      if (size > remaining) break
+      if (size > remaining || clipped.values > remainingValues) break
       remaining -= size
+      remainingValues -= clipped.values
       nodes.unshift(node)
       if (isMessageBody(node)) {
         keptBodies++
@@ -891,8 +891,9 @@ export class TranscriptWindowService {
         if (parent?.kind !== 'tool') break
         if (!normalIds.has(parentId) && !contextIds.has(parentId)) {
           const clipped = projectNode(parent)
-          if (contextIds.size >= 32 || clipped.size > contextChars) break
+          if (contextIds.size >= 32 || clipped.size > contextChars || clipped.values > remainingValues) break
           contextChars -= clipped.size
+          remainingValues -= clipped.values
           contextIds.add(parentId)
           nodes.push(clipped.value)
           if (clipped.omitted) resident.omitted.add(parentId)
@@ -934,12 +935,15 @@ export class TranscriptWindowService {
     }
   }
 
-  private snapshot(nodeIds?: ReadonlySet<string>): TranscriptWindow {
-    const resident = this.displayed
+  private snapshot(nodeIds?: ReadonlySet<string>, resident = this.displayed): TranscriptWindow {
     if (resident === undefined) throw stale()
+    const timeline = this.tail?.timeline ?? resident.timeline
+    const history = resident !== this.tail
+    const before = history ? resident.before : this.historyBefore
     const safe = this.deps.publicValue(
       {
         sessionId: resident.sessionId,
+        delivery: 'live',
         revision: this.revision,
         nodes:
           nodeIds === undefined
@@ -948,16 +952,16 @@ export class TranscriptWindowService {
         eventFacts: resident.facts,
         ...(this.tail?.currentTodos === undefined ? {} : { currentTodos: this.tail.currentTodos }),
         ...(this.tail?.currentTodosOmitted === true ? { currentTodosOmitted: true } : {}),
-        lastSequence: resident.timeline.lastSequence,
-        hasMore: resident.hasMore,
-        historical: resident !== this.tail,
+        lastSequence: timeline.lastSequence,
+        hasMore: history ? resident.hasMore : this.historyHasMore,
+        historical: false,
         omittedNodeIds: [...resident.omitted],
-        ...(resident.before === undefined ? {} : { beforeSequence: resident.before }),
-        ...(resident.timeline.activeTurn === undefined ? {} : { activeTurn: resident.timeline.activeTurn }),
-        ...(resident.timeline.activeTurnStartedAt === undefined
+        ...(before === undefined ? {} : { beforeSequence: before }),
+        ...(timeline.activeTurn === undefined ? {} : { activeTurn: timeline.activeTurn }),
+        ...(timeline.activeTurnStartedAt === undefined
           ? {}
-          : { activeTurnStartedAt: resident.timeline.activeTurnStartedAt }),
-        ...(resident.timeline.tokenUsage === undefined ? {} : { tokenUsage: resident.timeline.tokenUsage }),
+          : { activeTurnStartedAt: timeline.activeTurnStartedAt }),
+        ...(timeline.tokenUsage === undefined ? {} : { tokenUsage: timeline.tokenUsage }),
       },
       resident.cwd,
     )
@@ -985,7 +989,16 @@ export class TranscriptWindowService {
         return node
       })
     }
-    return transcriptWindowSchema.parse(safe) as TranscriptWindow
+    const window = transcriptWindowSchema.parse(safe) as TranscriptWindow
+    for (const node of window.nodes) {
+      const source = resident.sources.get(node.id)
+      if (source === undefined || (this.deliveredSources.get(node.id)?.to ?? -1) > source.to) continue
+      this.deliveredSources.set(node.id, {
+        ...source,
+        ...(resident.cwd === undefined ? {} : { cwd: resident.cwd }),
+      })
+    }
+    return window
   }
 
   /** Compare source identities before sanitizing unchanged metadata again. */

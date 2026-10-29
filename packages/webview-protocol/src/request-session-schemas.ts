@@ -26,6 +26,7 @@ export const sessionRequestSchemas = [
           sessionId: id,
           revision: z.number().int().nonnegative(),
           direction: z.enum(['older', 'newer', 'latest']),
+          beforeSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
         })
         .strict(),
     })

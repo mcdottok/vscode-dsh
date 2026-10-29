@@ -137,6 +137,7 @@ export function createSessionRequestHandler(
         request.payload.direction,
         request.payload.revision,
         signal,
+        request.payload.beforeSequence,
       )
     }
     if (request.type === 'session.transcript.ack') {

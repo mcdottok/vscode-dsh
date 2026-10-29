@@ -43,6 +43,7 @@ export function parseTranscript(value: unknown): TranscriptWindow {
 
 export function requireCompleteTranscript(window: TranscriptWindow, previous?: TranscriptWindow): void {
   if (
+    window.delivery !== 'prepend' &&
     !window.historical &&
     !hasConversationContent(window.nodes) &&
     (window.hasMore || (previous?.sessionId === window.sessionId && hasConversationContent(previous.nodes)))
@@ -68,14 +69,47 @@ export function transcriptTimeline(window: TranscriptWindow, previous?: Timeline
 }
 
 export function installTranscript(state: AppState, window: TranscriptWindow, live = false): AppState {
+  const prepend = window.delivery === 'prepend'
   if (
     window.sessionId !== state.activeSessionId ||
-    (state.transcript !== undefined && window.revision <= state.transcript.revision)
+    (!prepend && state.transcript !== undefined && window.revision <= state.transcript.revision)
   )
     return state
+  if (prepend) {
+    const previous = state.transcript
+    if (previous === undefined) return state
+    const existing = new Set(state.timeline.nodes.map((node) => node.id))
+    const nodes = [...window.nodes.filter((node) => !existing.has(node.id)), ...state.timeline.nodes]
+    const { nodes: _nodes, delivery: _delivery, ...metadata } = window
+    void _nodes
+    void _delivery
+    // Older reads can finish after a newer live publication. Append their
+    // rows without rolling back the live baseline or its metadata/revision.
+    const baseline = window.revision > previous.revision ? { ...metadata, nodes: previous.nodes } : previous
+    return withCurrentTodos({
+      ...state,
+      transcript: { ...baseline, delivery: 'live', historical: false },
+      timeline: transcriptTimeline({ ...baseline, nodes }, state.timeline),
+      historyHasMore: window.hasMore,
+      historyBeforeSequence: window.beforeSequence,
+      historyLoading: false,
+    })
+  }
   requireCompleteTranscript(window, state.transcript)
   const previous = state.transcript
   const sameSession = previous?.sessionId === window.sessionId
+  let nodes = window.nodes
+  if (sameSession && previous.delivery === 'live' && window.delivery === 'live') {
+    const nextIds = new Set(window.nodes.map((node) => node.id))
+    const oldIds = new Set(previous.nodes.map((node) => node.id))
+    const prefix = state.timeline.nodes.filter(
+      (node) =>
+        !node.id.startsWith('optimistic:') &&
+        !nextIds.has(node.id) &&
+        (!oldIds.has(node.id) || retainDeliveredNode(node)),
+    )
+    nodes = [...prefix, ...window.nodes]
+  }
   const priorNodes = new Map(
     sameSession ? (previous?.nodes ?? []).map((node) => [node.id, node] as const) : [],
   )
@@ -117,11 +151,25 @@ export function installTranscript(state: AppState, window: TranscriptWindow, liv
     ...state,
     liveNotificationIds,
     transcript: window,
-    timeline: transcriptTimeline(window, state.timeline),
-    historyHasMore: window.hasMore,
-    historyBeforeSequence: window.beforeSequence,
-    historyLoading: false,
+    timeline: transcriptTimeline({ ...window, nodes }, state.timeline),
+    historyHasMore: window.delivery === 'live' && sameSession ? state.historyHasMore : window.hasMore,
+    historyBeforeSequence:
+      window.delivery === 'live' && sameSession ? state.historyBeforeSequence : window.beforeSequence,
+    historyLoading: window.delivery === 'live' ? state.historyLoading : false,
   })
+}
+
+function retainDeliveredNode(node: TimelineNode): boolean {
+  if (
+    node.kind === 'notice' ||
+    node.kind === 'retry' ||
+    node.kind === 'turn-terminal' ||
+    node.kind === 'event'
+  )
+    return false
+  if (node.kind === 'tool') return node.tool.preparation === undefined
+  if (node.kind === 'assistant-message' || node.kind === 'reasoning') return !node.streaming
+  return true
 }
 
 /**
@@ -180,12 +228,14 @@ export function installTranscriptPatch(state: AppState, patch: TranscriptPatch):
     chars += nodeChars(next) - nodeChars(old)
     nodes[position] = next
   }
+  const delivery = patch.metadata?.delivery ?? previous.delivery
   const window: TranscriptWindow = {
     ...(patch.metadata === undefined
       ? previous
       : { sessionId: previous.sessionId, revision: patch.revision, ...patch.metadata }),
     sessionId: patch.sessionId,
     revision: patch.revision,
+    ...(delivery === undefined ? {} : { delivery }),
     ...(patch.lastSequence === undefined ? {} : { lastSequence: patch.lastSequence }),
     ...(patch.hasMore === undefined ? {} : { hasMore: patch.hasMore }),
     ...(patch.activeTurn === undefined ? {} : { activeTurn: patch.activeTurn }),

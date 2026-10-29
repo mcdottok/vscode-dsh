@@ -13,7 +13,7 @@ import { installTranscript, installTranscriptPatch, parseTranscript } from './st
 
 const sessionId = 'patch-session'
 
-function assistant(id: string, markdown: string): TimelineNode {
+function assistant(id: string, markdown: string): Extract<TimelineNode, { kind: 'assistant-message' }> {
   return { kind: 'assistant-message', id, markdown, streaming: true, sequence: 10 }
 }
 
@@ -37,6 +37,41 @@ function installed(): ReturnType<typeof installTranscript> {
 }
 
 describe('transcript patches', () => {
+  it('keeps loaded history when a live patch replaces metadata without a delivery field', () => {
+    const initial = installTranscript(
+      { ...createInitialState({}), activeSessionId: sessionId },
+      { ...window(), delivery: 'live' },
+    )
+    const loaded = installTranscript(initial, {
+      ...window(),
+      revision: 5,
+      delivery: 'prepend',
+      nodes: [{ ...assistant('old', 'Old reply'), streaming: false }],
+      hasMore: false,
+      beforeSequence: 0,
+    })
+    const next = installTranscriptPatch(loaded, {
+      sessionId,
+      revision: 6,
+      baseRevision: 5,
+      changedNodes: [assistant('m-2', ' updated')],
+      metadata: {
+        lastSequence: 20,
+        eventFacts: [],
+        omittedNodeIds: [],
+        hasMore: true,
+        beforeSequence: 5,
+        historical: false,
+      },
+    })
+    expect(next.timeline.nodes.map((node) => node.id)).toEqual(['old', 'm-1', 'm-2'])
+    expect(next.timeline.nodes.at(-1)).toMatchObject({ markdown: ' updated' })
+    expect(next.transcript!.delivery).toBe('live')
+    expect(next.transcript!.nodes).toHaveLength(2)
+    expect(next.historyHasMore).toBe(false)
+    expect(next.historyBeforeSequence).toBe(0)
+  })
+
   it('appends reasoning and body independently and rejects an incorrect reasoning baseline', () => {
     const initial: TranscriptWindow = {
       ...window(),
@@ -82,7 +117,7 @@ describe('transcript patches', () => {
   it('applies public text suffixes, preserves other rows, and rejects mismatched lengths', () => {
     const before = installed()
     const update = {
-      node: assistant('m-2', '!') as Extract<TimelineNode, { kind: 'assistant-message' }>,
+      node: assistant('m-2', '!'),
       markdownLength: 6,
     }
     const patch = { sessionId, revision: 5, baseRevision: 4, changedNodes: [], textUpdates: [update] }
@@ -141,7 +176,7 @@ describe('transcript patches', () => {
         changedNodes: [],
         textUpdates: [
           {
-            node: assistant('large', 'x') as Extract<TimelineNode, { kind: 'assistant-message' }>,
+            node: assistant('large', 'x'),
             markdownLength: fill,
           },
         ],

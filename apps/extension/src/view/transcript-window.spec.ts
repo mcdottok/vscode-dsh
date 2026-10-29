@@ -5,6 +5,9 @@ import {
   TRANSCRIPT_MAX_CHARS,
   TRANSCRIPT_MAX_NODES,
   transcriptWindowSchema,
+  hostResponseSchema,
+  protocolValueNodeCount,
+  MAX_PROTOCOL_NODES,
   type TranscriptWindow,
   type TranscriptPatch,
 } from '@dsh-vscode/webview-protocol'
@@ -95,6 +98,108 @@ function fixture(
 afterEach(() => vi.useRealTimers())
 
 describe('Host transcript windows', () => {
+  it('retires an in-flight live publication baseline when a history batch is delivered', async () => {
+    let finish!: (value: boolean) => void
+    const posted: TranscriptWindow[] = []
+    const patches: TranscriptPatch[] = []
+    const service = new TranscriptWindowService({
+      read: () => Promise.resolve({ events: [message(0)], hasMore: false, beforeSequence: 0 }),
+      publicValue: (value) => sanitizePublicValue(value),
+      post: (value) => {
+        posted.push(value)
+        if (posted.length === 1)
+          return new Promise((resolve) => {
+            finish = resolve
+          })
+        return Promise.resolve(true)
+      },
+      postPatch: (value) => {
+        patches.push(value)
+        return Promise.resolve(true)
+      },
+    })
+    try {
+      const initial = service.install(detail([message(10)], 10), service.begin(sessionId))
+      service.accept(message(11).event)
+      expect(posted).toHaveLength(1)
+      const older = await service.navigate(sessionId, 'older', initial.revision, new AbortController().signal)
+      service.accept(message(12).event)
+      finish(true)
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(posted).toHaveLength(2)
+      expect(patches).toHaveLength(0)
+      expect(posted[1]!.revision).toBeGreaterThan(older.revision)
+      expect(posted[1]!.nodes.at(-1)).toMatchObject({ markdown: 'Answer 12' })
+      expect(posted[1]!.delivery).toBe('live')
+    } finally {
+      service.dispose()
+    }
+  })
+
+  it('does not let a pending old-history read overwrite a later navigation intent', async () => {
+    let finish!: (page: SessionHistoryPage) => void
+    const client = fixture(
+      vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve
+          }),
+      ),
+    )
+    const initial = client.open([message(10)])
+    const loading = client.service.navigate(
+      sessionId,
+      'older',
+      initial.revision,
+      new AbortController().signal,
+    )
+    const latest = await client.service.navigate(
+      sessionId,
+      'latest',
+      initial.revision,
+      new AbortController().signal,
+    )
+    finish({ events: [message(0)], hasMore: false, beforeSequence: 0 })
+    await expect(loading).rejects.toMatchObject({ context: { reason: 'navigate-superseded' } })
+    expect(latest.nodes.at(-1)).toMatchObject({ markdown: 'Answer 10' })
+    client.service.dispose()
+  })
+
+  it('can resend a history batch after an unreceived response and keeps its full content authorized', async () => {
+    const text = 'Full old response '.repeat(20_000)
+    const client = fixture(
+      vi.fn().mockResolvedValue({ events: [message(0, text)], hasMore: false, beforeSequence: 0 }),
+    )
+    const initial = client.open([message(10)])
+    const lost = await client.service.navigate(
+      sessionId,
+      'older',
+      initial.revision,
+      new AbortController().signal,
+      1,
+    )
+    const retried = await client.service.navigate(
+      sessionId,
+      'older',
+      initial.revision,
+      new AbortController().signal,
+      1,
+    )
+    expect(retried.nodes).toEqual(lost.nodes)
+    client.service.accept(message(11).event)
+    const latest = await client.service.navigate(
+      sessionId,
+      'latest',
+      retried.revision,
+      new AbortController().signal,
+    )
+    expect(
+      await client.service.content(sessionId, 'm-0', latest.revision, new AbortController().signal),
+    ).toBe(text)
+    client.service.dispose()
+  })
+
   for (const [count, size] of [
     [400, 16],
     [110, 4000],
@@ -825,7 +930,8 @@ describe('Host transcript windows', () => {
       view.revision,
       new AbortController().signal,
     )
-    expect(historical.nodes).toContainEqual(expect.objectContaining({ kind: 'todo', todos: current }))
+    expect(historical.delivery).toBe('prepend')
+    expect(historical.nodes).toEqual([])
     expect(historical.currentTodos).toEqual(current)
     f.service.accept({ type: 'session.projection', sessionId, key: 'todoList', value: null, sequence: 20 })
     expect(f.service.accept({ type: 'todo.updated', sessionId, todos: current, sequence: 21 })).toBe(true)
@@ -1158,9 +1264,9 @@ describe('Host transcript windows', () => {
       new AbortController().signal,
     )
     expect(historical.historical).toBe(false)
-    expect(historical.nodes).toContainEqual(expect.objectContaining({ id: 'm-200' }))
-    expect(historical.nodes).toHaveLength(101)
-    expect(historical.nodes.at(-1)).toMatchObject({ id: 'm-200', markdown: 'Answer 200' })
+    expect(historical.delivery).toBe('prepend')
+    expect(historical.nodes.some((node) => node.id === 'm-200')).toBe(false)
+    expect(historical.nodes).toHaveLength(100)
     client.service.accept(message(201, 'Live final reply').event)
     const latest = await client.service.navigate(
       sessionId,
@@ -1170,7 +1276,97 @@ describe('Host transcript windows', () => {
     )
     expect(latest.historical).toBe(false)
     expect(latest.nodes.at(-1)).toMatchObject({ markdown: 'Live final reply', streaming: false })
-    expect(latest.nodes[0]?.id).toBe('m-1')
+    expect(latest.nodes[0]).toMatchObject({ id: 'm-200', markdown: 'Answer 200' })
+    expect(
+      await client.service.content(sessionId, 'm-1', latest.revision, new AbortController().signal),
+    ).toBe('Answer 1')
+    client.service.dispose()
+  })
+
+  it('keeps loading older pages when structured rows exceed the wire value budget before the byte budget', async () => {
+    const denseHistory = Array.from({ length: 600 }, (_, index) =>
+      row(index + 1000, {
+        type: 'message.user',
+        sessionId,
+        messageId: `dense-${index}`,
+        markdown: 'Review context',
+        attachments: Array.from({ length: 16 }, (_, item) => ({
+          name: `context-${item}.ts`,
+          mimeType: 'text/plain',
+          previewText: 'const value = 1',
+          previewTruncated: false,
+          sourceLink: 'src/index.ts#L1C1-L1C2',
+        })),
+      }),
+    )
+    const read = vi
+      .fn<
+        (
+          id: string,
+          before: number | undefined,
+          signal: AbortSignal,
+          child: boolean,
+        ) => Promise<SessionHistoryPage>
+      >()
+      .mockImplementation((_id, before) => {
+        const start = before === 2000 ? 1500 : before! - 100
+        return Promise.resolve({
+          events:
+            start >= 1000
+              ? denseHistory.slice(start - 1000, start - 900)
+              : Array.from({ length: 100 }, (_, index) => message(index + start)),
+          hasMore: true,
+          beforeSequence: start,
+        })
+      })
+    const client = fixture(read)
+    const initial = client.service.installPage(
+      sessionId,
+      { events: [message(2000, 'Current reply')], hasMore: true, beforeSequence: 2000 },
+      client.service.begin(sessionId),
+    )
+    const response = (window: TranscriptWindow): unknown => ({
+      type: 'response',
+      requestId: 'history',
+      ok: true,
+      payload: window,
+    })
+    // Each individual page fits, but accumulating six pages used to exceed
+    // the generic response guard despite staying below the byte/row limits.
+    expect(protocolValueNodeCount(denseHistory)).toBeGreaterThan(MAX_PROTOCOL_NODES)
+    let first = initial
+    const delivered = new Set(initial.nodes.map((node) => node.id))
+    for (let page = 0; page < 6; page++) {
+      first = await client.service.navigate(sessionId, 'older', first.revision, new AbortController().signal)
+      expect(hostResponseSchema.safeParse(response(first)).success).toBe(true)
+      for (const node of first.nodes) delivered.add(node.id)
+    }
+    expect(first.nodes.length).toBeLessThan(601)
+    expect(JSON.stringify(first).length).toBeLessThan(TRANSCRIPT_MAX_CHARS)
+    expect(protocolValueNodeCount(response(first))).toBeLessThan(MAX_PROTOCOL_NODES)
+    expect(hostResponseSchema.safeParse(response(first)).success).toBe(true)
+    expect(first.beforeSequence).toBe(1000)
+    expect(first.historical).toBe(false)
+    expect(first.delivery).toBe('prepend')
+    expect(delivered.size).toBe(601)
+    const second = await client.service.navigate(
+      sessionId,
+      'older',
+      first.revision,
+      new AbortController().signal,
+    )
+    expect(read.mock.calls.map((call) => call[1])).toEqual([2000, 1500, 1400, 1300, 1200, 1100, 1000])
+    expect(second.beforeSequence).toBe(900)
+    expect(second.nodes[0]).toMatchObject({ markdown: 'Answer 900' })
+    expect(hostResponseSchema.safeParse(response(second)).success).toBe(true)
+    const latest = await client.service.navigate(
+      sessionId,
+      'latest',
+      second.revision,
+      new AbortController().signal,
+    )
+    expect(latest.nodes.at(-1)).toMatchObject({ markdown: 'Current reply' })
+    expect(latest.historical).toBe(false)
     client.service.dispose()
   })
 

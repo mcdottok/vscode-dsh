@@ -489,31 +489,6 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
                       />
                     ) : null}
                   </div>
-                  {state.transcript?.historical !== true ? null : (
-                    <div
-                      className="dsh-timeline__history-more"
-                      style={{ position: 'absolute', right: '1rem', bottom: '6rem', zIndex: 2 }}
-                    >
-                      <button
-                        type="button"
-                        className="dsh-button dsh-button--secondary dsh-button--compact"
-                        onClick={() => {
-                          void store.navigateTranscript('newer').catch((reason) => setError(String(reason)))
-                        }}
-                      >
-                        {t('transcript.newer')}
-                      </button>
-                      <button
-                        type="button"
-                        className="dsh-button dsh-button--secondary dsh-button--compact"
-                        onClick={() => {
-                          void store.navigateTranscript('latest').catch((reason) => setError(String(reason)))
-                        }}
-                      >
-                        {t('transcript.latest')}
-                      </button>
-                    </div>
-                  )}
                   <SessionInspector
                     key={`${state.connectionEpoch}:${active.id}`}
                     {...(state.transcript === undefined ? {} : { eventFacts: state.transcript.eventFacts })}

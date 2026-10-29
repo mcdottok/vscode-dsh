@@ -36,7 +36,7 @@ import { createSurfaceActions } from './store/surface-actions.js'
 import { subscribeHostEvents } from './store/host-event-subscription.js'
 import { createPromptActions } from './store/prompt-actions.js'
 import { createHistoryActions } from './store/history-actions.js'
-import { installTranscript, parseTranscript, requireCompleteTranscript } from './store/transcript-state.js'
+import { parseTranscript, requireCompleteTranscript } from './store/transcript-state.js'
 import { createSessionCreationActions } from './store/session-creation-actions.js'
 import { createAppLifecycleActions } from './store/app-lifecycle-actions.js'
 import { parseGoalViews } from './store/event-values.js'
@@ -872,7 +872,7 @@ export function createAppStore(client = new ProtocolClient(getVsCodeApi())): App
     currentOpenIntent: () => openIntent,
     isOpenIntentCurrent: (intent) => intent === openIntent,
   })
-  const { loadOlderHistory } = createHistoryActions({
+  const { loadOlderHistory, navigateTranscript } = createHistoryActions({
     client,
     getOpenVersion: () => openVersion,
     getState: () => state,
@@ -994,16 +994,7 @@ export function createAppStore(client = new ProtocolClient(getVsCodeApi())): App
       await refreshSessionModelDirectoryForSession(target)
     },
     loadOlderHistory,
-    navigateTranscript: async (direction) => {
-      const window = state.transcript
-      if (window === undefined) return
-      const result = await client.request<unknown>({
-        type: 'session.transcript.navigate',
-        requestId: requestId(),
-        payload: { sessionId: window.sessionId, revision: window.revision, direction },
-      })
-      setState((current) => installTranscript(current, parseTranscript(result)))
-    },
+    navigateTranscript,
     openTranscriptContent: async (nodeId) => {
       const window = state.transcript
       if (window === undefined) return

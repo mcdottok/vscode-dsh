@@ -419,6 +419,8 @@ export const transcriptNodeSchema = z.discriminatedUnion('kind', [
 ])
 
 export interface TranscriptWindow {
+  /** Bounded wire batches form one continuous renderer conversation. */
+  readonly delivery?: 'live' | 'prepend' | 'replace'
   readonly sessionId: string
   readonly revision: number
   readonly nodes: readonly TimelineNode[]
@@ -489,6 +491,7 @@ const eventFact = z
   .strict()
 
 const transcriptWindowFields = {
+  delivery: z.enum(['live', 'prepend', 'replace']).optional(),
   sessionId: id,
   revision: count,
   eventFacts: z.array(eventFact).max(TRANSCRIPT_MAX_NODES),
@@ -537,6 +540,7 @@ export const transcriptPatchSchema = z
       .optional(),
     metadata: z
       .object({
+        delivery: transcriptWindowFields.delivery,
         eventFacts: transcriptWindowFields.eventFacts,
         currentTodos: transcriptWindowFields.currentTodos,
         currentTodosOmitted: transcriptWindowFields.currentTodosOmitted,

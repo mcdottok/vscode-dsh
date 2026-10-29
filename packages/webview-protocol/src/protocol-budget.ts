@@ -2,7 +2,7 @@
 // adapter compacts visible deltas before they reach this boundary, while this
 // larger node budget still permits genuinely long sessions without turning a
 // valid response into a protocol error.
-const MAX_PROTOCOL_NODES = 100_000
+export const MAX_PROTOCOL_NODES = 100_000
 export const MAX_ATTACHMENT_BASE64_CHARS = Math.ceil((20 * 1024 * 1024) / 3) * 4
 // One admitted attachment must survive the budget check in both directions:
 // `attachment.ingest` carries the Base64 payload itself, and `attachment.preview`
@@ -18,6 +18,15 @@ export function protocolValueWithinBudget(value: unknown): boolean {
 }
 
 export function budgetFailure(value: unknown): string | undefined {
+  return inspectBudget(value).failure
+}
+
+/** Same structural weight used by the wire guard, including object keys. */
+export function protocolValueNodeCount(value: unknown): number {
+  return inspectBudget(value).nodes
+}
+
+function inspectBudget(value: unknown): { readonly nodes: number; readonly failure: string | undefined } {
   const seen = new WeakSet<object>()
   let nodes = 0
   let stringBytes = 0
@@ -50,5 +59,6 @@ export function budgetFailure(value: unknown): string | undefined {
     }
     return undefined
   }
-  return visit(value, 0)
+  const failure = visit(value, 0)
+  return { nodes, failure }
 }

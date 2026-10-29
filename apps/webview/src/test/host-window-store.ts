@@ -161,6 +161,7 @@ export function createHostBackedAppStore(
           request.payload.direction,
           request.payload.revision,
           new AbortController().signal,
+          request.payload.beforeSequence,
         )) as T
       if (request.type === 'session.transcript.ack') {
         host.acknowledge(request.payload.sessionId, request.payload.revision)
