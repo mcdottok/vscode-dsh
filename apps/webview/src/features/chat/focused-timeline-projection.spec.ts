@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DisplayTimelineNode } from './timeline-shared.js'
-import {
-  createFocusedTimelineProjector,
-  FOCUSED_PROCESS_SEGMENT_SIZE,
-} from './focused-timeline-projection.js'
+import { createFocusedTimelineProjector } from './focused-timeline-projection.js'
 
 const message = (
   id: string,
@@ -132,19 +129,15 @@ describe('focused Turn presentation', () => {
     expect(project([message('replacement', 9)])[0]?.id).toBe('focused-turn:replacement')
   })
 
-  it('bounds process segments without losing a single source message', () => {
+  it('keeps one Turn in one row without losing a single source message', () => {
     const source = Array.from({ length: 1_000 }, (_, index) => message(`message-${index}`, 1))
     const rows = createFocusedTimelineProjector()(source)
-    const ids = rows.flatMap((row) => (row.kind === 'focused-turn' ? row.sourceIds : [row.id]))
-    expect(ids).toEqual(source.map((node) => node.id))
-    expect(
-      rows.every((row) => row.kind === 'focused-turn' && row.nodes.length <= FOCUSED_PROCESS_SEGMENT_SIZE),
-    ).toBe(true)
-    expect(rows.at(-1)?.kind === 'focused-turn' && rows.at(-1)?.id).toBe('focused-turn:message-984')
-    const groups = rows.filter((row) => row.kind === 'focused-turn')
-    expect(new Set(groups.map((row) => row.processId))).toEqual(new Set(['focused-turn:message-0']))
-    expect(groups.filter((row) => !row.continuation)).toHaveLength(1)
-    expect(groups.every((row) => row.processCount === 999)).toBe(true)
+    expect(rows).toHaveLength(1)
+    const [group] = rows
+    expect(group?.kind === 'focused-turn' && group.sourceIds).toEqual(source.map((node) => node.id))
+    expect(group?.kind === 'focused-turn' && group.nodes).toHaveLength(1_000)
+    expect(group?.kind === 'focused-turn' && group.id).toBe('focused-turn:message-0')
+    expect(group?.kind === 'focused-turn' && group.processCount).toBe(999)
   })
 
   it('keeps submitted plans outside a folded process', () => {
@@ -165,10 +158,11 @@ describe('focused Turn presentation', () => {
     expect(createFocusedTimelineProjector()([message('before', 1), plan, message('answer', 1)])[1]).toBe(plan)
   })
 
-  it('keeps every segment visible while the same Turn is active, failed or interrupted by human input', () => {
+  it('keeps the whole Turn row open while it is active, failed or interrupted by human input', () => {
     const history = Array.from({ length: 60 }, (_, index) => message(`step-${index}`, 1))
     const project = createFocusedTimelineProjector()
     const completed = project(history)
+    expect(completed).toHaveLength(1)
     expect(completed.every((row) => row.kind === 'focused-turn' && row.foldable)).toBe(true)
     for (const source of [
       [...history, message('live', 1, false)],
@@ -189,14 +183,17 @@ describe('focused Turn presentation', () => {
       ).toBe(true)
   })
 
-  it('keeps a cached last segment foldable when replacing a completed reply in the same Turn', () => {
+  it('reprojects the single Turn row when a completed reply is replaced in place', () => {
     const project = createFocusedTimelineProjector()
     const history = Array.from({ length: 60 }, (_, index) => message(`step-${index}`, 1))
     const before = project(history)
     const after = project([...history.slice(0, -1), message('changed-answer', 1)])
-    expect(after[0]).toBe(before[0])
+    expect(before).toHaveLength(1)
+    expect(after).toHaveLength(1)
+    expect(after[0]).not.toBe(before[0])
     const last = after.at(-1)
     expect(last?.kind === 'focused-turn' && last.foldable).toBe(true)
+    expect(last?.kind === 'focused-turn' && last.answer?.id).toBe('changed-answer')
   })
 
   it('does not hide a reply when tool step coordinates cannot establish a final answer', () => {

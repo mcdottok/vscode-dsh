@@ -213,8 +213,11 @@
   }
 }
 
-/* A long active run reads as one compact, independently scrollable work log. */
-.dsh-focused-turn[data-live-process='true'] .dsh-focused-turn__process {
+/* Any open turn reads as one compact, independently scrollable work log — the
+ * live run, a steered or interrupted run and a reopened completed turn alike —
+ * so the page never pours the whole process into the transcript, whatever the
+ * transcript view. */
+.dsh-focused-turn[data-compact-process='true'] .dsh-focused-turn__process {
   max-height: min(46vh, 340px);
   overflow: auto;
   overscroll-behavior: contain;
@@ -223,20 +226,20 @@
   padding: 2px 4px 8px 0;
 }
 
-.dsh-focused-turn[data-live-process='true'] .dsh-focused-turn__process-content > div + div {
+.dsh-focused-turn[data-compact-process='true'] .dsh-focused-turn__process-content > div + div {
   margin-top: 2px;
 }
 
-.dsh-focused-turn[data-live-process='true'] .dsh-timeline__card--assistant {
+.dsh-focused-turn[data-compact-process='true'] .dsh-timeline__card--assistant {
   gap: 2px;
   padding-block: 0;
 }
 
-.dsh-focused-turn[data-live-process='true'] .dsh-timeline__card--assistant > .dsh-timeline__card-header {
+.dsh-focused-turn[data-compact-process='true'] .dsh-timeline__card--assistant > .dsh-timeline__card-header {
   display: none;
 }
 
-.dsh-focused-turn[data-live-process='true']
+.dsh-focused-turn[data-compact-process='true']
   :is(.dsh-focused-tools__summary, .dsh-timeline__reasoning-toggle) {
   min-height: 28px;
   padding-block: 3px;

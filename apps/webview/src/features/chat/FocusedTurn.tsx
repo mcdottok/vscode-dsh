@@ -25,7 +25,8 @@ export function FocusedTurn(props: {
   const compactLive = context.running && node.live === true && (node.processCount ?? node.nodes.length) >= 4
   useLayoutEffect(() => {
     const element = processRef.current
-    if (!compactLive || element === null || context.revealSourceNodeId !== undefined) return
+    if (!compactLive || element === null || typeof ResizeObserver === 'undefined') return
+    if (context.revealSourceNodeId !== undefined) return
     const observer = new ResizeObserver(() => {
       if (followProcess.current) element.scrollTop = element.scrollHeight
     })
@@ -36,7 +37,7 @@ export function FocusedTurn(props: {
   }, [compactLive, node.nodes, visibleWork, context.revealSourceNodeId])
   const summary = node.processSummary ?? summarizeFocusedWork(node.nodes)
   const finished = node.foldable
-  const foldable = finished && context.transcriptView !== 'verbose'
+  const live = node.live === true
   const failedCount = summary.failedCount
   const work = node.nodes.filter((member) => member !== node.answer && hasFocusedWork(member))
   let answer: FocusedAnswerNode | undefined = node.answer
@@ -79,10 +80,18 @@ export function FocusedTurn(props: {
     node.sourceIds.includes(context.revealSourceNodeId) &&
     !context.expandedDetails.has(revealDismissedId)
   const collapsedId = `${processId}:collapsed`
+  // Only the active tail opens by itself. Every settled run — completed, failed,
+  // interrupted or steered away mid-Turn — starts folded behind its summary in
+  // every transcript view, so reopening a session never pours old work back in.
   const open =
     revealed ||
-    (!context.expandedDetails.has(collapsedId) && (!foldable || context.expandedDetails.has(processId)))
+    (!context.expandedDetails.has(collapsedId) && (live || context.expandedDetails.has(processId)))
+  // Every open process reads as the same bounded, compact work log, so no
+  // transcript view ever pours a whole Turn into the page at once.
+  const compactProcess = open
   const process: ReactElement[] = []
+  // A live run mounts only its latest window; a reopened settled turn keeps the
+  // whole log scrollable inside the same bounded box.
   const workStart =
     compactLive && context.revealSourceNodeId === undefined ? Math.max(0, work.length - visibleWork) : 0
   if (open)
@@ -151,36 +160,34 @@ export function FocusedTurn(props: {
     <section
       className="dsh-focused-turn"
       data-turn={node.turn}
-      data-process-foldable={foldable}
-      data-live-process={compactLive}
+      data-process-live={live}
+      data-compact-process={compactProcess}
     >
       {work.length === 0 ? null : (
         <>
-          {node.continuation === true ? null : (
-            <button
-              type="button"
-              className="dsh-focused-turn__summary"
-              aria-expanded={open}
-              aria-controls={bodyId}
-              onClick={toggle}
-            >
-              <Icon
-                name={
-                  failedCount > 0
-                    ? 'alert'
-                    : summary.toolCount > 0
-                      ? commandsOnly
-                        ? 'terminal'
-                        : 'tool'
-                      : finished
-                        ? 'analysis'
-                        : 'status'
-                }
-              />
-              <span>{summaryLabel}</span>
-              <Icon name={open ? 'chevron-down' : 'chevron-right'} />
-            </button>
-          )}
+          <button
+            type="button"
+            className="dsh-focused-turn__summary"
+            aria-expanded={open}
+            aria-controls={bodyId}
+            onClick={toggle}
+          >
+            <Icon
+              name={
+                failedCount > 0
+                  ? 'alert'
+                  : summary.toolCount > 0
+                    ? commandsOnly
+                      ? 'terminal'
+                      : 'tool'
+                    : finished
+                      ? 'analysis'
+                      : 'status'
+              }
+            />
+            <span>{summaryLabel}</span>
+            <Icon name={open ? 'chevron-down' : 'chevron-right'} />
+          </button>
           <div
             ref={processRef}
             id={bodyId}

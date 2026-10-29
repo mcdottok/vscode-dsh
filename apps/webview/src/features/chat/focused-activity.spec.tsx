@@ -89,12 +89,15 @@ describe('quiet process summaries', () => {
         { ...answer, interrupted: true, reasoning: { markdown: 'Interrupted reasoning', streaming: false } },
       ]),
     )
-    expect(screen.getByRole('button', { name: 'Work details' }).getAttribute('aria-expanded')).toBe('true')
+    // An interrupted turn is settled history: it folds like any other turn.
+    expect(screen.getByRole('button', { name: 'Work details' }).getAttribute('aria-expanded')).toBe('false')
     expect(screen.queryByText('Analysis complete')).toBeNull()
     expect(screen.getAllByText('Interrupted').length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Work details' }))
+    expect(screen.getByRole('button', { name: 'Work details' }).getAttribute('aria-expanded')).toBe('true')
   })
 
-  it('keeps an unclosed turn open after reconnect and honors verbose history', () => {
+  it('keeps an unclosed turn open after reconnect and folds structured history', () => {
     const source = [call('incomplete'), { ...answer, turnCompleted: false }]
     const view = render(conversation(source))
     expect(screen.getByRole('button', { name: 'Commands executed: 1' }).getAttribute('aria-expanded')).toBe(
@@ -115,18 +118,18 @@ describe('quiet process summaries', () => {
       </ConversationLayoutProvider>,
     )
     expect(screen.getByRole('button', { name: 'Commands executed: 1' }).getAttribute('aria-expanded')).toBe(
-      'true',
+      'false',
     )
   })
 
-  it('counts the complete virtual process and refreshes cached summaries after later category changes', () => {
+  it('counts the complete process in one row and refreshes its summary after later category changes', () => {
     const project = createFocusedTimelineProjector()
     const source: DisplayTimelineNode[] = [
       ...Array.from({ length: 55 }, (_, index) => call(`tool-${index}`)),
       answer,
     ]
     const before = project(source)
-    expect(before.length).toBeGreaterThan(1)
+    expect(before).toHaveLength(1)
     for (const row of before) {
       expect(row.kind === 'focused-turn' && row.processSummary).toEqual({
         toolCount: 55,

@@ -15,15 +15,12 @@ export interface FocusedTurnNode {
   readonly sourceIds: readonly string[]
   readonly foldable: boolean
   readonly answer: FocusedAnswerNode | undefined
-  /** Virtual rows share one process disclosure for the continuous source run. */
   readonly processId?: string
   readonly processCount?: number
   readonly processSummary?: FocusedProcessSummary
-  readonly continuation?: boolean
   readonly live?: boolean
 }
 export type PresentedTimelineNode = DisplayTimelineNode | FocusedTurnNode
-export const FOCUSED_PROCESS_SEGMENT_SIZE = 24
 
 export interface FocusedProcessSummary {
   readonly toolCount: number
@@ -33,7 +30,7 @@ export interface FocusedProcessSummary {
   readonly settled: boolean
 }
 
-/** Count structured calls across the whole run, before virtual segmentation. */
+/** Count structured calls across the whole run, before the reply leaves the fold. */
 export function summarizeFocusedWork(nodes: readonly FocusedWorkNode[]): FocusedProcessSummary {
   const tools = new Map(
     nodes.flatMap((node) =>
@@ -162,7 +159,10 @@ function turnStates(nodes: readonly DisplayTimelineNode[]): Map<number, TurnStat
   return turns
 }
 
-/** Bounded segments preserve row virtualization even for one very long Turn. */
+/**
+ * One Turn projects to one row. The row keeps a bounded, compact process log
+ * on screen, so a very long Turn neither multiplies rows nor floods the page.
+ */
 export function createFocusedTimelineProjector(): (
   nodes: readonly DisplayTimelineNode[],
 ) => readonly PresentedTimelineNode[] {
@@ -196,7 +196,7 @@ export function createFocusedTimelineProjector(): (
       workTurn(nodes[common - 1]) === changedTurn
     )
       common--
-    // A later live/error node can change every bounded segment of its Turn.
+    // A later live/error node can change its Turn's row.
     // Revisit that Turn without invalidating older, unrelated history.
     for (const [turn, state] of turns) {
       const before = previous?.turns.get(turn)
@@ -209,7 +209,7 @@ export function createFocusedTimelineProjector(): (
       )
         common = Math.min(common, state.first)
     }
-    // Revisit the last unchanged segment too: a new boundary can finalize its answer.
+    // Revisit the last unchanged row too: its closing answer may have finalized.
     let stableRows = 0
     if (previous !== undefined)
       while (stableRows + 1 < previous.starts.length && previous.starts[stableRows + 1]! < common)
@@ -267,31 +267,24 @@ export function createFocusedTimelineProjector(): (
       const processId = `focused-turn:${nodes[runStart]!.id}`
       const processCount = runEnd - runStart - (finalReply !== undefined ? 1 : 0)
       const processSummary = summarizeFocusedWork(runMembers)
-      while (index < runEnd) {
-        const continuation = index !== runStart
-        starts.push(index)
-        const members = nodes
-          .slice(index, live ? runEnd : Math.min(runEnd, index + FOCUSED_PROCESS_SEGMENT_SIZE))
-          .filter(groupable)
-        index += members.length
-        const first = members[0]!
-        // DSH's final reply is the latest finalized step with no tool calls.
-        const answer = index === runEnd ? finalReply : undefined
-        rows.push({
-          kind: 'focused-turn',
-          id: `focused-turn:${first.id}`,
-          turn,
-          nodes: members,
-          sourceIds: members.flatMap(timelineSourceNodeIds),
-          foldable,
-          answer,
-          processId,
-          processCount,
-          processSummary,
-          continuation,
-          live,
-        })
-      }
+      // One Turn is one disclosure: the whole run scrolls inside a single
+      // bounded, compact log instead of stacking virtual segments on the page.
+      const first = runMembers[0]!
+      starts.push(index)
+      rows.push({
+        kind: 'focused-turn',
+        id: `focused-turn:${first.id}`,
+        turn,
+        nodes: runMembers,
+        sourceIds: runMembers.flatMap(timelineSourceNodeIds),
+        foldable,
+        answer: finalReply,
+        processId,
+        processCount,
+        processSummary,
+        live,
+      })
+      index = runEnd
     }
     previous = { source: nodes, rows, starts, turns }
     return rows

@@ -75,7 +75,7 @@ afterEach(() => {
 })
 
 describe('focused conversation interactions', () => {
-  it('presents one disclosure across virtual segments and toggles the entire continuous process', () => {
+  it('presents one disclosure for the whole continuous process and toggles it', () => {
     const source: TimelineNode[] = Array.from({ length: 55 }, (_, index) => ({
       kind: 'assistant-message',
       id: `continuous-${index}`,
@@ -110,6 +110,27 @@ describe('focused conversation interactions', () => {
     fireEvent.click(screen.getByRole('button', { name: /Analysis complete/u }))
     expect(screen.getByText('Progress item 0')).toBeTruthy()
     expect(screen.getByText('Progress item 54')).toBeTruthy()
+  })
+  it('mounts only the latest window of a long running process', () => {
+    const source: TimelineNode[] = Array.from({ length: 200 }, (_, index) => ({
+      kind: 'assistant-message',
+      id: `running-${index}`,
+      markdown: `Running step ${index}`,
+      streaming: false,
+      turn: 1,
+      step: index + 1,
+      turnCompleted: false,
+    }))
+    render(
+      <ConversationLayoutProvider initialLayout="focused">
+        <Timeline sessionId="fixture" nodes={source} streaming />
+      </ConversationLayoutProvider>,
+    )
+    expect(screen.getByText('Running step 199')).toBeTruthy()
+    expect(screen.queryByText('Running step 0')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Load earlier' }))
+    expect(screen.getByText('Running step 80')).toBeTruthy()
+    expect(screen.queryByText('Running step 79')).toBeNull()
   })
   it('lets a user close active work, retains that choice on updates, and reopens the same process', () => {
     const live = nodes
@@ -182,9 +203,8 @@ describe('focused conversation interactions', () => {
     expect(screen.getByText('Failed tool calls: 1')).toBeDefined()
     expect(screen.getByText('I am examining the implementation')).toBeDefined()
   })
-  it('keeps produced file actions accessible while the original tool process is collapsed', () => {
+  it('opens produced files while the original tool process is collapsed', () => {
     const open = vi.fn()
-    const reveal = vi.fn()
     const source = nodes.map((node) =>
       node.kind === 'tool'
         ? { ...node, tool: { ...node.tool, category: 'edit', locations: [{ path: 'src/result.ts' }] } }
@@ -192,29 +212,30 @@ describe('focused conversation interactions', () => {
     )
     render(
       <ConversationLayoutProvider initialLayout="focused">
-        <Timeline
-          sessionId="fixture"
-          nodes={source}
-          streaming={false}
-          onOpenLink={open}
-          onShowInFolder={reveal}
-        />
+        <Timeline sessionId="fixture" nodes={source} streaming={false} onOpenLink={open} />
       </ConversationLayoutProvider>,
     )
     expect(screen.queryByText('I am examining the implementation')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Open src/result.ts' }))
     expect(open).toHaveBeenCalledWith('src/result.ts')
-    fireEvent.click(screen.getByRole('button', { name: 'Show in folder' }))
-    expect(reveal).toHaveBeenCalledWith('src/result.ts')
+    // The chip already opens the file, so the row must not offer a second
+    // folder action that only repeats it.
+    expect(screen.queryByRole('button', { name: 'Show in folder' })).toBeNull()
   })
   it('folds completed work, keeps the final reply visible and opens the original process', () => {
-    render(session())
+    const view = render(session())
+    const turn = (): Element | null => view.container.querySelector('.dsh-focused-turn')
     expect(screen.getByText('The complete result')).toBeDefined()
     expect(screen.queryByText('I am examining the implementation')).toBeNull()
+    // Collapsed work is not a scroll box; it mounts nothing to bound.
+    expect(turn()?.getAttribute('data-compact-process')).toBe('false')
     const button = screen.getByRole('button', { name: /Tools used: 1/ })
     expect(button.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(button)
     expect(button.getAttribute('aria-expanded')).toBe('true')
+    // Reopening a settled process keeps the compact, bounded work log the live
+    // run uses instead of expanding the whole process into the page.
+    expect(turn()?.getAttribute('data-compact-process')).toBe('true')
     expect(screen.getByText('I am examining the implementation')).toBeDefined()
     expect(screen.getByRole('button', { name: /Tool calls: 1/ })).toBeDefined()
   })
@@ -237,21 +258,42 @@ describe('focused conversation interactions', () => {
     expect(screen.getByRole('button', { name: 'Conversation layout: Classic' })).toBeDefined()
   })
 
-  it('never automatically folds active or interrupted work, or verbose history', () => {
-    for (const source of [
-      nodes.map((node) => (node.kind === 'assistant-message' ? { ...node, turnCompleted: false } : node)),
-      nodes.map((node) =>
-        node.kind === 'assistant-message' ? { ...node, interrupted: true as const } : node,
+  it('opens only the active tail and folds interrupted or verbose history', () => {
+    const active = render(
+      session(
+        'standard',
+        nodes.map((node) => (node.kind === 'assistant-message' ? { ...node, turnCompleted: false } : node)),
       ),
-    ]) {
-      const view = render(session('standard', source))
-      expect(screen.getByText('I am examining the implementation')).toBeDefined()
-      expect(screen.getByRole('button', { name: /Tools used: 1/ }).getAttribute('aria-expanded')).toBe('true')
-      view.unmount()
-    }
-    render(session('verbose'))
+    )
     expect(screen.getByText('I am examining the implementation')).toBeDefined()
     expect(screen.getByRole('button', { name: /Tools used: 1/ }).getAttribute('aria-expanded')).toBe('true')
+    active.unmount()
+
+    const interrupted = render(
+      session(
+        'standard',
+        nodes.map((node) =>
+          node.kind === 'assistant-message' ? { ...node, interrupted: true as const } : node,
+        ),
+      ),
+    )
+    // Settled history starts folded, whatever ended it.
+    expect(screen.queryByText('I am examining the implementation')).toBeNull()
+    const folded = screen.getByRole('button', { name: /Work details|Tools used: 1/ })
+    expect(folded.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(folded)
+    expect(screen.getByText('I am examining the implementation')).toBeDefined()
+    interrupted.unmount()
+
+    const verbose = render(session('verbose'))
+    expect(screen.queryByText('I am examining the implementation')).toBeNull()
+    const verboseSummary = screen.getByRole('button', { name: /Work details|Tools used: 1/ })
+    expect(verboseSummary.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(verboseSummary)
+    // Verbose history reopens as the same bounded, compact log.
+    expect(verbose.container.querySelector('.dsh-focused-turn')?.getAttribute('data-compact-process')).toBe(
+      'true',
+    )
   })
 
   it('reveals an original source node behind a completed process for the inspector', async () => {
