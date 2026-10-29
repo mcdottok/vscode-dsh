@@ -1,6 +1,6 @@
 import { useId, useLayoutEffect, useRef, useState, type ReactElement } from 'react'
 import { Icon } from '../../ui/Icon.js'
-import { renderTimelineNode } from './timeline-renderers.js'
+import { renderAnswerActions, renderTimelineNode } from './timeline-renderers.js'
 import { assistantBlocksFromAggregates, type TimelineNodeRenderContext } from './timeline-shared.js'
 import {
   hasFocusedWork,
@@ -74,6 +74,8 @@ export function FocusedTurn(props: {
       answer = { ...plain, turnUsage }
     }
   }
+  // The footer controls describe the original closing reply, not the split cards.
+  const answerActions = renderAnswerActions(node.answer, context)
   const revealDismissedId = `${processId}:reveal-dismissed:${context.revealRequestId ?? context.revealSourceNodeId}`
   const revealed =
     context.revealSourceNodeId !== undefined &&
@@ -231,6 +233,8 @@ export function FocusedTurn(props: {
         context.onOpenLink === undefined ? undefined : context.requestOpenLink,
         context.t,
       )}
+      {/* Copy, feedback and branch close the Turn, below every produced file. */}
+      {answerActions === null ? null : <div className="dsh-focused-turn__actions">{answerActions}</div>}
     </section>
   )
 }

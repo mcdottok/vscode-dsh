@@ -110,19 +110,8 @@
   margin-top: var(--dsh-space-2);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .dsh-message-actions {
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .dsh-timeline__message-stack:hover .dsh-message-actions,
-  .dsh-timeline__message-stack:focus-within .dsh-message-actions,
-  .dsh-message-actions:focus-within {
-    opacity: 1;
-    pointer-events: auto;
-  }
-}
+/* The controls are part of the Turn footer: they stay visible instead of
+ * appearing on hover, so no reserved row collapses into blank space. */
 
 .dsh-message-actions__feedback-status {
   color: var(--dsh-muted);

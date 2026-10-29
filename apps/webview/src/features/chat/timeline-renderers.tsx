@@ -31,6 +31,7 @@ import {
   type UserTextFacts,
 } from './timeline-shared.js'
 import { formatEventPayload } from './timeline-projection.js'
+import type { FocusedAnswerNode } from './focused-timeline-projection.js'
 import { producedFilePaths, renderDeliverables, renderProducedFiles } from './timeline-produced-files.js'
 import {
   assistantMetricsLabel,
@@ -381,6 +382,7 @@ function renderNode(
         assistantLabel,
         onOpenLink,
         onLoadImage,
+        onShowInFolder,
         t,
         onBranch,
         branchUnavailable,
@@ -418,7 +420,6 @@ function renderNode(
         assistantLabel,
         onOpenLink,
         onLoadImage,
-        onShowInFolder,
         t,
         undefined,
         true,
@@ -603,7 +604,7 @@ function renderAssistantTurn(
         {renderProducedFiles(producedFiles, onOpenLink, t)}
       </article>
       {turnUsage === undefined ? null : <TurnUsageDisclosure usage={turnUsage} translate={t} />}
-      {node.markdown.trim() === '' || actionsUnavailable ? null : (
+      {node.markdown.trim() === '' || actionsUnavailable || focused ? null : (
         <MessageActions
           text={node.markdown}
           {...feedbackActionProps(
@@ -622,6 +623,44 @@ function renderAssistantTurn(
         />
       )}
     </div>
+  )
+}
+
+/**
+ * Focused turns own the answer's controls: they sit at the very bottom of the
+ * Turn, after the produced-files row, and stay visible instead of appearing
+ * between the answer card and those files on hover.
+ */
+export function renderAnswerActions(
+  node: FocusedAnswerNode | undefined,
+  context: TimelineNodeRenderContext,
+): ReactElement | null {
+  if (node === undefined) return null
+  const inProgress = assistantNodeInProgress(node)
+  const actionsUnavailable =
+    context.running || inProgress || (node.turn !== undefined && node.turnCompleted !== true)
+  if (node.markdown.trim() === '' || actionsUnavailable) return null
+  const messageId = node.kind === 'assistant-turn' ? assistantMessageId(node) : node.id
+  return (
+    <MessageActions
+      text={node.markdown}
+      {...feedbackActionProps(
+        messageId,
+        context.feedback,
+        context.onFeedback,
+        context.onFeedbackSubmit,
+        context.onFeedbackPrepare,
+        context.feedbackUnavailable === true,
+      )}
+      {...(context.onBranch === undefined
+        ? {}
+        : {
+            onBranch:
+              node.sequence === undefined ? () => undefined : () => context.onBranch?.(node.sequence!),
+          })}
+      branchUnavailable={branchUnavailableForNode(node, context.branching)}
+      translate={context.t}
+    />
   )
 }
 
@@ -702,7 +741,7 @@ function renderAssistantMessage(
         )}
       </article>
       {turnUsage === undefined ? null : <TurnUsageDisclosure usage={turnUsage} translate={t} />}
-      {node.markdown.trim() === '' || actionsUnavailable ? null : (
+      {node.markdown.trim() === '' || actionsUnavailable || focused ? null : (
         <MessageActions
           text={node.markdown}
           {...feedbackActionProps(

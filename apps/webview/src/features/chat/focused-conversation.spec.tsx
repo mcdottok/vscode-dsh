@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { TimelineNode } from '@dsh-vscode/timeline'
 import { ConversationLayoutProvider } from '../../app/ConversationLayoutProvider.js'
@@ -238,6 +238,26 @@ describe('focused conversation interactions', () => {
     expect(turn()?.getAttribute('data-compact-process')).toBe('true')
     expect(screen.getByText('I am examining the implementation')).toBeDefined()
     expect(screen.getByRole('button', { name: /Tool calls: 1/ })).toBeDefined()
+  })
+
+  it('keeps the turn actions below produced files in one always-mounted row', () => {
+    const source = nodes.map((node) =>
+      node.kind === 'tool'
+        ? { ...node, tool: { ...node.tool, category: 'edit', locations: [{ path: 'src/result.ts' }] } }
+        : node,
+    )
+    const view = render(session('standard', source))
+    const turn = view.container.querySelector('.dsh-focused-turn')!
+    const footer = turn.lastElementChild as HTMLElement
+    const produced = turn.querySelector('.dsh-timeline__produced-files')!
+    expect(footer.className).toBe('dsh-focused-turn__actions')
+    // The footer closes the Turn: produced files first, controls after them.
+    expect(produced.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+    // Controls are mounted for a folded Turn too; the row never appears only on
+    // hover, so no empty strip is reserved above the files.
+    expect(within(footer).getByRole('button', { name: 'Copy' })).toBeDefined()
   })
 
   it('preserves classic rendering and persists the switch across remounts', () => {
