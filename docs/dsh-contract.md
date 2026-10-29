@@ -141,6 +141,8 @@ Control 基线随 wire 变化：早期 alpha 是 `queues`/`jobs`；`alpha162` �
 
 只有明确支持 turn-window 的精确入口，才在普通 Session/Subagent 首屏与历史分页发送该参数：首屏/follow 使用至少 50 条、2 回合，扩展旧页使用本地 pageSize 200 条、2 回合；这与上游普通 `loadOlder()` 的 50 条默认值不同。补洞、导出、Goal 等严格读取继续按有界 durable sequence 分页。工具 `projectContent()` 插入的标准 ContentBlock 按结构化内容映射，不解析渲染文本。归档恢复只在精确声明该 Remote 的入口开放；旧 Host/alpha 入口在调用底层前明确返回不可用，永久删除没有上游契约。
 
+Host 首屏转录窗口按实际正文保留上下文：普通软预算不足以覆盖最近正文时，可在既有协议节点数与字节硬上限内扩大连续窗口，优先保留可用的近期用户消息与回复，不通过跳过中间工具记录拼接历史。Session 首屏原始页缺少用户正文或附件上下文、且仍有更早记录时，沿严格递减的历史游标最多补读三页；读取期间保持打开屏障及取消、会话切换代次校验，不提前安装半成品窗口，也不加载完整日志。普通会话、仅有附件的用户消息及手动加载更早消息继续沿用原有行为。长轮次超过硬上限时保留真实分页入口，不能承诺全部正文常驻。
+
 ## 工具、命令与交互
 
 `rc201` 及继承它的精确入口直接消费 [rc.1 的 tool-todo projection](https://github.com/deepseek-ai/deepseek-harness/blob/4878cdabd87d4041bdaff61d04c966883b9fd07a/packages/todo/tool-todo/src/index.ts)：原生 `todos` 是整值数组或 null；`todo/write` 替换，`turn/start` 清为 null，`turn/end` 保留清单。rc.2（`639ed015397290b3745d163aafe02ffee4aa3f84`）和 alpha.2（`d743267388641bc76f17c45ce8b4c231aed1d32c`）已核对同一行为。Adapter 只将 key、条目身份及 `in_progress` 映射为 Domain `todoList` / `in-progress`；完整基线缺少服务表示空当前列表，不从历史 Todo 卡恢复。历史卡仍属于对应回合；旧版未声明该 projection 时，由 Host 桥接结构化 Todo 整值，Webview 不再扫描历史。桥只采用最新尾部，裁切带明确标记；新版原生投影一旦可用就停止该桥的推导，不能用新版投影契约猜测旧版。

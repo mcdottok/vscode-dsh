@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import path from 'node:path'
-import type { BackendEvent, SessionHistoryEvent, SessionHistoryPage } from '@dsh-vscode/domain'
+import type { BackendEvent, SessionDetail, SessionHistoryEvent, SessionHistoryPage } from '@dsh-vscode/domain'
 import {
   TRANSCRIPT_MAX_CHARS,
   TRANSCRIPT_MAX_NODES,
@@ -25,6 +25,43 @@ const message = (sequence: number, text = `Answer ${sequence}`): SessionHistoryE
     markdown: text,
     sequence,
   })
+const toolMessage = (sequence: number, size = 16): SessionHistoryEvent =>
+  row(sequence, {
+    type: 'tool.updated',
+    sessionId,
+    sequence,
+    tool: {
+      id: `tool-${sequence}`,
+      name: 'read',
+      category: 'read',
+      title: 'Read',
+      status: 'completed',
+      inputSummary: 'x'.repeat(size),
+      outputSummary: 'y'.repeat(size),
+      metadata: {},
+    },
+  })
+function detail(history: readonly SessionHistoryEvent[], before = 10): SessionDetail {
+  return {
+    id: sessionId,
+    workspaceId: 'workspace',
+    title: 'Tool-heavy session',
+    blank: false,
+    status: 'idle',
+    createdAt: '2026-10-14T00:00:00Z',
+    updatedAt: '2026-10-14T00:00:00Z',
+    configuration: {
+      preset: 'standard',
+      toolMode: 'native',
+      permissionPreset: 'workspace-write',
+      planMode: false,
+      model: { providerId: 'fixture', modelId: 'model' },
+    },
+    history,
+    historyHasMore: true,
+    historyBeforeSequence: before,
+  }
+}
 function fixture(
   read = vi
     .fn<
@@ -58,6 +95,120 @@ function fixture(
 afterEach(() => vi.useRealTimers())
 
 describe('Host transcript windows', () => {
+  for (const [count, size] of [
+    [400, 16],
+    [110, 4000],
+  ] as const)
+    it(`keeps nearby messages when ${count} tool rows exceed the normal history budget`, async () => {
+      const client = fixture()
+      const user = row(2, {
+        type: 'message.user',
+        sessionId,
+        messageId: 'question',
+        markdown: 'Continue this task',
+      })
+      const history = [
+        message(1, 'Previous answer'),
+        user,
+        ...Array.from({ length: count }, (_, i) => toolMessage(i + 3, size)),
+      ]
+      const opened = client.open(history)
+      expect(opened.nodes[0]).toMatchObject({ markdown: 'Previous answer' })
+      expect(opened.nodes[1]).toMatchObject({ markdown: 'Continue this task' })
+      expect(opened.nodes.filter((node) => node.kind === 'tool')).toHaveLength(count)
+      expect(opened.nodes.length).toBeLessThanOrEqual(TRANSCRIPT_MAX_NODES)
+      expect(JSON.stringify(opened).length).toBeLessThanOrEqual(TRANSCRIPT_MAX_CHARS)
+      client.service.accept(toolMessage(count + 3, size).event)
+      const latest = await client.service.navigate(
+        sessionId,
+        'latest',
+        opened.revision,
+        new AbortController().signal,
+      )
+      expect(latest.nodes[0]).toMatchObject({ markdown: 'Previous answer' })
+      client.service.dispose()
+    })
+
+  it.each([false, true])(
+    'automatically reads user context behind a tool-only page (commentary: %s)',
+    async (commentary) => {
+      const older = [
+        message(8, 'Recent answer'),
+        row(9, { type: 'message.user', sessionId, messageId: 'question', markdown: 'Continue' }),
+      ]
+      const client = fixture(vi.fn().mockResolvedValue({ events: older, hasMore: false, beforeSequence: 8 }))
+      const opened = await client.service.installWithContext(
+        detail([toolMessage(10), ...(commentary ? [message(11, 'Working on the next tool')] : [])]),
+        client.service.begin(sessionId),
+        new AbortController().signal,
+      )
+      expect(client.read).toHaveBeenCalledExactlyOnceWith(sessionId, 10, expect.any(AbortSignal), false)
+      expect(opened.nodes.slice(0, 3).map((node) => node.kind)).toEqual([
+        'assistant-message',
+        'user-message',
+        'tool',
+      ])
+      expect(opened.nodes[0]).toMatchObject({ markdown: 'Recent answer' })
+      client.service.dispose()
+    },
+  )
+
+  it('bounds automatic context reads and rejects a cursor that does not advance', async () => {
+    const client = fixture(
+      vi
+        .fn()
+        .mockImplementation((_id, before) =>
+          Promise.resolve({ events: [toolMessage(before! - 1)], hasMore: true, beforeSequence: before! - 1 }),
+        ),
+    )
+    await client.service.installWithContext(
+      detail([toolMessage(10)]),
+      client.service.begin(sessionId),
+      new AbortController().signal,
+    )
+    expect(client.read).toHaveBeenCalledTimes(3)
+    client.read.mockResolvedValue({ events: [], hasMore: true, beforeSequence: 10 })
+    await expect(
+      client.service.installWithContext(
+        detail([toolMessage(10)]),
+        client.service.begin(sessionId),
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({ context: { reason: 'history-cursor-not-advancing' } })
+    client.service.dispose()
+  })
+
+  it('does not install context after cancellation or a newer session choice', async () => {
+    let finish!: (page: SessionHistoryPage) => void
+    const client = fixture(
+      vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve
+          }),
+      ),
+    )
+    const abort = new AbortController()
+    const opening = client.service.installWithContext(
+      detail([toolMessage(10)]),
+      client.service.begin(sessionId),
+      abort.signal,
+    )
+    abort.abort()
+    finish({ events: [message(8)], hasMore: false, beforeSequence: 8 })
+    await expect(opening).rejects.toMatchObject({ name: 'AbortError' })
+    const superseded = client.service.installWithContext(
+      detail([toolMessage(10)]),
+      client.service.begin(sessionId),
+      new AbortController().signal,
+    )
+    const next = client.service.begin('other')
+    client.service.installPage('other', { events: [], hasMore: false }, next)
+    finish({ events: [message(8)], hasMore: false, beforeSequence: 8 })
+    await expect(superseded).rejects.toMatchObject({ context: { reason: 'open-superseded' } })
+    client.service.dispose()
+  })
+
   it('preserves the Host baseline when a replacement history read is incomplete', async () => {
     vi.useFakeTimers()
     const client = fixture()

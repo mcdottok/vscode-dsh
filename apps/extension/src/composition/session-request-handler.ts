@@ -115,7 +115,7 @@ export function createSessionRequestHandler(
             rebaseline: false,
           })
         }
-        const transcript = deps.transcript.install(detail, generation)
+        const transcript = await deps.transcript.installWithContext(detail, generation, signal)
         return publicValue(
           withSessionWorkspaceScope({
             ...detail,

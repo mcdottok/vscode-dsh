@@ -4,6 +4,7 @@ import {
   type BackendEvent,
   type SessionDetail,
   type SessionHistoryPage,
+  type SessionHistoryEvent,
   type TodoView,
 } from '@dsh-vscode/domain'
 import {
@@ -166,6 +167,45 @@ export class TranscriptWindowService {
       generation,
       detail.cwd,
     )
+  }
+
+  /** Read a little further when a long tool run fills the entire first page. */
+  public async installWithContext(
+    initial: SessionDetail,
+    generation: number,
+    signal: AbortSignal,
+  ): Promise<TranscriptWindow> {
+    let detail = initial
+    for (
+      let reads = 0;
+      reads < 3 && detail.historyHasMore && !historyHasUserContext(detail.history ?? []);
+      reads++
+    ) {
+      signal.throwIfAborted()
+      const pending = this.pending
+      if (pending?.generation !== generation || pending.sessionId !== detail.id)
+        throw stale('open-superseded')
+      const before = detail.historyBeforeSequence
+      if (before === undefined) break
+      const page = await this.deps.read(detail.id, before, signal, pending.child)
+      signal.throwIfAborted()
+      if (this.pending !== pending) throw stale('open-superseded')
+      if (
+        (page.beforeSequence !== undefined && page.beforeSequence >= before) ||
+        (page.hasMore && page.beforeSequence === undefined)
+      )
+        throw stale('history-cursor-not-advancing')
+      const { historyBeforeSequence: _before, ...metadata } = detail
+      void _before
+      detail = {
+        ...metadata,
+        history: [...page.events, ...(detail.history ?? [])],
+        historyHasMore: page.hasMore,
+        ...(page.beforeSequence === undefined ? {} : { historyBeforeSequence: page.beforeSequence }),
+      }
+    }
+    signal.throwIfAborted()
+    return this.install(detail, generation)
   }
 
   public installPage(
@@ -780,11 +820,22 @@ export class TranscriptWindowService {
   }
 
   private bound(resident: Resident, preferOlder = false): void {
-    let remaining = (resident.expanded === true ? TRANSCRIPT_MAX_CHARS : 512 * 1024) - 128 * 1024
-    const nodeBudget = resident.expanded === true ? TRANSCRIPT_MAX_NODES : 256
+    const hardChars = TRANSCRIPT_MAX_CHARS - 128 * 1024
+    const softChars = resident.expanded === true ? hardChars : 384 * 1024
+    const softNodes = resident.expanded === true ? TRANSCRIPT_MAX_NODES - 32 : 224
+    let remaining = hardChars
     const nodes: TimelineNode[] = []
     const source = resident.timeline.nodes
     const candidates = source.filter((node) => !resident.contextIds.has(node.id))
+    const bodies = candidates.filter(isMessageBody)
+    const wantedUsers = Math.min(2, bodies.filter((node) => node.kind === 'user-message').length)
+    const wantsAssistant = bodies.some((node) => node.kind === 'assistant-message')
+    const wantsAnswer = bodies.some((node) => node.kind === 'assistant-message' && node.turnCompleted)
+    const wantedBodies = Math.min(2, bodies.length)
+    let keptBodies = 0
+    let keptUsers = 0
+    let keptAssistant = false
+    let keptAnswer = false
     if (preferOlder) candidates.reverse()
     const projectNode = (original: TimelineNode): { value: TimelineNode; omitted: boolean; size: number } => {
       let clipped = this.previews.get(original)
@@ -800,14 +851,26 @@ export class TranscriptWindowService {
       }
       return clipped
     }
-    for (let index = candidates.length - 1; index >= 0 && nodes.length < nodeBudget - 32; index--) {
+    for (let index = candidates.length - 1; index >= 0 && nodes.length < TRANSCRIPT_MAX_NODES - 32; index--) {
       const original = candidates[index]!
       const clipped = projectNode(original)
       const node = clipped.value
       const size = clipped.size
+      const hasContext =
+        keptBodies >= wantedBodies &&
+        keptUsers >= wantedUsers &&
+        (!wantsAssistant || keptAssistant) &&
+        (!wantsAnswer || keptAnswer)
+      if (hasContext && (nodes.length >= softNodes || hardChars - remaining + size > softChars)) break
       if (size > remaining) break
       remaining -= size
       nodes.unshift(node)
+      if (isMessageBody(node)) {
+        keptBodies++
+        if (node.kind === 'user-message') keptUsers++
+        keptAssistant ||= node.kind === 'assistant-message'
+        keptAnswer ||= node.kind === 'assistant-message' && node.turnCompleted === true
+      }
       if (clipped.omitted || (resident.omitted.has(node.id) && isConversationText(node)))
         resident.omitted.add(node.id)
       else resident.omitted.delete(node.id)
@@ -1246,6 +1309,25 @@ export function isTranscriptOnlyEvent(event: BackendEvent): boolean {
     isTranscriptEvent(event) &&
     (!['turn.started', 'turn.ended', 'goal.updated', 'workflow.updated'].includes(event.type) ||
       (event.replayed === true && (event.type === 'turn.started' || event.type === 'turn.ended')))
+  )
+}
+
+function isMessageBody(node: TimelineNode): boolean {
+  return (
+    (node.kind === 'user-message' || node.kind === 'assistant-message') &&
+    (node.markdown.trim() !== '' ||
+      (node.images?.length ?? 0) > 0 ||
+      (node.kind === 'user-message' && (node.attachments?.length ?? 0) > 0))
+  )
+}
+
+function historyHasUserContext(events: readonly SessionHistoryEvent[]): boolean {
+  return events.some(
+    ({ event }) =>
+      event.type === 'message.user' &&
+      (event.markdown.trim() !== '' ||
+        (event.images?.length ?? 0) > 0 ||
+        (event.attachments?.length ?? 0) > 0),
   )
 }
 
