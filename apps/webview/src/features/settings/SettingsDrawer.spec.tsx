@@ -431,7 +431,7 @@ describe('SettingsDrawer', () => {
     await screen.findByRole('heading', { name: 'Connection source' })
     const environment = screen.getByText('Environment details').closest('details')!
     fireEvent.click(within(environment).getByText('Environment details'))
-    expect(within(environment).getByText('Local DSH package (npm)')).toBeDefined()
+    expect(within(environment).getByText('DSH CLI')).toBeDefined()
     expect(screen.getByText('0.1.3')).toBeDefined()
     expect(screen.getByText('0.6.0')).toBeDefined()
     expect(screen.getByText('deepseek/deepseek-chat')).toBeDefined()
@@ -561,7 +561,9 @@ describe('SettingsDrawer', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Connection' }))
     const connectionPanel = await screen.findByRole('tabpanel', { name: 'Connection' })
     const connection = await within(connectionPanel).findByRole('region', { name: 'Connection source' })
-    const updates = await within(connectionPanel).findByRole('region', { name: 'Local package and version' })
+    const updates = await within(connectionPanel).findByRole('region', {
+      name: 'DSH CLI installation and version',
+    })
     expect(connection.compareDocumentPosition(updates) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(within(connectionPanel).queryByRole('region', { name: 'DSH preferences' })).toBeNull()
   })
@@ -627,7 +629,7 @@ describe('SettingsDrawer', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Connection' }))
     const field = await screen.findByLabelText('Desktop VS Code connection address')
     fireEvent.change(field, { target: { value: 'http://127.0.0.1:43120/?token=fixture-draft' } })
-    fireEvent.click(screen.getByRole('radio', { name: /Local DSH package/ }))
+    fireEvent.click(screen.getByRole('radio', { name: /DSH CLI/ }))
     fireEvent.click(screen.getByRole('radio', { name: /DSH Desktop/ }))
     expect(screen.getByLabelText('Desktop VS Code connection address')).toHaveProperty('value', '')
 
@@ -653,23 +655,20 @@ describe('SettingsDrawer', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Connection' }))
 
     await screen.findByRole('heading', { name: 'Connection source' })
-    const automatic = screen.getByRole('radio', { name: /Local DSH package/ })
+    const automatic = screen.getByRole('radio', { name: /DSH CLI/ })
     const custom = screen.getByRole('radio', { name: /DSH Desktop/ })
     expect(automatic).toHaveProperty('checked', false)
     expect(custom).toHaveProperty('checked', false)
     expect(screen.getByText(/is managed in VS Code settings/)).toBeDefined()
 
-    const apply = screen.getByRole('button', { name: 'Start and connect to local DSH' })
+    const apply = screen.getByRole('button', { name: 'Start and connect' })
     expect(apply).toHaveProperty('disabled', true)
     fireEvent.click(apply)
     expect(onConfigureConnection).not.toHaveBeenCalled()
 
     fireEvent.click(automatic)
-    expect(screen.getByRole('button', { name: 'Start and connect to local DSH' })).toHaveProperty(
-      'disabled',
-      false,
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Start and connect to local DSH' }))
+    expect(screen.getByRole('button', { name: 'Start and connect' })).toHaveProperty('disabled', false)
+    fireEvent.click(screen.getByRole('button', { name: 'Start and connect' }))
     await waitFor(() => expect(onConfigureConnection).toHaveBeenCalledWith('local', undefined))
   })
 
@@ -686,7 +685,7 @@ describe('SettingsDrawer', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Connection' }))
 
     await screen.findByRole('heading', { name: 'Connection source' })
-    expect(screen.getByRole('radio', { name: /Local DSH package/ })).toHaveProperty('checked', true)
+    expect(screen.getByRole('radio', { name: /DSH CLI/ })).toHaveProperty('checked', true)
     expect(screen.getByRole('radio', { name: /DSH Desktop/ })).toHaveProperty('checked', false)
 
     view.rerender(drawerElement({ open: false, onLoadSettings }))

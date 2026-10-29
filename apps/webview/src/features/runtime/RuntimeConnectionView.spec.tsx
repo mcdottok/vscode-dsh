@@ -42,7 +42,7 @@ describe('RuntimeConnectionView', () => {
   })
 
   it.each([
-    ['new-isolated', 'Local DSH is not connected', 'You selected the local DSH package (npm).'],
+    ['new-isolated', 'DSH CLI is not connected', 'You are using DSH CLI.'],
     ['custom', 'DSH Desktop is not connected', 'Keep DSH Desktop running with VS Code connection enabled'],
     ['auto', 'DSH Desktop is not connected', 'Keep DSH Desktop running with VS Code connection enabled'],
   ] as const)(
@@ -73,9 +73,7 @@ describe('RuntimeConnectionView', () => {
       expect(read).toHaveBeenCalledOnce()
       if (mode === 'new-isolated')
         expect(
-          screen.getByText(
-            'Connection source: local DSH package (npm). Desktop does not need to be running.',
-          ),
+          screen.getByText('Connection source: DSH CLI. The extension starts the local service.'),
         ).toBeDefined()
     },
   )

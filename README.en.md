@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | English
 
-Develop with DeepSeek Harness in VS Code, with an editor workflow similar to Codex and Claude Code extensions: chat about your project, attach selections and files, follow tool execution, and review changes. Run a local DSH package or connect to Desktop and continue the same workspace and session.
+Develop with DeepSeek Harness in VS Code, with an editor workflow similar to Codex and Claude Code extensions: chat about your project, attach selections and files, follow tool execution, and review changes. Run DSH CLI locally or connect to Desktop and continue the same workspace and session.
 
 ## Demo
 
@@ -24,7 +24,7 @@ If you previously disabled the connection entry, re-enable **Settings → Genera
 
 For other platforms, remote environments, or when automatic connection is unavailable, copy the address from Desktop's **VS Code connection** entry and run **DSH: Connect to Desktop** in VS Code. Credentials are stored in VS Code SecretStorage.
 
-### Option 2: Use a local DSH package from npm
+### Option 2: Use DSH CLI
 
 This option requires neither Desktop nor the connect plugin. Install Node.js (see [compatibility](docs/dsh-contract.md) for runtime requirements and supported DSH versions), then run:
 
@@ -32,7 +32,7 @@ This option requires neither Desktop nor the connect plugin. Install Node.js (se
 npm install --global @deepseek-ai/dsh
 ```
 
-In the extension, open **Settings → Connection source**, select **Local DSH package**, confirm the detected global package or select an executable, then click **Start and connect to local DSH**. You can also install a specific version under **Local package and version** in settings. The extension starts a separate service; use option 1 to continue an existing Desktop session.
+In the extension, open **Settings → Connection source**, select **DSH CLI**, confirm the detected DSH CLI installation or select an executable, then click **Start and connect**. You can also install a specific version under **DSH CLI installation and version** in settings. The extension starts a separate service; use option 1 to continue an existing Desktop session.
 
 If you download a `.vsix` from GitHub Releases, install it with **Extensions: Install from VSIX...** in VS Code.
 
