@@ -75,6 +75,49 @@ afterEach(() => {
 })
 
 describe('focused conversation interactions', () => {
+  it.each(['compact', 'standard', 'detailed', 'verbose'] as const)(
+    'keeps a streaming reply outside the work log, including when work is collapsed: %s',
+    (mode) => {
+      const body = 'Streaming answer about the data'
+      const source = nodes
+        .slice(0, -1)
+        .map((node) => (node.kind === 'assistant-message' ? { ...node, turnCompleted: false } : node))
+      const answer: TimelineNode = {
+        kind: 'assistant-message',
+        id: 'live-answer',
+        markdown: body,
+        reasoning: { markdown: 'Inspecting the data', streaming: false },
+        streaming: true,
+        turn: 1,
+        step: 2,
+        turnCompleted: false,
+      }
+      const content = (reply: TimelineNode): ReactElement => (
+        <ConversationLayoutProvider initialLayout="focused">
+          <Timeline
+            sessionId="fixture"
+            nodes={[...source, reply]}
+            streaming={reply.kind === 'assistant-message' && reply.streaming}
+            transcriptView={mode}
+          />
+        </ConversationLayoutProvider>
+      )
+      const view = render(content(answer))
+      const outside = view.container.querySelector('.dsh-focused-turn__answer')!
+      expect(outside.textContent).toContain(body)
+      expect(screen.getByText(body).closest('.dsh-focused-turn__process')).toBeNull()
+      fireEvent.click(view.container.querySelector<HTMLButtonElement>('.dsh-focused-turn__summary')!)
+      expect(screen.getByText(body).closest('.dsh-focused-turn__process')).toBeNull()
+      view.rerender(content({ ...answer, markdown: body + ' continues' }))
+      expect(screen.getAllByText(body + ' continues')).toHaveLength(1)
+      expect(view.container.querySelector('.dsh-focused-turn__answer')).toBe(outside)
+      view.rerender(
+        content({ ...answer, markdown: body + ' continues', streaming: false, turnCompleted: true }),
+      )
+      expect(view.container.querySelector('.dsh-focused-turn__answer')).toBe(outside)
+      expect(screen.getByText(body + ' continues').closest('.dsh-focused-turn__process')).toBeNull()
+    },
+  )
   it('presents one disclosure for the whole continuous process and toggles it', () => {
     const source: TimelineNode[] = Array.from({ length: 55 }, (_, index) => ({
       kind: 'assistant-message',
@@ -90,7 +133,7 @@ describe('focused conversation interactions', () => {
     expect(screen.getByText('Progress item 54')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /Work details/u }))
     expect(screen.queryByText('Progress item 0')).toBeNull()
-    expect(screen.queryByText('Progress item 54')).toBeNull()
+    expect(screen.getByText('Progress item 54').closest('.dsh-focused-turn__process')).toBeNull()
     view.rerender(
       session('standard', [
         ...source,
@@ -129,8 +172,8 @@ describe('focused conversation interactions', () => {
     expect(screen.getByText('Running step 199')).toBeTruthy()
     expect(screen.queryByText('Running step 0')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Load earlier' }))
-    expect(screen.getByText('Running step 80')).toBeTruthy()
-    expect(screen.queryByText('Running step 79')).toBeNull()
+    expect(screen.getByText('Running step 79')).toBeTruthy()
+    expect(screen.queryByText('Running step 78')).toBeNull()
   })
   it('lets a user close active work, retains that choice on updates, and reopens the same process', () => {
     const live = nodes

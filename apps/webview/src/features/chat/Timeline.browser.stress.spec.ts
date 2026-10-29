@@ -126,7 +126,8 @@ it.skipIf(browser === undefined)(
         const viewport = document.querySelector('.dsh-timeline');
         const canvas = document.querySelector('.dsh-timeline__canvas');
         const last = [...document.querySelectorAll('.dsh-timeline__row')].at(-1);
-        const visibleEnd = Math.max(canvas.getBoundingClientRect().bottom, last.getBoundingClientRect().bottom) - viewport.getBoundingClientRect().top + viewport.scrollTop;
+        const content = document.querySelector('.dsh-timeline__content');
+        const visibleEnd = Math.max(canvas.getBoundingClientRect().bottom, last.getBoundingClientRect().bottom, content.getBoundingClientRect().bottom) - viewport.getBoundingClientRect().top + viewport.scrollTop;
         const padding = parseFloat(getComputedStyle(viewport).paddingBottom) || 0;
         return { overflow: viewport.scrollHeight - Math.max(viewport.clientHeight, Math.ceil(visibleEnd + padding)), text: last.textContent };
       })()`)) as { overflow: number; text: string }
@@ -155,6 +156,26 @@ it.skipIf(browser === undefined)(
           await check()
         }
         await evaluate("document.querySelector('.dsh-focused-turn__summary').click()")
+        await check()
+        await send('Page.navigate', { url: `${origin}/__work_log_${process.pid}.html?mode=${mode}&stream=1` })
+        let streamingReady = false
+        for (let attempt = 0; attempt < 100 && !streamingReady; attempt++) {
+          await delay(50)
+          try {
+            streamingReady =
+              (await evaluate("Boolean(document.querySelector('.dsh-focused-turn__answer table'))")) === true
+          } catch {
+            /* Wait for the new document. */
+          }
+        }
+        expect(streamingReady).toBe(true)
+        const reply = (await evaluate(`(() => {
+          const reply = [...document.querySelectorAll('.dsh-focused-turn__answer')].at(-1);
+          return { inProcess: reply.closest('.dsh-focused-turn__process') !== null, height: reply.getBoundingClientRect().height, rows: reply.querySelectorAll('tbody tr').length };
+        })()`)) as { inProcess: boolean; height: number; rows: number }
+        expect(reply.inProcess).toBe(false)
+        expect(reply.height).toBeGreaterThan(340)
+        expect(reply.rows).toBe(40)
         await check()
       }
       await send('Browser.close')

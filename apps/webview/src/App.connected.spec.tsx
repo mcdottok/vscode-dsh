@@ -1783,6 +1783,98 @@ describe('App connected rendering', () => {
     expect(screen.queryByRole('button', { name: 'Remove notes.txt' })).toBeNull()
   })
 
+  it.each(['success', 'failure'] as const)(
+    'previews a pasted image before creating a session and retains its handle through first-send handoff: %s',
+    async (outcome) => {
+      const base = connectedState(true)
+      let state: AppState = {
+        ...base,
+        activeSessionId: undefined,
+        pendingSession: { revision: 1, workspaceId: 'w1', configuration: base.configuration! },
+      }
+      const listeners = new Set<() => void>()
+      const publish = (next: AppState): void => {
+        state = next
+        for (const listener of listeners) listener()
+      }
+      const uri = 'dsh-attachment:00000000-0000-4000-8000-000000000031'
+      const image = { uri, name: 'pasted.png', mimeType: 'image/png' }
+      const handles = new Set([uri])
+      const preview = 'data:image/png;base64,AAAA'
+      const releaseAttachments = vi.fn((uris: readonly string[]) => {
+        for (const uri of uris) handles.delete(uri)
+        return Promise.resolve()
+      })
+      let finish!: () => void
+      let fail!: (error: Error) => void
+      const receipt = new Promise<void>((resolve, reject) => {
+        finish = resolve
+        fail = reject
+      })
+      const sendPendingPrompt = vi.fn(() => {
+        // Both updates may be batched by React. Host handles must nevertheless
+        // remain owned by this composition until admission finishes.
+        publish({ ...state, pendingSession: { ...state.pendingSession!, createdSessionId: 's1' } })
+        publish({ ...base, activeSessionId: 's1', pendingSession: undefined })
+        return receipt
+      })
+      currentStore = {
+        ...storeFor(state),
+        getState: () => state,
+        subscribe: (listener) => {
+          listeners.add(listener)
+          return () => listeners.delete(listener)
+        },
+        ingestAttachment: vi.fn().mockResolvedValue(image),
+        previewAttachment: vi.fn(() => Promise.resolve(handles.has(uri) ? preview : undefined)),
+        releaseAttachments,
+        sendPendingPrompt,
+      }
+      render(<App />)
+      const input = screen.getByRole('textbox', { name: 'Prompt' })
+      fireEvent.paste(input, {
+        clipboardData: { files: [new File(['png'], 'pasted.png', { type: 'image/png' })] },
+      })
+      const thumb = await screen.findByRole('button', { name: 'Preview pasted.png' })
+      await waitFor(() => expect(thumb.querySelector('img')?.getAttribute('src')).toBe(preview))
+      fireEvent.click(thumb)
+      const lightbox = await screen.findByRole('dialog', { name: 'Preview pasted.png' })
+      expect(within(lightbox).getByRole('img', { name: 'pasted.png' }).getAttribute('src')).toBe(preview)
+      fireEvent.keyDown(lightbox, { key: 'Escape' })
+      fireEvent.submit(input.closest('form')!)
+      await waitFor(() => expect(sendPendingPrompt).toHaveBeenCalled())
+      expect(handles.has(uri)).toBe(true)
+      expect(releaseAttachments).not.toHaveBeenCalled()
+      expect(
+        screen.getByRole('button', { name: 'Preview pasted.png' }).querySelector('img')?.getAttribute('src'),
+      ).toBe(preview)
+      await act(async () => {
+        if (outcome === 'success') {
+          handles.delete(uri)
+          finish()
+        } else fail(new Error('Backend rejected the message'))
+        await receipt.catch(() => undefined)
+      })
+      if (outcome === 'success') {
+        await waitFor(() => expect(screen.queryByRole('button', { name: 'Remove pasted.png' })).toBeNull())
+      } else {
+        expect(screen.getByRole('button', { name: 'Remove pasted.png' })).toBeDefined()
+        expect(handles.has(uri)).toBe(true)
+        expect(releaseAttachments).not.toHaveBeenCalled()
+        const retry = vi.fn((_sessionId: string, _text: string, attachments: readonly { uri: string }[]) => {
+          expect(attachments.map((attachment) => attachment.uri)).toEqual([uri])
+          expect(handles.has(uri)).toBe(true)
+          handles.delete(uri)
+          return Promise.resolve()
+        })
+        currentStore.sendPrompt = retry
+        fireEvent.submit(screen.getByRole('textbox', { name: 'Prompt' }).closest('form')!)
+        await waitFor(() => expect(retry).toHaveBeenCalledOnce())
+        await waitFor(() => expect(screen.queryByRole('button', { name: 'Remove pasted.png' })).toBeNull())
+      }
+    },
+  )
+
   it('reports an unavailable attachment preview instead of a permanent loading state', async () => {
     const state = connectedState(true)
     const uri = 'dsh-attachment:00000000-0000-4000-8000-000000000002'

@@ -252,8 +252,9 @@ export function createFocusedTimelineProjector(): (
             const step = answeredStep(member)
             return step !== undefined && step < replyStep
           }))
-      // Only the closing reply of a settled Turn stays outside the fold. Live
-      // text stays inside the process until the Turn actually completes.
+      // Completion decides whether work may fold, not whether the reader can
+      // see the current reply. Keep the active tail's body outside the bounded
+      // process while it streams (and during the gap before turn completion).
       const finalReply =
         groupable(runLast) && hasBody(runLast) && runLast.turnCompleted === true && proven
           ? runLast
@@ -264,8 +265,10 @@ export function createFocusedTimelineProjector(): (
         uninterrupted &&
         (finalReply !== undefined || runLast.kind === 'tool')
       const live = !state.closed && runEnd === nodes.length
+      const visibleReply =
+        finalReply ?? (live && groupable(runLast) && hasBody(runLast) ? runLast : undefined)
       const processId = `focused-turn:${nodes[runStart]!.id}`
-      const processCount = runEnd - runStart - (finalReply !== undefined ? 1 : 0)
+      const processCount = runEnd - runStart - (visibleReply !== undefined ? 1 : 0)
       const processSummary = summarizeFocusedWork(runMembers)
       // One Turn is one disclosure: the whole run scrolls inside a single
       // bounded, compact log instead of stacking virtual segments on the page.
@@ -278,7 +281,7 @@ export function createFocusedTimelineProjector(): (
         nodes: runMembers,
         sourceIds: runMembers.flatMap(timelineSourceNodeIds),
         foldable,
-        answer: finalReply,
+        answer: visibleReply,
         processId,
         processCount,
         processSummary,

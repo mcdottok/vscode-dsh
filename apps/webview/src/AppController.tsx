@@ -436,12 +436,34 @@ const useAppControllerImpl = () => {
   const composerOwner =
     state.pendingSession === undefined ? activeSessionId : `pending:${state.pendingSession.revision}`
   const previousComposerOwner = useRef(composerOwner)
+  const pendingComposerDraft = useRef(state.pendingSession)
+  useEffect(() => {
+    // Observe creation synchronously: React may batch the created-session
+    // receipt and the following open into a single render.
+    const rememberPending = (): void => {
+      const pending = store.getState().pendingSession
+      if (pending !== undefined) pendingComposerDraft.current = pending
+    }
+    rememberPending()
+    return store.subscribe(rememberPending)
+  }, [store])
   useEffect(() => {
     // Superseded navigation resolves without switching the store. Clear the
     // handles only when the displayed conversation actually changes, so a
     // delayed completion cannot discard the new conversation's attachments.
     if (composerOwner === undefined || previousComposerOwner.current === composerOwner) return
+    const pending = pendingComposerDraft.current
+    const isFirstSendHandoff =
+      state.pendingSession === undefined &&
+      pending?.createdSessionId === composerOwner &&
+      previousComposerOwner.current === `pending:${pending.revision}`
     previousComposerOwner.current = composerOwner
+    if (isFirstSendHandoff) {
+      // This is the same composition acquiring its real session, not a user
+      // navigation. The Host still needs these handles to admit the first turn.
+      pendingComposerDraft.current = undefined
+      return
+    }
     discardAttachmentDrafts()
     // The failure belonged to the conversation that just left the screen.
     setComposerSubmitError(undefined)

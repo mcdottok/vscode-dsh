@@ -367,6 +367,8 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
                       disabled={backend.kind !== 'connected'}
                       running={false}
                       attachments={attachments}
+                      attachmentPreviews={attachmentPreviews}
+                      attachmentPreviewFailures={attachmentPreviewFailures}
                       editorContext={state.editorContext}
                       editorContextAvailableKinds={state.editorContextAvailableKinds}
                       editorContextLoading={state.editorContextLoading}

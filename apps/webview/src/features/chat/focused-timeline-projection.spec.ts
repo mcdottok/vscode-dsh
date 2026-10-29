@@ -16,6 +16,38 @@ const message = (
 })
 
 describe('focused Turn presentation', () => {
+  it('keeps the live body outside work without declaring the turn complete', () => {
+    const project = createFocusedTimelineProjector()
+    const before = { ...message('progress', 1), turnCompleted: false }
+    const live = { ...message('live', 1, false), step: 2 }
+    const [streaming] = project([before, live])
+    expect(streaming?.kind === 'focused-turn' && streaming.answer).toBe(live)
+    expect(streaming?.kind === 'focused-turn' && streaming.foldable).toBe(false)
+    expect(streaming?.kind === 'focused-turn' && streaming.processCount).toBe(1)
+    const settled = { ...live, streaming: false }
+    const [waiting] = project([before, settled])
+    expect(waiting?.kind === 'focused-turn' && waiting.answer).toBe(settled)
+    expect(waiting?.kind === 'focused-turn' && waiting.foldable).toBe(false)
+    const [working] = project([
+      before,
+      settled,
+      {
+        kind: 'tool',
+        id: 'next',
+        tool: {
+          id: 'next',
+          name: 'read',
+          title: 'Read next',
+          category: 'read',
+          turn: 1,
+          step: 3,
+          status: 'running',
+          metadata: {},
+        },
+      },
+    ])
+    expect(working?.kind === 'focused-turn' && working.answer).toBeUndefined()
+  })
   it('uses the completed transcript tail rather than requiring intermediate steps to close the Turn', () => {
     // closeTurn marks only the final visible reply turnCompleted; settled
     // commentary and reasoning deliberately keep turnCompleted: false.
