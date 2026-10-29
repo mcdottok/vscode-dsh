@@ -562,6 +562,9 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
                       hasMoreHistory={state.historyHasMore}
                       loadingOlderHistory={state.historyLoading}
                       onLoadOlderHistory={timelineOnLoadOlderHistory}
+                      {...(state.historyBeforeSequence === undefined
+                        ? {}
+                        : { historyBeforeSequence: state.historyBeforeSequence })}
                       onFeedback={timelineOnFeedback}
                       onFeedbackPrepare={timelineOnFeedbackPrepare}
                       onFeedbackSubmit={timelineOnFeedbackSubmit}

@@ -4,19 +4,13 @@
 
 在 VS Code 中使用 DeepSeek Harness，获得类似 Codex、Claude Code 的编辑器插件体验：围绕当前项目对话，附加选区和文件，跟踪工具执行并审阅代码变更。可独立运行本机 DSH，也可自动连接桌面端并接续同一工作区与会话。
 
-## 演示
-
-[![查看演示视频](docs/assets/demo-preview.jpg)](docs/assets/demo.mp4)
-
-[查看演示视频](docs/assets/demo.mp4)
-
 ## 安装与连接
 
 先在 VS Code 中安装 **DSH Coding Agent**，打开并信任项目文件夹，再展开右侧 **DSH**。可选择以下任一种方式使用 DSH。
 
 ### 方式一：连接桌面端，接续同一会话
 
-1. 在 DeepSeek Harness / DSH Desktop 的 **插件 → 添加插件** 中输入 `dsh-vscode-connect@latest`，安装并启用配套的 [dsh-vscode-connect](https://github.com/mcdottok/dsh-vscode-connect)。首次安装默认开启 **VS Code 连接** 入口。
+1. 在 DeepSeek Harness / DSH Desktop 的**插件市场**中搜索 **dsh-vscode-connect**（作者 **mcdottok**），安装并启用。也可通过 **插件 → 添加插件** 输入 `dsh-vscode-connect@latest` 安装。首次安装默认开启 **VS Code 连接** 入口，详情见 [dsh-vscode-connect](https://github.com/mcdottok/dsh-vscode-connect)。
 2. 保持桌面端运行。Windows 同机环境下，两个插件会自动发现并连接，无需复制地址或开启浏览器访问。
 3. 选择与桌面端相同的工作区和已有会话，即可从任一端继续开发。
 
@@ -50,6 +44,34 @@ npm install --global @deepseek-ai/dsh
 见[构建说明](BUILD.md)、[贡献指南](CONTRIBUTING.md)和[开发者文档](docs/README.md)。此社区版本使用 `mcdottok.dsh-coding-agent` 标识。此前手动安装的 `mcdottok.vscode-dsh` 和 `dsh-local.vscode-dsh` 是独立扩展，升级前请先卸载旧版，再安装新版；可能需要重新配置连接。
 
 开发历程和版本变更见[更新日志](CHANGELOG.md)。
+
+## 功能预览
+
+### 结合代码上下文提问
+
+选中编辑器中的代码，将选区作为上下文附加到消息，在侧栏中直接讨论当前实现。
+
+![选中代码并附加到 DSH 对话](docs/assets/code-context.png)
+
+### 查找和接续会话
+
+按工作区浏览和搜索已有会话，快速回到之前的对话，继续当前项目的开发。
+
+<img src="docs/assets/session-list.png" alt="按工作区分组的会话列表与搜索入口" width="720">
+
+### 选择连接方式
+
+连接 **DSH Desktop** 接续桌面端会话，或选择 **DSH CLI**，由扩展启动本机服务。
+
+<img src="docs/assets/connection-settings.png" alt="DSH Desktop 与 DSH CLI 连接设置" width="720">
+
+### 在编辑器中开始对话
+
+点击编辑器标题栏中的 **DSH** 图标打开聊天，选择模型与权限后即可描述任务。
+
+<img src="docs/assets/chat-entry.png" alt="从编辑器标题栏打开 DSH 聊天" width="560">
+
+[下载完整演示视频（MP4，约 24 MB）](https://github.com/mcdottok/vscode-dsh/raw/refs/heads/main/docs/assets/demo.mp4)
 
 ## 许可与致谢
 

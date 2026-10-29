@@ -4,19 +4,13 @@
 
 Develop with DeepSeek Harness in VS Code, with an editor workflow similar to Codex and Claude Code extensions: chat about your project, attach selections and files, follow tool execution, and review changes. Run DSH CLI locally or connect to Desktop and continue the same workspace and session.
 
-## Demo
-
-[![Watch the demo](docs/assets/demo-preview.jpg)](docs/assets/demo.mp4)
-
-[Watch the demo video](docs/assets/demo.mp4)
-
 ## Install and connect
 
 Install **DSH Coding Agent** in VS Code, open a trusted project folder, then open **DSH** in the right side bar. Choose either way to run DSH below.
 
 ### Option 1: Connect to Desktop and continue shared sessions
 
-1. In DeepSeek Harness / DSH Desktop, open **Plugins → Add plugin**, enter `dsh-vscode-connect@latest`, and install and enable the companion [dsh-vscode-connect](https://github.com/mcdottok/dsh-vscode-connect). Its **VS Code connection** entry is on by default for new installations.
+1. In the DeepSeek Harness / DSH Desktop **plugin marketplace**, search for **dsh-vscode-connect** by **mcdottok**, then install and enable it. Alternatively, open **Plugins → Add plugin** and enter `dsh-vscode-connect@latest`. Its **VS Code connection** entry is on by default for new installations. See [dsh-vscode-connect](https://github.com/mcdottok/dsh-vscode-connect) for details.
 2. Keep Desktop running. On Windows, the plugins discover and connect automatically on the same machine, without copying an address or enabling browser access.
 3. Select the same workspace and existing session to continue from either app.
 
@@ -50,6 +44,34 @@ The extension attaches to your running DSH by default. Advanced features depend 
 See [build instructions](BUILD.md), [contributing](CONTRIBUTING.md) and [developer documentation](docs/README.md). This community build uses `mcdottok.dsh-coding-agent`. Earlier manually installed `mcdottok.vscode-dsh` and `dsh-local.vscode-dsh` builds are separate extensions: uninstall them before installing the new build. You may need to configure the connection again.
 
 See the [changelog](CHANGELOG.md) for this fork’s development history and version changes.
+
+## Feature preview
+
+### Ask about selected code
+
+Select code in the editor and attach it as context to discuss the implementation directly in the side bar.
+
+![Selected code attached to a DSH conversation](docs/assets/code-context.png)
+
+### Find and resume sessions
+
+Browse and search existing sessions by workspace, then return to a conversation to continue working on your project.
+
+<img src="docs/assets/session-list.png" alt="Session search and workspace groups" width="720">
+
+### Choose how to connect
+
+Connect to **DSH Desktop** to continue Desktop sessions, or select **DSH CLI** to let the extension start a local service.
+
+<img src="docs/assets/connection-settings.png" alt="DSH Desktop and DSH CLI connection settings" width="720">
+
+### Start a conversation in the editor
+
+Click the **DSH** icon in the editor title bar to open chat, choose a model and permissions, and describe your task.
+
+<img src="docs/assets/chat-entry.png" alt="Opening DSH chat from the editor title bar" width="560">
+
+[Download the full demo video (MP4, about 24 MB)](https://github.com/mcdottok/vscode-dsh/raw/refs/heads/main/docs/assets/demo.mp4)
 
 ## License and credits
 

@@ -843,7 +843,12 @@ describe('Timeline', () => {
     const { container } = render(
       <Timeline
         sessionId="session-1"
-        nodes={[{ kind: 'user-message', id: 'user-1', markdown: 'latest' }]}
+        nodes={[
+          { kind: 'user-message', id: 'user-0', markdown: 'previous question' },
+          { kind: 'assistant-message', id: 'answer-0', markdown: 'previous answer', streaming: false },
+          { kind: 'user-message', id: 'user-1', markdown: 'latest' },
+          { kind: 'assistant-message', id: 'answer-1', markdown: 'latest answer', streaming: false },
+        ]}
         streaming={false}
         hasMoreHistory
         onLoadOlderHistory={loadOlder}

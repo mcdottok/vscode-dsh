@@ -46,6 +46,7 @@ import {
 import { useTranscriptCopyFallback } from './useTranscriptCopyFallback.js'
 import { useConversationLayout } from '../../app/ConversationLayoutProvider.js'
 import type { ConversationLayout } from '../../app/conversation-layout.js'
+import { useInitialHistoryFill } from './useInitialHistoryFill.js'
 
 export interface TimelineProps {
   readonly sessionId: string
@@ -84,6 +85,7 @@ export interface TimelineProps {
   /** Whether an older DSH history window is available. */
   readonly hasMoreHistory?: boolean
   readonly loadingOlderHistory?: boolean
+  readonly historyBeforeSequence?: number
   readonly onLoadOlderHistory?: () => Promise<void> | void
   readonly pagedHistory?: boolean
   readonly revealTarget?: { readonly nodeId: string; readonly requestId: string }
@@ -534,6 +536,18 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
     if (props.pagedHistory !== true && element !== null && element.scrollTop <= 24 && isUserScrollActive())
       loadOlderHistory()
   }, [isUserScrollActive, loadOlderHistory, scrollRef, props.pagedHistory])
+
+  useInitialHistoryFill({
+    sessionId: props.sessionId,
+    nodes: props.nodes,
+    beforeSequence: props.historyBeforeSequence,
+    hasMore: hasMoreHistory,
+    loading: loadingOlderHistory,
+    load: onLoadOlderHistory,
+    viewport: scrollRef,
+    content: contentRef,
+    reveal: props.revealTarget !== undefined,
+  })
 
   const hasLoadImage = props.onLoadImage !== undefined
   const hasShowInFolder = props.onShowInFolder !== undefined
