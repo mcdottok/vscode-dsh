@@ -1275,6 +1275,7 @@
   "app.error.openFileGone": "所选文件已不可用。",
   "app.error.attachSelectedFile": "无法添加所选文件。",
   "app.error.openSession": "无法打开会话。",
+  "app.error.sessionHistoryUnavailable": "会话历史暂时不可用，已保留当前对话，请稍后重试。",
   "app.error.loadOlderHistory": "无法加载更早的历史消息。",
   "app.error.historyDiscontinuous": "DSH 返回的历史页不连续。",
   "app.error.forkSession": "无法创建会话分支。",

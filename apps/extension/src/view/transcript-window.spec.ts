@@ -68,6 +68,17 @@ describe('Host transcript windows', () => {
     )
     client.service.cancel(generation)
 
+    // A retained writer-held notice is hidden from the conversation body and
+    // must not make a history-less replacement look complete (even hasMore=false).
+    client.service.accept({ type: 'notice', sessionId, level: 'error', text: 'Writer unavailable' })
+    const noticeOnly = client.service.begin(sessionId)
+    expect(() => client.service.installPage(sessionId, { events: [], hasMore: false }, noticeOnly)).toThrow(
+      expect.objectContaining({ retryable: true }),
+    )
+    client.service.cancel(noticeOnly)
+    await vi.advanceTimersByTimeAsync(0)
+    client.service.acknowledge(sessionId, client.posted.at(-1)!.revision)
+
     // A subsequent control/stream event must publish against the retained
     // history, rather than an empty baseline the renderer already rejected.
     client.service.accept({
@@ -78,9 +89,12 @@ describe('Host transcript windows', () => {
       sequence: 2,
     })
     await vi.advanceTimersByTimeAsync(0)
-    expect(client.posted.at(-1)?.nodes).toMatchObject([{ markdown: 'Answer 1' }, { markdown: 'Next' }])
+    expect(client.posted.at(-1)?.nodes.filter((node) => node.kind === 'assistant-message')).toMatchObject([
+      { markdown: 'Answer 1' },
+      { markdown: 'Next' },
+    ])
     const restored = client.open([message(1), message(2)])
-    expect(restored.nodes).toHaveLength(2)
+    expect(restored.nodes.filter((node) => node.kind === 'assistant-message')).toHaveLength(2)
     // A different, genuinely empty session remains openable.
     expect(
       client.service.installPage('new', { events: [], hasMore: false }, client.service.begin('new')).nodes,

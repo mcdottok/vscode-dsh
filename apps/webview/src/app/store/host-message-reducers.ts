@@ -63,7 +63,9 @@ export function applyHostMessage(
     try {
       setState(installTranscript(state, parseTranscript(message.payload)))
     } catch {
-      /* Invalid windows cannot replace the current transcript. */
+      // Keeping the current rows alone leaves a broken baseline frozen until
+      // the user re-enters the session. Reopen just as for a lost patch base.
+      if (object(message.payload)?.sessionId === state.activeSessionId) onConnectionEpoch?.()
     }
     return
   }

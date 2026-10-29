@@ -1275,6 +1275,7 @@
   "app.error.openFileGone": "The selected open file is no longer available.",
   "app.error.attachSelectedFile": "Unable to attach the selected file.",
   "app.error.openSession": "Unable to open session.",
+  "app.error.sessionHistoryUnavailable": "Session history is temporarily unavailable. The current conversation has been kept; please retry shortly.",
   "app.error.loadOlderHistory": "Unable to load earlier history.",
   "app.error.historyDiscontinuous": "DSH returned a discontinuous history page.",
   "app.error.forkSession": "Unable to branch session.",

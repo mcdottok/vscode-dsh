@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { HostMessage, TranscriptWindow, WebviewRequest } from '@dsh-vscode/webview-protocol'
 import type { ProtocolClient } from './protocol-client.js'
 import { createAppStore } from './store.js'
@@ -68,6 +68,43 @@ class Client {
 }
 
 describe('Webview installs Host windows', () => {
+  for (const noticesOnly of [false, true])
+    it(`automatically reloads lost conversation content without re-entering the session (notices: ${noticesOnly})`, async () => {
+      vi.useFakeTimers()
+      const client = new Client()
+      const store = createAppStore(client as unknown as ProtocolClient)
+      try {
+        client.send('connection.snapshot', { kind: 'connected' })
+        await store.openSession('s')
+        let attempts = 0
+        const incomplete = (revision: number): TranscriptWindow => ({
+          ...window('s', revision),
+          hasMore: false,
+          nodes: noticesOnly
+            ? [{ kind: 'notice', id: 'held', level: 'error', text: 'Writer unavailable' }]
+            : [],
+        })
+        client.open = (sessionId) => {
+          attempts++
+          return Promise.resolve({
+            ...detail(sessionId),
+            transcript: attempts === 1 ? incomplete(10) : window(sessionId, 11, 'Recovered history'),
+          })
+        }
+        client.emit(incomplete(9))
+        await vi.advanceTimersByTimeAsync(0)
+        expect(store.getState().timeline.nodes[0]).toMatchObject({ markdown: 'Final reply' })
+        expect(store.getState().transcript?.revision).toBe(1)
+        await vi.advanceTimersByTimeAsync(1_000)
+        expect(attempts).toBe(2)
+        expect(store.getState().timeline.nodes[0]).toMatchObject({ markdown: 'Recovered history' })
+        expect(store.getState().transcript?.revision).toBe(11)
+      } finally {
+        store.dispose()
+        vi.useRealTimers()
+      }
+    })
+
   it('restores the DSH clock with a window and clears it on a settled replacement', async () => {
     const client = new Client()
     const store = createAppStore(client as unknown as ProtocolClient)

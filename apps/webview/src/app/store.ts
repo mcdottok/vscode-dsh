@@ -36,7 +36,7 @@ import { createSurfaceActions } from './store/surface-actions.js'
 import { subscribeHostEvents } from './store/host-event-subscription.js'
 import { createPromptActions } from './store/prompt-actions.js'
 import { createHistoryActions } from './store/history-actions.js'
-import { installTranscript, parseTranscript } from './store/transcript-state.js'
+import { installTranscript, parseTranscript, requireCompleteTranscript } from './store/transcript-state.js'
 import { createSessionCreationActions } from './store/session-creation-actions.js'
 import { createAppLifecycleActions } from './store/app-lifecycle-actions.js'
 import { parseGoalViews } from './store/event-values.js'
@@ -571,11 +571,16 @@ export function createAppStore(client = new ProtocolClient(getVsCodeApi())): App
   const requestSessionOpen = async (sessionId: string, version: number): Promise<unknown> => {
     for (let attempt = 1; ; attempt += 1) {
       try {
-        return await client.request<unknown>({
+        const result = await client.request<unknown>({
           type: 'session.open',
           requestId: requestId(),
           payload: { sessionId },
         })
+        if (version !== openVersion) return result
+        const detail = object(result)
+        if (detail?.transcript !== undefined)
+          requireCompleteTranscript(parseTranscript(detail.transcript), state.transcript)
+        return result
       } catch (reason) {
         if (attempt >= OPEN_RETRY_ATTEMPTS || version !== openVersion || !isRetryableOpenFailure(reason))
           throw reason

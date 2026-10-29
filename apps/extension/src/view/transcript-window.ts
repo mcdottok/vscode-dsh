@@ -10,6 +10,7 @@ import {
   reduceTimeline,
   isRedundantTurnFailureNotice,
   timelineSequenceOptions,
+  hasConversationContent,
   type TimelineNode,
   type TimelineState,
 } from '@dsh-vscode/timeline'
@@ -181,10 +182,9 @@ export class TranscriptWindowService {
     // Keeping only the renderer's old rows would leave its next patch based
     // on a different window and repeatedly trigger session.open/resync.
     if (
-      page.hasMore &&
-      resident.timeline.nodes.length === 0 &&
+      !hasConversationContent(resident.timeline.nodes) &&
       this.displayed?.sessionId === sessionId &&
-      this.displayed.timeline.nodes.length > 0
+      hasConversationContent(this.displayed.timeline.nodes)
     )
       throw new AppError({
         code: 'BACKEND_UNREACHABLE',

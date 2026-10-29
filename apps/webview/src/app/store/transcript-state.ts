@@ -5,7 +5,8 @@ import {
   type TranscriptPatch,
   type TranscriptWindow,
 } from '@dsh-vscode/webview-protocol'
-import type { TimelineNode, TimelineState } from '@dsh-vscode/timeline'
+import { hasConversationContent, type TimelineNode, type TimelineState } from '@dsh-vscode/timeline'
+import { translate } from '../../i18n.js'
 import type { AppState } from './types.js'
 import { withCurrentTodos } from './todo-state.js'
 
@@ -40,6 +41,15 @@ export function parseTranscript(value: unknown): TranscriptWindow {
   return transcriptWindowSchema.parse(value) as TranscriptWindow
 }
 
+export function requireCompleteTranscript(window: TranscriptWindow, previous?: TranscriptWindow): void {
+  if (
+    !window.historical &&
+    !hasConversationContent(window.nodes) &&
+    (window.hasMore || (previous?.sessionId === window.sessionId && hasConversationContent(previous.nodes)))
+  )
+    throw Object.assign(new Error(translate('app.error.sessionHistoryUnavailable')), { retryable: true })
+}
+
 export function transcriptTimeline(window: TranscriptWindow, previous?: TimelineState): TimelineState {
   let changed = 0
   if (previous?.sessionId === window.sessionId)
@@ -63,6 +73,7 @@ export function installTranscript(state: AppState, window: TranscriptWindow, liv
     (state.transcript !== undefined && window.revision <= state.transcript.revision)
   )
     return state
+  requireCompleteTranscript(window, state.transcript)
   const previous = state.transcript
   const sameSession = previous?.sessionId === window.sessionId
   const priorNodes = new Map(
