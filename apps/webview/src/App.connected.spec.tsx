@@ -1309,6 +1309,51 @@ describe('App connected rendering', () => {
     expect(screen.queryByRole('button', { name: 'Open settings' })).toBeNull()
   })
 
+  it('keeps successful compatibility connections quiet but still reports actual failures', async () => {
+    const state = {
+      ...connectedState(true),
+      connectedDshVersion: '0.2.2',
+      dshCompatibilityWarning: 'Runtime contract has not been individually verified.',
+    }
+    const pickAttachment = vi.fn().mockRejectedValue(new Error('DSH communication failed'))
+    currentStore = { ...storeFor(state), pickAttachment }
+
+    render(<App />)
+
+    expect(screen.queryByRole('button', { name: /^Show notifications/ })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Connected' }))
+    const details = within(screen.getByRole('dialog', { name: 'Connection details' }))
+    expect(
+      details.getByText('Connected in compatibility mode. Some features depend on the DSH version.'),
+    ).toBeDefined()
+    expect(details.queryByRole('alert')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Close connection details' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Editor context' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Attach file' }))
+    expect(await screen.findByText('DSH communication failed')).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Show notifications (1)' })).toBeDefined()
+  })
+
+  it('reports an actual connection failure during a conversation and reports it again after a retry', () => {
+    const state = connectedState(true)
+    const failed: AppState = {
+      ...state,
+      backend: { kind: 'failed', message: 'DSH could not communicate.', retryable: true },
+    }
+    const view = renderWithMutableState(state)
+
+    view.updateState(failed)
+    fireEvent.click(screen.getByRole('button', { name: 'Show notifications (1)' }))
+    expect(screen.getByText('DSH could not communicate.')).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss connection error' }))
+    expect(screen.queryByRole('button', { name: /^Show notifications/ })).toBeNull()
+
+    view.updateState({ ...state, backend: { kind: 'connecting' } })
+    view.updateState(failed)
+    expect(screen.getByRole('button', { name: 'Show notifications (1)' })).toBeDefined()
+  })
+
   it('lets the user dismiss an update notice for the current upstream version', () => {
     currentStore = storeFor({
       ...connectedState(false),

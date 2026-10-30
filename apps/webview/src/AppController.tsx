@@ -128,7 +128,6 @@ const useAppControllerImpl = () => {
   const [dismissedRuntimeUpdateVersion, setDismissedRuntimeUpdateVersion] = useState(() =>
     dismissedRuntimeUpdateVersionFromStorage(),
   )
-  const [dismissedConnection, setDismissedConnection] = useState<string | undefined>()
   const [modelPickerOpenRequest, setModelPickerOpenRequest] = useState(0)
   const conversationActionsTriggerRef = useRef<HTMLButtonElement>(null)
   const [conversationView, setConversationView] = useState<'chat' | 'trajectory'>('chat')
@@ -255,19 +254,6 @@ const useAppControllerImpl = () => {
     state.dshUpdate?.updateAvailable === true &&
     state.dshUpdate.globalVersion !== runtimeUpdateVersion &&
     dismissedRuntimeUpdateVersion !== runtimeUpdateVersion
-  const connectionMessage =
-    backend.kind === 'failed' || backend.kind === 'port-conflict' ? backend.message : compatibilityWarning
-  const connectionKey =
-    connectionMessage === undefined
-      ? undefined
-      : `${compatibilityWarning !== undefined ? 'compatibility-warning' : backend.kind}:${connectionMessage}`
-
-  useEffect(() => {
-    if (connectionKey === undefined) return
-    const timer = window.setTimeout(() => setDismissedConnection(connectionKey), 10_000)
-    return () => window.clearTimeout(timer)
-  }, [connectionKey])
-
   const runRuntimeAction = (action: 'install' | 'select' | 'copy-command' | 'open-docs'): void => {
     if (action === 'install' || action === 'select') setBusyAction(action)
     void store
@@ -960,8 +946,6 @@ const useAppControllerImpl = () => {
     composerOnToggleOpenFilePicker,
     composerStatus,
     composerSubmitError,
-    connectionKey,
-    connectionMessage,
     contextPressure,
     contextWindowTokens,
     conversationActionItems,
@@ -970,7 +954,6 @@ const useAppControllerImpl = () => {
     conversationFontStyle,
     conversationView,
     discardAttachmentDrafts,
-    dismissedConnection,
     error,
     estimatedContextTokens,
     getScheduleLinkedSession,
@@ -1013,7 +996,6 @@ const useAppControllerImpl = () => {
     sessionOnOpenChange,
     setConversationFontSize,
     setConversationView,
-    setDismissedConnection,
     setDismissedRuntimeUpdateVersion,
     setError,
     setExportOpen,

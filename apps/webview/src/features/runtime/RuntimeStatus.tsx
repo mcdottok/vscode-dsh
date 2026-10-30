@@ -135,8 +135,8 @@ export function RuntimeStatus({
             </ContentFlow>
           )}
           {state.kind === 'connected' && compatibilityWarning !== undefined ? (
-            <ContentFlow as="p" className="dsh-runtime-status__warning" role="alert">
-              {compatibilityWarning}
+            <ContentFlow as="p" className="dsh-runtime-status__info">
+              {t('runtime.compatibilityMode')}
             </ContentFlow>
           ) : null}
           {retryable || onOpenSettings !== undefined ? (

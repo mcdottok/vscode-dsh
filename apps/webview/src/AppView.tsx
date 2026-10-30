@@ -70,14 +70,11 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
     composerOnToggleOpenFilePicker,
     composerStatus,
     composerSubmitError,
-    connectionKey,
-    connectionMessage,
     contextPressure,
     contextWindowTokens,
     conversationFontSize,
     conversationFontStyle,
     conversationView,
-    dismissedConnection,
     error,
     estimatedContextTokens,
     getScheduleLinkedSession,
@@ -118,7 +115,6 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
     sessionControl,
     setConversationFontSize,
     setConversationView,
-    setDismissedConnection,
     setDismissedRuntimeUpdateVersion,
     setError,
     setExportOpen,
@@ -166,7 +162,17 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
     state.sessions.length === 0 &&
     state.workspaces.length > 0 &&
     welcomeVisible
-  const showConnectionAlert = connectionMessage !== undefined && connectionKey !== dismissedConnection
+  const [dismissedConnectionError, setDismissedConnectionError] = useState<string | undefined>()
+  const connectionFailure =
+    backend.kind === 'failed' || backend.kind === 'port-conflict' ? backend : undefined
+  const connectionFailureKey =
+    connectionFailure === undefined ? undefined : `${connectionFailure.kind}:${connectionFailure.message}`
+  const [previousConnectionFailure, setPreviousConnectionFailure] = useState(connectionFailureKey)
+  if (previousConnectionFailure !== connectionFailureKey) {
+    // A retry or a different failure must not inherit an earlier dismissal.
+    setPreviousConnectionFailure(connectionFailureKey)
+    setDismissedConnectionError(undefined)
+  }
   const [dismissedTimelineNotices, setDismissedTimelineNotices] = useState<ReadonlySet<string>>(new Set())
   const notices: AppNotice[] = []
   if (error !== undefined) {
@@ -178,14 +184,18 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
       onDismiss: () => setError(undefined),
     })
   }
-  if (showConnectionAlert && backend.kind === 'connected') {
+  if (
+    active !== undefined &&
+    connectionFailure !== undefined &&
+    connectionFailureKey !== dismissedConnectionError
+  ) {
     notices.push({
-      id: 'connection',
-      tone: compatibilityWarning === undefined ? 'danger' : 'warning',
-      title: compatibilityWarning !== undefined ? t('app.compatibilityWarning') : t('app.connectionFailed'),
-      message: connectionMessage,
+      id: 'connection-error',
+      tone: 'danger',
+      title: t('app.connectionFailed'),
+      message: connectionFailure.message,
       dismissLabel: t('app.dismissConnectionError'),
-      onDismiss: () => setDismissedConnection(connectionKey),
+      onDismiss: () => setDismissedConnectionError(connectionFailureKey),
     })
   }
   if (runtimeUpdateVisible) {

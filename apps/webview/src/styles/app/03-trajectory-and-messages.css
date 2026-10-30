@@ -1,18 +1,13 @@
 .dsh-runtime-status__empty,
 .dsh-runtime-status__message,
-.dsh-runtime-status__warning {
+.dsh-runtime-status__info {
   padding-inline: var(--dsh-space-3);
   overflow-wrap: break-word;
   word-break: normal;
 }
 
-.dsh-runtime-status__message,
-.dsh-runtime-status__warning {
+.dsh-runtime-status__message {
   color: var(--dsh-danger);
-}
-
-.dsh-runtime-status__warning {
-  color: var(--dsh-warning);
 }
 
 .dsh-runtime-status__actions {

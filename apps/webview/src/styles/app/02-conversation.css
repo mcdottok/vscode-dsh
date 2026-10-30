@@ -425,7 +425,7 @@
 .dsh-runtime-status__panel-state,
 .dsh-runtime-status__empty,
 .dsh-runtime-status__message,
-.dsh-runtime-status__warning {
+.dsh-runtime-status__info {
   min-width: 0;
   margin: 0;
   color: var(--dsh-muted);

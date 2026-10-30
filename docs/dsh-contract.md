@@ -12,7 +12,7 @@
 
 ## 后续版本的连接范围
 
-对于尚未登记精确身份、且满足 `>=0.2.1-rc.2 <0.3.0-0` 的合法版本（包括范围内的预发布版本），优先使用 `rc212` 协议基线。先只读检查 `session.list` 的 Session V4 入口和 `workspace.list` 的 pinned Workspace 结构；通过后保留实际 DSH 版本、`best-effort` 身份及兼容提示，不把它视作逐项完成验证。检查失败时停止此家族的连接，不再尝试 Session v0 等历史回退。已有精确入口保持优先；范围之外不套用 rc.2 基线，缺失版本的旧探测策略不变。
+对于尚未登记精确身份、且满足 `>=0.2.1-rc.2 <0.3.0-0` 的合法版本（包括范围内的预发布版本），优先使用 `rc212` 协议基线。先只读检查 `session.list` 的 Session V4 入口和 `workspace.list` 的 pinned Workspace 结构；通过后保留实际 DSH 版本及 `best-effort` 身份，不把它视作逐项完成验证。成功连接不自动弹出兼容警告，连接详情可查看兼容模式；实际连接或请求失败仍显示错误。检查失败时停止此家族的连接，不再尝试 Session v0 等历史回退。已有精确入口保持优先；范围之外不套用 rc.2 基线，缺失版本的旧探测策略不变。
 
 `0.2.1-rc.4` 的 npm 发布包已核对：相对 rc.3，所消费的 Gateway、Host Webserver、Session、Workspace、Session Format Catalog、Session Projection、Typert Protocol/Registry、Client Locale/Renderer 和 Plugin Manager 的 JavaScript 与类型声明在归一化包版本后相同。此核对不等于 rc.4 的完整现场验收。Connect 的 `engines.dsh` 同步采用上述范围，构建依赖仍固定 rc.2；不把未核对的 rc.1 或更早内核纳入 Connect 安装声明。
 
@@ -109,7 +109,7 @@ rc.2 与 rc.1 的 Connection / Gateway、全部 API Remote、Session V4、Accoun
 
 ### 未知版本
 
-对非空但未识别的标签，先进行公共握手，再按显式优先级只读 `probeCompatibility`。候选拒绝、超时或契约不匹配时尝试下一个；全部失败才拒绝连接。成功后保留真实版本标签、所选 Adapter 和兼容警告。只可复用经过证明安全的基础 wire：Session v2/v3/V4、`delivery`、turn-window、目录/交付事件和其他版本专属字段不能通过相近版本号猜测；未知 Remote 或事件安全降级为 unknown 或 `CAPABILITY_UNAVAILABLE`。畸形 SemVer-like 身份在 wire probe 前拒绝。
+对非空但未识别的标签，先进行公共握手，再按显式优先级只读 `probeCompatibility`。候选拒绝、超时或契约不匹配时尝试下一个；全部失败才拒绝连接。成功后保留真实版本标签、所选 Adapter 和内部兼容状态，界面不主动报警。只可复用经过证明安全的基础 wire：Session v2/v3/V4、`delivery`、turn-window、目录/交付事件和其他版本专属字段不能通过相近版本号猜测；未知 Remote 或事件安全降级为 unknown 或 `CAPABILITY_UNAVAILABLE`。畸形 SemVer-like 身份在 wire probe 前拒绝。
 
 ## 编辑器配套插件
 
