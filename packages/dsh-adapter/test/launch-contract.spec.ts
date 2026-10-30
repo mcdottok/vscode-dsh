@@ -57,7 +57,7 @@ describe('managed Web Profile launch contract', () => {
     expect(managedWebArguments('future-development-build', 0)).not.toContain('--no-open')
   })
 
-  it.each(['0.2.1-rc.4', '0.2.1-rc.5'])(
+  it.each(['0.2.1-rc.4'])(
     'verifies the %s launch flag without claiming an exact protocol adapter',
     (version) => {
       expect(managedWebArguments(version, 4317)).toEqual([
@@ -87,5 +87,6 @@ describe('managed Web Profile launch contract', () => {
     expect(managedWebArguments('0.1.0-rc.7', 4317, true)).not.toContain('--no-open')
     expect(managedWebNoOpenSupport('0.2.1-rc.5')).toBe(true)
     expect(managedWebArguments('0.2.1-rc.5', 4317, false)).toContain('--no-open')
+    expect(isKnownDshVersion('0.2.1-rc.5')).toBe(true)
   })
 })

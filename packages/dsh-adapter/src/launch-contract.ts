@@ -20,9 +20,8 @@ const WEB_NO_OPEN_UNSUPPORTED_VERSIONS = new Set([
 /**
  * CLI flags can be verified independently of the broader protocol adapter.
  * rc.4: upstream dsh-v0.2.1-rc.4 web-app/src/startup.ts.
- * rc.5: upstream dsh-v0.2.1-rc.5 web-app README and installed web-app startup.
  */
-const WEB_NO_OPEN_VERIFIED_UNADAPTED_VERSIONS = new Set(['0.2.1-rc.4', '0.2.1-rc.5'])
+const WEB_NO_OPEN_VERIFIED_UNADAPTED_VERSIONS = new Set(['0.2.1-rc.4'])
 
 /**
  * The port a DSH Web Profile serves on when no port was chosen.

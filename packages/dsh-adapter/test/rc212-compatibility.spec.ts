@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { AppError } from '@dsh-vscode/domain'
 import { Rc212VersionAdapter } from '../src/versions/rc212/adapter.js'
 import { Rc213VersionAdapter } from '../src/versions/rc213/adapter.js'
+import { Rc215VersionAdapter } from '../src/versions/rc215/adapter.js'
 import { acceptsRc212CompatibilityVersion } from '../src/versions/rc212/compatibility.js'
 import { VersionedBackendProbe } from '../src/probe.js'
 import { candidate, transportOptions } from './support/contract-harness.js'
@@ -44,7 +45,7 @@ describe('rc.2 protocol family compatibility', () => {
       expect(acceptsRc212CompatibilityVersion(version), version).toBe(false)
   })
 
-  it.each(['0.2.1-rc.4', '0.2.1-rc.5'])(
+  it.each(['0.2.1-rc.4', '0.2.1-rc.6', '0.2.1-rc.8', '0.2.2-alpha.2', '0.2.2'])(
     'selects rc.2 for %s, preserves runtime identity and never calls legacy fallback',
     async (version) => {
       const fixture = new ProbeFixtureTransport()
@@ -112,6 +113,29 @@ describe('rc.2 protocol family compatibility', () => {
       compatibilityMode: 'exact',
       protocolVersion: 'rc213',
     })
+  })
+
+  it('selects rc.5 exactly without a compatibility warning or claiming later releases', async () => {
+    const fixture = new ProbeFixtureTransport()
+    class ExactFixtureAdapter extends Rc215VersionAdapter {
+      public override createTransport(): ProbeFixtureTransport {
+        return fixture
+      }
+    }
+    const exact = new ExactFixtureAdapter(transportOptions(globalThis.fetch))
+    const baseline = adapterFor(new ProbeFixtureTransport())
+    const result = await new VersionedBackendProbe([baseline, exact]).probe(candidate('0.2.1-rc.5'))
+
+    expect(result?.capabilities).toMatchObject({
+      dshVersion: '0.2.1-rc.5',
+      adapterId: 'dsh-0.2.1-rc.5',
+      compatibilityMode: 'exact',
+      protocolVersion: 'rc215',
+      featureProfile: { source: 'pinned-adapter' },
+    })
+    expect(result?.capabilities.compatibilityWarning).toBeUndefined()
+    expect(exact.supportsCompatibilityVersion('0.2.1-rc.6')).toBe(false)
+    expect(fixture.closeCalls).toBe(1)
   })
 
   it.each(['AUTH_REQUIRED', 'REQUEST_CANCELLED'] as const)(

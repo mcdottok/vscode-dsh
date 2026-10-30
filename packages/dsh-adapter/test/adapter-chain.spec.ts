@@ -28,6 +28,7 @@ import {
   Rc211VersionAdapter,
   Rc212VersionAdapter,
   Rc213VersionAdapter,
+  Rc215VersionAdapter,
   Rc02VersionAdapter,
   Rc03VersionAdapter,
   Rc6VersionAdapter,
@@ -92,6 +93,7 @@ describe('version adapter family chains', () => {
       new Rc211VersionAdapter(options),
       new Rc212VersionAdapter(options),
       new Rc213VersionAdapter(options),
+      new Rc215VersionAdapter(options),
     ]
 
     expect(adapters.map((adapter) => adapter.supportedVersion)).toEqual([...SUPPORTED_DSH_VERSIONS])
@@ -300,7 +302,17 @@ describe('version adapter family chains', () => {
     const rc202 = new Rc202VersionAdapter(options)
     const rc212 = new Rc212VersionAdapter(options)
     const rc213 = new Rc213VersionAdapter(options)
+    const rc215 = new Rc215VersionAdapter(options)
 
+    expect(rc215).toBeInstanceOf(Rc213VersionAdapter)
+    expect(rc215).toMatchObject({
+      id: 'dsh-0.2.1-rc.5',
+      supportedVersion: '0.2.1-rc.5',
+      protocolVersion: 'rc215',
+      compatibilityPriority: 350,
+      fallback: false,
+    })
+    expect(rc215.compatibilityPriority).toBeGreaterThan(rc213.compatibilityPriority)
     expect(rc213).toBeInstanceOf(Rc212VersionAdapter)
     expect(rc213).toMatchObject({
       id: 'dsh-0.2.1-rc.3',
