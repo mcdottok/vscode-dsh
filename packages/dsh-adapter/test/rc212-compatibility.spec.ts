@@ -44,33 +44,36 @@ describe('rc.2 protocol family compatibility', () => {
       expect(acceptsRc212CompatibilityVersion(version), version).toBe(false)
   })
 
-  it('selects rc.2 for rc.4, preserves runtime identity and never calls legacy fallback', async () => {
-    const fixture = new ProbeFixtureTransport()
-    const legacy = {
-      id: 'legacy',
-      supportedVersion: '0.1.2-alpha.5',
-      fallback: true,
-      probe: vi.fn(),
-      probeCompatibility: vi.fn(),
-      createTransport: vi.fn(),
-    }
-    const result = await new VersionedBackendProbe([
-      new Rc213VersionAdapter(transportOptions(globalThis.fetch)),
-      legacy,
-      adapterFor(fixture),
-    ]).probe(candidate('0.2.1-rc.4'))
-    expect(result?.capabilities).toMatchObject({
-      dshVersion: '0.2.1-rc.4',
-      protocolVersion: 'rc212',
-      adapterId: 'dsh-0.2.1-rc.2',
-      compatibilityMode: 'best-effort',
-      featureProfile: { source: 'compatibility-fallback' },
-    })
-    expect(result?.capabilities.compatibilityWarning).toContain('0.2.1-rc.2 protocol baseline')
-    expect(fixture.methods).toEqual(['session.list', 'workspace.list'])
-    expect(fixture.closeCalls).toBe(1)
-    expect(legacy.probeCompatibility).not.toHaveBeenCalled()
-  })
+  it.each(['0.2.1-rc.4', '0.2.1-rc.5'])(
+    'selects rc.2 for %s, preserves runtime identity and never calls legacy fallback',
+    async (version) => {
+      const fixture = new ProbeFixtureTransport()
+      const legacy = {
+        id: 'legacy',
+        supportedVersion: '0.1.2-alpha.5',
+        fallback: true,
+        probe: vi.fn(),
+        probeCompatibility: vi.fn(),
+        createTransport: vi.fn(),
+      }
+      const result = await new VersionedBackendProbe([
+        new Rc213VersionAdapter(transportOptions(globalThis.fetch)),
+        legacy,
+        adapterFor(fixture),
+      ]).probe(candidate(version))
+      expect(result?.capabilities).toMatchObject({
+        dshVersion: version,
+        protocolVersion: 'rc212',
+        adapterId: 'dsh-0.2.1-rc.2',
+        compatibilityMode: 'best-effort',
+        featureProfile: { source: 'compatibility-fallback' },
+      })
+      expect(result?.capabilities.compatibilityWarning).toContain('0.2.1-rc.2 protocol baseline')
+      expect(fixture.methods).toEqual(['session.list', 'workspace.list'])
+      expect(fixture.closeCalls).toBe(1)
+      expect(legacy.probeCompatibility).not.toHaveBeenCalled()
+    },
+  )
 
   it.each(['malformed', 'business-error', 'protocol-error', 'timeout'] as const)(
     'declines %s responses and releases transport without downgrading to legacy',

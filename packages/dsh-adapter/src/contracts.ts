@@ -75,7 +75,7 @@ export const SUPPORTED_DSH_RANGE =
 export const DSH_PACKAGE_NAME = '@deepseek-ai/dsh' as const
 
 /** Newest exact DSH package published upstream; not automatically the installer default. */
-export const LATEST_PUBLISHED_DSH_VERSION = '0.2.1-rc.4' as const
+export const LATEST_PUBLISHED_DSH_VERSION = '0.2.1-rc.5' as const
 
 export const LATEST_SUPPORTED_DSH_VERSION = '0.2.1-rc.3' as const
 
