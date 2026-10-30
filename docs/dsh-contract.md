@@ -127,7 +127,7 @@ rc.2 与 rc.1 的 Connection / Gateway、全部 API Remote、Session V4、Accoun
 
 ## 启动与传输
 
-`packages/dsh-adapter/src/launch-contract.ts` 集中生成启动参数。`0.0.1-rc.1/.2/.5`、`0.1.0-rc.2/.3/.6/.7` 使用 `--profile web --host 127.0.0.1 --port <n>`；从 `0.1.0-rc.8` 起的已核对入口还传 `--no-open`。尚未登记精确协议适配的 `0.2.1-rc.4/.5` 已分别核对 CLI 的 `--no-open` 参数，受管启动也会传入；参数核对不代表完整协议适配。其他未知版本不猜可选 flag。端口为已验证的 loopback 端口，不扫描范围。进程所有权规则见 [架构](architecture.md)。
+`packages/dsh-adapter/src/launch-contract.ts` 集中生成启动参数。`0.0.1-rc.1/.2/.5`、`0.1.0-rc.2/.3/.6/.7` 使用 `--profile web --host 127.0.0.1 --port <n>`；从 `0.1.0-rc.8` 起的已核对入口还传 `--no-open`。尚未登记精确协议适配的 `0.2.1-rc.4/.5` 已分别核对 CLI 的 `--no-open` 参数，受管启动也会传入。其他未知版本先在临时隔离配置中读取 CLI 帮助，确认存在该选项才传入；读取失败或无法确认时按原方式启动，可能打开浏览器。启动参数核对不代表完整协议适配。端口为已验证的 loopback 端口，不扫描范围。进程所有权规则见 [架构](architecture.md)。
 
 旧 Host 家族的 RPC 与 mux 是两个逻辑流；Session 事件带 `sessionId`/序号，订阅使用 `lastSeq`，审批和问题响应使用结构化 `rpcId`。Alpha 家族的 Connection Remote 走 `POST /api/<namespace>/<method>`、Cookie 握手和 `/api/remote.mux`；mux 使用 `open`、`cancel`、`item`、`error`、`end` 帧。每个 Session 保存最后提交的服务器序号；重连先订阅，再比较序号、分页补洞、去重后归约。`system/message` 和只面向模型的 surface replacement 只留下序号水印，内容不进入人类时间线；未知事件只保留脱敏的类型、序号和摘要，不阻断后续事件。
 

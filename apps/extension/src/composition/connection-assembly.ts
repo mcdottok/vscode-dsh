@@ -14,6 +14,7 @@ import { companionNeedsUpdate } from '../editor/companion-update.js'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { access } from 'node:fs/promises'
+import path from 'node:path'
 import {
   AppError,
   type AppErrorCode,
@@ -43,6 +44,7 @@ import { MacOsProcessDiscoveryProvider } from '../backend/discovery/macos-proces
 import { WindowsProcessDiscoveryProvider } from '../backend/discovery/windows-process-provider.js'
 import { WindowsDesktopDiscoveryProvider } from '../backend/discovery/windows-desktop-provider.js'
 import { DshProcessSupervisor } from '../backend/process-supervisor.js'
+import { probeWebNoOpen } from '../backend/web-launch-probe.js'
 import type { RedactedDiagnostics } from '../backend/diagnostics.js'
 import { DshRuntimeLocator, readStoredRuntimePath } from '../backend/runtime-locator.js'
 import { resolveNpmExecutable } from '../backend/runtime-paths.js'
@@ -251,6 +253,37 @@ export function createRuntimeAssembly(deps: RuntimeAssemblyDependencies): Runtim
   const probe = new VersionedBackendProbe(adapters, { fetch: network.fetch })
   const factory = new VersionedBackendFactory(adapters)
   const supervisor = new DshProcessSupervisor({
+    probeWebNoOpen: (runtime, signal) =>
+      probeWebNoOpen(async (directory, probeSignal) => {
+        const resolved = resolveWindowsShim(
+          runtime.executable,
+          platform(),
+          readTextFile,
+          windowsShimOptions(platform(), process.env),
+        ) ?? { executable: runtime.executable, prefixArgs: [] }
+        const runtimePath = runtimeEnvironment(undefined, resolved.executable).PATH
+        return execFileAsync(
+          resolved.executable,
+          [...resolved.prefixArgs, '--profile', 'web', '--no-open', '--help'],
+          {
+            cwd: directory,
+            timeout: 12_000,
+            maxBuffer: 64 * 1024,
+            encoding: 'utf8',
+            windowsHide: true,
+            signal: probeSignal,
+            env: {
+              PATH: runtimePath,
+              SystemRoot: process.env.SystemRoot,
+              WINDIR: process.env.WINDIR,
+              TEMP: process.env.TEMP,
+              TMP: process.env.TMP,
+              DSH_HOME: path.join(directory, 'dsh'),
+              DSH_AGENTS_HOME: path.join(directory, 'agents'),
+            },
+          },
+        )
+      }, signal),
     additionalArguments: (runtime, signal) =>
       configuredCompanionArguments(
         runtime,

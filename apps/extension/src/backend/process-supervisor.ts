@@ -1,5 +1,5 @@
 import type { ProcessSupervisor } from '@dsh-vscode/application'
-import { isKnownDshAlphaVersion, managedWebArguments } from '@dsh-vscode/dsh-adapter'
+import { isKnownDshAlphaVersion, managedWebArguments, managedWebNoOpenSupport } from '@dsh-vscode/dsh-adapter'
 import {
   AppError,
   type BackendEndpoint,
@@ -18,6 +18,7 @@ export interface SpawnedChild {
 
 export interface ProcessSupervisorDependencies {
   readonly additionalArguments?: (runtime: DshRuntime, signal: AbortSignal) => Promise<readonly string[]>
+  readonly probeWebNoOpen?: (runtime: DshRuntime, signal: AbortSignal) => Promise<boolean>
   readonly spawn: (
     executable: string,
     args: readonly string[],
@@ -142,6 +143,10 @@ export class DshProcessSupervisor implements ProcessSupervisor {
       Number.isInteger(configuredPort) && configuredPort >= 0 && configuredPort <= 65535 ? configuredPort : 0
     let child: SpawnedChild
     try {
+      const noOpenSupport =
+        managedWebNoOpenSupport(runtime.version) ??
+        (await this.dependencies.probeWebNoOpen?.(runtime, signal))
+      throwIfCancelled(signal)
       const extra =
         this.dependencies.additionalArguments === undefined
           ? []
@@ -149,11 +154,12 @@ export class DshProcessSupervisor implements ProcessSupervisor {
       throwIfCancelled(signal)
       child = this.dependencies.spawn(
         runtime.executable,
-        [...extra, ...managedWebArguments(runtime.version, port)],
+        [...extra, ...managedWebArguments(runtime.version, port, noOpenSupport)],
         this.dependencies.workingDirectory?.(),
         toolEnvironment(this.dependencies.toolMode?.(), runtime.version),
       )
     } catch (error) {
+      if (signal.aborted) throw cancelled(signal.reason)
       // `shell: false` rejects a shim target (`.cmd`/`.bat`) synchronously with
       // EINVAL, before any child exists.
       throw launchFailure(error)

@@ -39,15 +39,14 @@ export const DEFAULT_DSH_WEB_PORT = 3_080
  * The profile/host/port flags are the common launch contract. `--no-open` is
  * the default for every known release after the early Web Profiles above, and
  * for versions whose CLI flag was separately verified. Other unknown versions
- * remain conservative until their CLI contract is verified.
+ * may use a flag independently confirmed by the CLI help probe.
  */
-export function managedWebArguments(version: string, port: number): readonly string[] {
-  const normalizedVersion = normalizeDshVersion(version)
-  const useNoOpen =
-    normalizedVersion !== undefined &&
-    (isKnownDshVersion(normalizedVersion) ||
-      WEB_NO_OPEN_VERIFIED_UNADAPTED_VERSIONS.has(normalizedVersion)) &&
-    !WEB_NO_OPEN_UNSUPPORTED_VERSIONS.has(normalizedVersion)
+export function managedWebArguments(
+  version: string,
+  port: number,
+  probedNoOpen?: boolean,
+): readonly string[] {
+  const useNoOpen = managedWebNoOpenSupport(version) ?? probedNoOpen === true
   return [
     '--profile',
     'web',
@@ -57,4 +56,16 @@ export function managedWebArguments(version: string, port: number): readonly str
     '--port',
     String(port),
   ]
+}
+
+/** Return an exact launch contract, or undefined when the CLI needs probing. */
+export function managedWebNoOpenSupport(version: string): boolean | undefined {
+  const normalizedVersion = normalizeDshVersion(version)
+  if (normalizedVersion === undefined) return undefined
+  if (
+    !isKnownDshVersion(normalizedVersion) &&
+    !WEB_NO_OPEN_VERIFIED_UNADAPTED_VERSIONS.has(normalizedVersion)
+  )
+    return undefined
+  return !WEB_NO_OPEN_UNSUPPORTED_VERSIONS.has(normalizedVersion)
 }

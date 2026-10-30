@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { isKnownDshVersion } from '../src/contracts.js'
-import { managedWebArguments } from '../src/launch-contract.js'
+import { managedWebArguments, managedWebNoOpenSupport } from '../src/launch-contract.js'
 
 describe('managed Web Profile launch contract', () => {
   it.each([
@@ -72,4 +72,20 @@ describe('managed Web Profile launch contract', () => {
       expect(isKnownDshVersion(version)).toBe(false)
     },
   )
+
+  it.each(['0.2.1-rc.6', '0.2.1-rc.8', '0.2.2', '0.3.2'])(
+    'allows the CLI probe to confirm --no-open for an unknown %s',
+    (version) => {
+      expect(managedWebNoOpenSupport(version)).toBeUndefined()
+      expect(managedWebArguments(version, 4317, true)).toContain('--no-open')
+      expect(managedWebArguments(version, 4317, false)).not.toContain('--no-open')
+    },
+  )
+
+  it('keeps known legacy and known supported flags independent of a probe result', () => {
+    expect(managedWebNoOpenSupport('0.1.0-rc.7')).toBe(false)
+    expect(managedWebArguments('0.1.0-rc.7', 4317, true)).not.toContain('--no-open')
+    expect(managedWebNoOpenSupport('0.2.1-rc.5')).toBe(true)
+    expect(managedWebArguments('0.2.1-rc.5', 4317, false)).toContain('--no-open')
+  })
 })

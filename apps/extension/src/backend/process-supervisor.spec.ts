@@ -123,6 +123,74 @@ describe('DshProcessSupervisor', () => {
     expect(kill).toHaveBeenCalledWith('SIGTERM')
   })
 
+  it.each(['0.2.1-rc.6', '0.2.1-rc.8', '0.2.2', '0.3.2'])(
+    'probes unverified CLI version %s and passes the verified flag to the managed process',
+    async (version) => {
+      const probe = vi.fn().mockResolvedValue(true)
+      let args: readonly string[] | undefined
+      const supervisor = new DshProcessSupervisor({
+        managedPort: () => 4317,
+        probeWebNoOpen: probe,
+        spawn: (_executable, receivedArgs) => {
+          args = receivedArgs
+          return child(vi.fn())
+        },
+      })
+      const nextRuntime = { ...runtime(), version, compatibility: 'unknown' as const }
+
+      const handle = await supervisor.start(nextRuntime)
+
+      expect(probe).toHaveBeenCalledWith(nextRuntime, expect.any(AbortSignal))
+      expect(args).toContain('--no-open')
+      await handle.stop()
+    },
+  )
+
+  it('does not probe a known CLI and conservatively starts if probing cannot confirm the flag', async () => {
+    const probe = vi.fn().mockResolvedValue(false)
+    const launches: (readonly string[])[] = []
+    const supervisor = new DshProcessSupervisor({
+      managedPort: () => 4317,
+      probeWebNoOpen: probe,
+      spawn: (_executable, args) => {
+        launches.push(args)
+        return child(vi.fn())
+      },
+    })
+
+    const known = await supervisor.start({ ...runtime(), version: '0.2.1-rc.5' })
+    expect(probe).not.toHaveBeenCalled()
+    expect(launches[0]).toContain('--no-open')
+    await known.stop()
+
+    const unknown = await supervisor.start({ ...runtime(), version: '0.3.2' })
+    expect(probe).toHaveBeenCalledOnce()
+    expect(launches[1]).not.toContain('--no-open')
+    await unknown.stop()
+  })
+
+  it('cancels an in-flight CLI option probe without starting a managed process', async () => {
+    const controller = new AbortController()
+    const spawn = vi.fn()
+    const probing = deferred<void>()
+    const supervisor = new DshProcessSupervisor({
+      managedPort: () => 4317,
+      spawn,
+      probeWebNoOpen: (_runtime, signal) =>
+        new Promise((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(new Error('probe aborted')), { once: true })
+          probing.resolve()
+        }),
+    })
+
+    const starting = supervisor.start({ ...runtime(), version: '0.3.2' }, controller.signal)
+    await probing.promise
+    controller.abort()
+
+    await expect(starting).rejects.toMatchObject({ code: 'REQUEST_CANCELLED' })
+    expect(spawn).not.toHaveBeenCalled()
+  })
+
   it('clears the termination timeout when the managed child exits', async () => {
     vi.useFakeTimers()
     try {
