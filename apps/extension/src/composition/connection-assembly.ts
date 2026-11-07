@@ -1,6 +1,6 @@
 import { parseDesktopLaunchUrl } from '../vscode/connect-desktop.js'
 import { resetConnectionSettings } from '../config/reset-connection-settings.js'
-import type { DesktopPairing } from '../backend/desktop-pairing.js'
+import { DesktopPairingError, type DesktopPairing } from '../backend/desktop-pairing.js'
 import { canRecoverDesktop, withDesktopRecovery } from '../backend/desktop-recovery.js'
 import {
   allowsAutomaticDesktop,
@@ -425,6 +425,23 @@ type ReconnectTrigger =
   | 'desktop-pairing-changed'
   | 'desktop-pairing-restored'
 
+type DesktopPreparationPhase =
+  | 'automatic-enrollment'
+  | 'pairing-record-check'
+  | 'pairing-resolve'
+  | 'paired-authorization'
+  | 'version-detection'
+  | 'configuration-save'
+  | 'recovery-refresh'
+
+function desktopPreparationErrorCode(error: unknown, signal?: AbortSignal): string {
+  const cause: unknown = signal?.aborted ? signal.reason : error
+  if (cause instanceof Error && cause.name === 'TimeoutError') return 'TIMEOUT'
+  if (signal?.aborted || (cause instanceof Error && cause.name === 'AbortError')) return 'REQUEST_CANCELLED'
+  if (cause instanceof AppError || cause instanceof DesktopPairingError) return cause.code
+  return 'UNKNOWN'
+}
+
 export interface ConnectionLifecycleDependencies {
   readonly diagnostics?: Pick<RedactedDiagnostics, 'log'>
   readonly discoverAutomaticDesktop?: (
@@ -477,6 +494,9 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
     context,
     configuration,
     coordinator,
+    desktopPairing,
+    discoverDesktopVersion,
+    diagnostics,
     currentWorkspaceFolders,
     endpointLaunchUrls,
     externalConnection,
@@ -488,7 +508,48 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
   let resetRevision = 0
   let resettingConnection = false
   let automaticConnectionPaused = false
-  const connectOnce = async (signal?: AbortSignal, automaticChecked = false): Promise<unknown> => {
+  const tracePreparation = async <T>(
+    phase: DesktopPreparationPhase,
+    attempt: number | undefined,
+    signal: AbortSignal | undefined,
+    run: () => Promise<T>,
+  ): Promise<T> => {
+    if (diagnostics === undefined) return run()
+    const fields = { phase, ...(attempt === undefined ? {} : { attempt }) }
+    const startedAt = performance.now()
+    diagnostics.log('info', 'desktop-preparation', { ...fields, status: 'started' })
+    try {
+      const result = await run()
+      let status = 'succeeded'
+      if (
+        (phase === 'pairing-resolve' && result === undefined) ||
+        (phase === 'pairing-record-check' && result === false)
+      )
+        status = 'no-record'
+      else if (phase === 'version-detection' && result === undefined) status = 'unknown-version'
+      else if (result === false) status = 'not-enrolled'
+      diagnostics.log('info', 'desktop-preparation', {
+        ...fields,
+        status,
+        durationMs: Math.round(performance.now() - startedAt),
+      })
+      return result
+    } catch (error) {
+      const code = desktopPreparationErrorCode(error, signal)
+      diagnostics.log('info', 'desktop-preparation', {
+        ...fields,
+        status: code === 'REQUEST_CANCELLED' ? 'cancelled' : 'failed',
+        durationMs: Math.round(performance.now() - startedAt),
+        code,
+      })
+      throw error
+    }
+  }
+  const connectOnce = async (
+    signal?: AbortSignal,
+    automaticChecked = false,
+    attempt?: number,
+  ): Promise<unknown> => {
     if (resettingConnection) throw new DOMException('Connection reset in progress.', 'AbortError')
     const connectionRevision = resetRevision
     automaticConnectionPaused = false
@@ -505,11 +566,18 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
       vscode.workspace.isTrusted &&
       deps.discoverAutomaticDesktop !== undefined &&
       allowsAutomaticDesktop(current.connection, automaticOrigin)
-    if (
-      canBootstrap &&
-      !(current.connection.serverUrl && (await deps.desktopPairing?.has(current.connection.serverUrl)))
-    ) {
-      if (await enrollAutomaticDesktop(signal)) return connectOnce(signal, true)
+    if (canBootstrap) {
+      const origin = current.connection.serverUrl
+      const hasPairing =
+        origin && desktopPairing !== undefined
+          ? await tracePreparation('pairing-record-check', attempt, signal, () => desktopPairing.has(origin))
+          : false
+      if (!hasPairing) {
+        const enrolled = await tracePreparation('automatic-enrollment', attempt, signal, () =>
+          enrollAutomaticDesktop(signal),
+        )
+        if (enrolled) return connectOnce(signal, true, attempt)
+      }
     }
     const mode = development ? 'new-isolated' : current.connection.mode
     const hasWorkspaceFolder = currentWorkspaceFolders().length > 0
@@ -523,17 +591,20 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
       : undefined
     let pairedVersion: string | undefined
     const desktopOrigin =
-      deps.desktopPairing === undefined
+      desktopPairing === undefined
         ? undefined
         : context.workspaceState.get<string>('dsh.desktop.lastEndpoint')
     if (
       customEndpoint !== undefined &&
       (desktopOrigin === customEndpoint.baseUrl || automaticOrigin === customEndpoint.baseUrl) &&
-      deps.desktopPairing !== undefined
+      desktopPairing !== undefined
     ) {
+      const origin = customEndpoint.baseUrl
       let launchUrl: string | undefined
       try {
-        launchUrl = await deps.desktopPairing.resolve(customEndpoint.baseUrl, signal)
+        launchUrl = await tracePreparation('pairing-resolve', attempt, signal, () =>
+          desktopPairing.resolve(origin, signal),
+        )
       } catch (error) {
         signal?.throwIfAborted()
         throw new AppError({
@@ -546,8 +617,14 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
       signal?.throwIfAborted()
       if (launchUrl !== undefined) {
         const launch = parseDesktopLaunchUrl(launchUrl)
-        await externalConnection?.authorizePairedDesktop(launch.endpoint, launch.token, signal)
-        pairedVersion = await deps.discoverDesktopVersion?.(launch.endpoint, signal)
+        if (externalConnection !== undefined)
+          await tracePreparation('paired-authorization', attempt, signal, () =>
+            externalConnection.authorizePairedDesktop(launch.endpoint, launch.token, signal),
+          )
+        if (discoverDesktopVersion !== undefined)
+          pairedVersion = await tracePreparation('version-detection', attempt, signal, () =>
+            discoverDesktopVersion(launch.endpoint, signal),
+          )
         if (pairedVersion === undefined && launch.endpoint.baseUrl === current.connection.serverUrl)
           pairedVersion = current.connection.runtimeVersion
         signal?.throwIfAborted()
@@ -556,7 +633,9 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
           launch.endpoint.baseUrl !== current.connection.serverUrl ||
           pairedVersion !== current.connection.runtimeVersion
         ) {
-          await persistPairedDesktop(current.connection.serverUrl!, launch.endpoint, pairedVersion, signal)
+          await tracePreparation('configuration-save', attempt, signal, () =>
+            persistPairedDesktop(current.connection.serverUrl!, launch.endpoint, pairedVersion, signal),
+          )
         }
       }
     }
@@ -671,7 +750,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
   let connectionOperation: Promise<unknown> | undefined
   let connectionAbort: AbortController | undefined
   let connectionSelection = -1
-  const connect = (signal?: AbortSignal): Promise<unknown> => {
+  const connect = (signal?: AbortSignal, attempt?: number): Promise<unknown> => {
     if (
       connectionOperation !== undefined &&
       connectionSelection === configurationRevision &&
@@ -690,7 +769,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
       vscode.workspace.isTrusted &&
       canRecoverDesktop(configuration.read().connection)
     const operation = (async (): Promise<unknown> => {
-      if (!eligible) return connectOnce(signal)
+      if (!eligible) return connectOnce(signal, false, attempt)
       const recoverySignal = AbortSignal.any([AbortSignal.timeout(25_000), operationSignal])
       try {
         return await withDesktopRecovery({
@@ -698,11 +777,14 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
           active: (active) => deps.onDesktopRecoveryState?.(active),
           connect: () => {
             if (!vscode.workspace.isTrusted) throw new DOMException('Workspace trust changed.', 'AbortError')
-            return connectOnce(recoverySignal)
+            return connectOnce(recoverySignal, false, attempt)
           },
           refresh: async () => {
             // Never enqueue behind configureConnection while it is awaiting us.
-            if (!configuringTransport) await enrollAutomaticDesktop(recoverySignal, true)
+            if (!configuringTransport)
+              await tracePreparation('recovery-refresh', attempt, recoverySignal, () =>
+                enrollAutomaticDesktop(recoverySignal, true),
+              )
           },
         })
       } catch (error) {
@@ -774,7 +856,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
       operationSignal.throwIfAborted()
       await externalConnection?.release()
       operationSignal.throwIfAborted()
-      return connect(operationSignal)
+      return connect(operationSignal, attempt)
     })()
     reconnectOperation = { promise: operation, attempt }
     try {

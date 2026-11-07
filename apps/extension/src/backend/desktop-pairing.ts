@@ -15,6 +15,21 @@ interface Secrets {
 }
 const SLOT = 'dsh.desktop.localPairing.v1'
 
+type DesktopPairingFailure =
+  | 'PIPE_TIMEOUT'
+  | 'PIPE_NOT_FOUND'
+  | 'PIPE_REFUSED'
+  | 'PIPE_ERROR'
+  | 'PIPE_CLOSED'
+  | 'INVALID_PAIRING_RESPONSE'
+  | 'REQUEST_CANCELLED'
+
+export class DesktopPairingError extends Error {
+  public constructor(readonly code: DesktopPairingFailure) {
+    super('Paired Desktop unavailable')
+  }
+}
+
 export function resolvePairedDesktop(key: string, signal?: AbortSignal, pipe?: string): Promise<string> {
   if (!/^[A-Za-z0-9_-]{43}$/u.test(key)) return Promise.reject(new Error('Invalid desktop pairing'))
   return new Promise((resolve, reject) => {
@@ -22,27 +37,33 @@ export function resolvePairedDesktop(key: string, signal?: AbortSignal, pipe?: s
     const time = Date.now()
     const path = pipe ?? `\\\\.\\pipe\\dsh-vscode-${createHash('sha256').update(key).digest('hex')}`
     const socket = createConnection(path)
-    const deadline = setTimeout(() => finish(), 2000)
+    const deadline = setTimeout(() => finish(undefined, 'PIPE_TIMEOUT'), 2000)
     let input = ''
     let complete = false
-    const finish = (url?: string): void => {
+    const finish = (url: string | undefined, code: DesktopPairingFailure = 'INVALID_PAIRING_RESPONSE'): void => {
       if (complete) return
       complete = true
       clearTimeout(deadline)
       signal?.removeEventListener('abort', abort)
       socket.destroy()
-      if (url === undefined) reject(new Error('Paired Desktop unavailable'))
+      if (url === undefined) reject(new DesktopPairingError(code))
       else resolve(url)
     }
-    const abort = (): void => finish()
+    const abort = (): void => finish(undefined, 'REQUEST_CANCELLED')
     signal?.addEventListener('abort', abort, { once: true })
     if (signal?.aborted) {
-      finish()
+      abort()
       return
     }
-    socket.setTimeout(2000, () => finish())
-    socket.on('error', () => finish())
-    socket.on('close', () => finish())
+    socket.setTimeout(2000, () => finish(undefined, 'PIPE_TIMEOUT'))
+    socket.on('error', (error: NodeJS.ErrnoException) => {
+      const { code } = error
+      if (code === 'ENOENT') finish(undefined, 'PIPE_NOT_FOUND')
+      else if (code === 'ECONNREFUSED' || code === 'EACCES' || code === 'EPERM')
+        finish(undefined, 'PIPE_REFUSED')
+      else finish(undefined, 'PIPE_ERROR')
+    })
+    socket.on('close', () => finish(undefined, 'PIPE_CLOSED'))
     socket.on('connect', () => {
       const mac = createHmac('sha256', Buffer.from(key, 'base64url'))
         .update(`request:${nonce}:${time}`)
@@ -52,7 +73,7 @@ export function resolvePairedDesktop(key: string, signal?: AbortSignal, pipe?: s
     socket.on('data', (chunk: Buffer) => {
       input += chunk.toString('utf8')
       if (input.length > 20_000) {
-        finish()
+        finish(undefined)
         return
       }
       if (!input.includes('\n')) return
@@ -100,7 +121,7 @@ export function resolvePairedDesktop(key: string, signal?: AbortSignal, pipe?: s
           throw new Error('Invalid local address')
         finish(body.url)
       } catch {
-        finish()
+        finish(undefined)
       }
     })
   })

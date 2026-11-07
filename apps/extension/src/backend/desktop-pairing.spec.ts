@@ -76,9 +76,10 @@ it('accepts only authenticated encrypted loopback launch addresses', async () =>
   const key = randomBytes(32).toString('base64url')
   const url = 'http://127.0.0.1:41234/?token=fixture-token'
   await expect(resolvePairedDesktop(key, undefined, await host(key, url))).resolves.toBe(url)
-  await expect(resolvePairedDesktop(key, undefined, await host(key, url, true))).rejects.toThrow(
-    'unavailable',
-  )
+  await expect(resolvePairedDesktop(key, undefined, await host(key, url, true))).rejects.toMatchObject({
+    message: 'Paired Desktop unavailable',
+    code: 'INVALID_PAIRING_RESPONSE',
+  })
   await expect(
     resolvePairedDesktop(key, undefined, await host(key, 'http://example.com/?token=fixture')),
   ).rejects.toThrow('unavailable')
@@ -87,9 +88,9 @@ it('accepts only authenticated encrypted loopback launch addresses', async () =>
 it('cancels IPC without returning credentials', async () => {
   const abort = new AbortController()
   abort.abort()
-  await expect(resolvePairedDesktop(randomBytes(32).toString('base64url'), abort.signal)).rejects.toThrow(
-    'unavailable',
-  )
+  await expect(
+    resolvePairedDesktop(randomBytes(32).toString('base64url'), abort.signal),
+  ).rejects.toMatchObject({ message: 'Paired Desktop unavailable', code: 'REQUEST_CANCELLED' })
 })
 
 it.each([
