@@ -201,7 +201,9 @@ const useAppControllerImpl = () => {
     document.documentElement.dataset.dshTheme = themePreference
   }, [themePreference])
 
-  useEffect(() => {
+  // Send app.ready before child effects request settings. The Host marks the
+  // surface ready on receipt, before it finishes connecting to DSH.
+  useLayoutEffect(() => {
     if (!hasVsCodeApi()) return
     if (disposeTimerRef.current !== undefined) {
       window.clearTimeout(disposeTimerRef.current)

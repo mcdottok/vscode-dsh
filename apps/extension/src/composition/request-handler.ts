@@ -827,8 +827,13 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
   const router = new WebviewMessageRouter({
     // One router serves every surface: answers go back to the surface that
     // asked, and only a caller without surface identity is broadcast.
-    postMessage: (message, targetSurfaceId) =>
-      targetSurfaceId === undefined ? post(message) : postTo(targetSurfaceId, message),
+    postMessage: (message, targetSurfaceId, requestType) => {
+      if (targetSurfaceId === undefined) return post(message)
+      if (requestType !== 'extensionSettings.read') return postTo(targetSurfaceId, message)
+      return postTo(targetSurfaceId, message, (code, surfaceKind) => {
+        diagnostics.log('warn', 'webview-response-undelivered', { requestType, code, surfaceKind })
+      })
+    },
     handleRequest,
     handleFeatureRequest,
     // Unexpected (non-AppError) handler failures must stay diagnosable: the
@@ -889,6 +894,7 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
       void promise.catch(() => undefined)
     },
     onBecameReady: () => {
+      diagnostics.log('info', 'webview-ready', { requestType: 'app.ready', surfaceKind: 'sidebar' })
       deps.transcript.setVisible(SIDEBAR_SURFACE_ID, provider.visible)
     },
     onViewDisposed: () => {
@@ -906,6 +912,7 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
     onMessage: (surfaceId, message) => router.handle(message, surfaceId),
     onMessageError: logWebviewMessageError,
     onBecameReady: (surface) => {
+      diagnostics.log('info', 'webview-ready', { requestType: 'app.ready', surfaceKind: surface.kind })
       deps.transcript.setVisible(surface.surfaceId, surface.visible)
     },
     onDisposed: (surface) => onSurfaceWorkCancelled(surface.surfaceId),

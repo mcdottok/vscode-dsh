@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import type { ReactElement } from 'react'
+import { StrictMode, type ReactElement } from 'react'
 import type { HostMessage, FeatureHostMessage, WebviewRequest } from '@dsh-vscode/webview-protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AppState, AppStore, DshSettingsSnapshot, OpenFileCandidate } from './app/store.js'
@@ -612,6 +612,38 @@ describe('App connected rendering', () => {
     cleanup()
     window.localStorage.clear()
     document.documentElement.lang = 'en'
+  })
+
+  it('requests extension settings after sending app.ready while its reply is still pending', async () => {
+    const { createAppStore } = await vi.importActual<typeof StoreModule>('./app/store.js')
+    const { ProtocolClient } = await import('./app/protocol-client.js')
+    const requests: string[] = []
+    const client = new ProtocolClient({
+      getState: () => undefined,
+      setState: () => undefined,
+      postMessage: ({ message }) => {
+        requests.push(message.type)
+      },
+    })
+    const store = createAppStore(client)
+    currentStore = store
+    vi.stubGlobal('acquireVsCodeApi', vi.fn())
+    try {
+      render(
+        <StrictMode>
+          <App />
+        </StrictMode>,
+      )
+      const startupRequests = requests.filter(
+        (type) => type === 'app.ready' || type === 'extensionSettings.read',
+      )
+      expect(startupRequests[0]).toBe('app.ready')
+      expect(startupRequests).toContain('extensionSettings.read')
+    } finally {
+      cleanup()
+      store.dispose()
+      vi.unstubAllGlobals()
+    }
   })
 
   it.each([false, true])('renders the page when connected (active=%s)', (activeSession) => {

@@ -37,7 +37,7 @@ import { sameWorkspacePath } from './composition/workspace-state.js'
 import { createSessionScope } from './composition/session-scope.js'
 import { createUseCasesAssembly } from './composition/use-cases-assembly.js'
 import { createConnectionLifecycle, createRuntimeAssembly } from './composition/connection-assembly.js'
-import { createHostEventPipeline } from './composition/host-event-pipeline.js'
+import { createHostEventPipeline, type PostHostMessageTo } from './composition/host-event-pipeline.js'
 import { createChangeCheckpointTaskAssembly } from './composition/change-checkpoint-task-assembly.js'
 import { createJobFollowHost } from './composition/job-follow-host.js'
 import { createBackendAttach } from './composition/backend-attach.js'
@@ -100,9 +100,13 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
     const envelope = hostEnvelope(message)
     return envelope === undefined ? Promise.resolve(false) : surfaces.post(envelope)
   }
-  const postTo = (surfaceId: string, message: HostMessage | FeatureHostMessage): Thenable<boolean> => {
+  const postTo: PostHostMessageTo = (surfaceId, message, onFailure) => {
     const envelope = hostEnvelope(message)
-    return envelope === undefined ? Promise.resolve(false) : surfaces.postTo(surfaceId, envelope)
+    if (envelope === undefined) {
+      onFailure?.('host-envelope-rejected', surfaces.get(surfaceId)?.kind)
+      return Promise.resolve(false)
+    }
+    return surfaces.postTo(surfaceId, envelope, onFailure)
   }
   const currentWorkspaceFolderId = (): string | undefined => {
     const folder = currentWorkspaceFolder()

@@ -121,7 +121,7 @@ function formatOutput(event: string, fields: Readonly<Record<string, unknown>>):
 }
 
 const SAFE_FIELD =
-  /^(code|phase|candidateSource|latencyBucket|hostVersion|method|status|attempt|count|durationMs|ownership|requestType|rpcMethod|state|trigger|change)$/
+  /^(code|phase|candidateSource|latencyBucket|hostVersion|method|status|attempt|count|durationMs|ownership|requestType|rpcMethod|state|trigger|change|surfaceKind)$/
 /** Free-text fields never pass through raw; they get the shared scrubber below. */
 const REDACTED_TEXT_FIELD = /^(message|stack|detail|name)$/
 const RECENT_EVENT_FIELDS = new Set([
@@ -139,6 +139,7 @@ const RECENT_EVENT_FIELDS = new Set([
   'state',
   'trigger',
   'change',
+  'surfaceKind',
 ])
 const RECENT_EVENT_VALUE = /^[A-Za-z0-9_.+-]{1,128}$/u
 const DIAGNOSTIC_EVENTS = new Set([
@@ -154,6 +155,8 @@ const DIAGNOSTIC_EVENTS = new Set([
   'job-follow-failed',
   'assistant-preview',
   'request-unexpected',
+  'webview-ready',
+  'webview-response-undelivered',
   'session-request',
   'session-recovery',
   'webview-message-unhandled',

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { WebviewSurfaceRegistry } from './webview-surface-registry.js'
 import type { WebviewSurface, WebviewSurfaceKind } from './webview-surface.js'
@@ -11,7 +11,12 @@ interface FakeSurface extends WebviewSurface {
 function surface(
   surfaceId: string,
   kind: WebviewSurfaceKind,
-  options: { readonly visible?: boolean; readonly accepts?: boolean; readonly throws?: boolean } = {},
+  options: {
+    readonly visible?: boolean
+    readonly ready?: boolean
+    readonly accepts?: boolean
+    readonly throws?: boolean
+  } = {},
 ): FakeSurface {
   const posted: unknown[] = []
   const fake: FakeSurface = {
@@ -19,7 +24,7 @@ function surface(
     kind,
     sessionId: kind === 'editor' ? surfaceId.replace('editor:', '') : undefined,
     visible: options.visible ?? true,
-    isReady: true,
+    isReady: options.ready ?? true,
     disposed: false,
     posted,
     postMessage(message: unknown): Promise<boolean> {
@@ -78,6 +83,28 @@ describe('WebviewSurfaceRegistry', () => {
     expect(editor.posted).toEqual([])
     expect(await registry.postTo('editor:s1', { message: 'assigned' })).toBe(false)
     expect(await registry.postTo('editor:missing', { message: 'assigned' })).toBe(false)
+  })
+
+  it('distinguishes readiness, missing surfaces, and posting failures for a targeted reply', async () => {
+    const registry = new WebviewSurfaceRegistry()
+    const onFailure = vi.fn()
+    const message = { message: 'reply' }
+    registry.register(surface('sidebar', 'sidebar', { ready: false, accepts: false }))
+    registry.register(surface('editor:rejects', 'editor', { accepts: false }))
+    registry.register(surface('editor:throws', 'editor', { throws: true }))
+    registry.register(surface('editor:accepts', 'editor'))
+
+    expect(await registry.postTo('sidebar', message, onFailure)).toBe(false)
+    expect(await registry.postTo('editor:missing', message, onFailure)).toBe(false)
+    expect(await registry.postTo('editor:rejects', message, onFailure)).toBe(false)
+    expect(await registry.postTo('editor:throws', message, onFailure)).toBe(false)
+    expect(await registry.postTo('editor:accepts', message, onFailure)).toBe(true)
+    expect(onFailure.mock.calls).toEqual([
+      ['surface-not-ready', 'sidebar'],
+      ['surface-missing'],
+      ['vscode-post-rejected', 'editor'],
+      ['vscode-post-error', 'editor'],
+    ])
   })
 
   it('prefers the most recently registered visible surface for user actions', () => {

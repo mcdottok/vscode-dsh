@@ -18,6 +18,7 @@ import {
 import type { RedactedDiagnostics } from '../backend/diagnostics.js'
 import type { TemporaryWorkspaceManager } from '../backend/temporary-workspace.js'
 import { sanitizePublicValue } from '../view/public-value.js'
+import type { WebviewDeliveryFailure } from '../view/webview-surface-registry.js'
 import { updateContextKeys, updateEditorContextAvailabilityKeys } from '../vscode/context-keys.js'
 import { publicState } from './public-projection.js'
 import { featureContextKinds, type FeatureContextKind } from './editor-files.js'
@@ -25,10 +26,11 @@ import type { TranscriptWindowService } from '../view/transcript-window.js'
 import { BoundedEventQueue, eventPayloadCharacters } from '../view/bounded-event-queue.js'
 
 export type PostHostMessage = (message: HostMessage | FeatureHostMessage) => Thenable<boolean>
-/** Deliver an event to exactly one surface (surface-owned state, not broadcasts). */
+/** Deliver a message to exactly one surface, optionally reporting why it was not delivered. */
 export type PostHostMessageTo = (
   surfaceId: string,
   message: HostMessage | FeatureHostMessage,
+  onFailure?: WebviewDeliveryFailure,
 ) => Thenable<boolean>
 /** Surface-directed event poster: same sequence/queue as `postEvent`, one target. */
 export type PostSurfaceEvent = (

@@ -31,6 +31,7 @@ export interface MessageRouterDependencies {
   readonly postMessage: (
     message: HostMessage | FeatureHostMessage,
     surfaceId: string | undefined,
+    requestType: string,
   ) => Thenable<boolean>
   readonly handleRequest?: (
     request: WebviewRequest,
@@ -336,7 +337,7 @@ export class WebviewMessageRouter {
     operation.phase = 'responding'
     try {
       // Route the terminal answer back to the surface that asked for it.
-      const delivered = await this.dependencies.postMessage(message, operation.surfaceId)
+      const delivered = await this.dependencies.postMessage(message, operation.surfaceId, requestType)
       if (!delivered) throw new Error('The Webview did not accept the response.')
       return true
     } catch (error) {

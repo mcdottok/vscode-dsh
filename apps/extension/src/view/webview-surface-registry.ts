@@ -1,5 +1,15 @@
 import type * as vscode from 'vscode'
-import type { WebviewSurface } from './webview-surface.js'
+import type { WebviewSurface, WebviewSurfaceKind } from './webview-surface.js'
+
+export type WebviewDeliveryFailure = (
+  code:
+    | 'host-envelope-rejected'
+    | 'surface-missing'
+    | 'surface-not-ready'
+    | 'vscode-post-rejected'
+    | 'vscode-post-error',
+  surfaceKind?: WebviewSurfaceKind,
+) => void
 
 /**
  * Every live chat Webview. The Host owns exactly one sidebar surface and zero
@@ -62,14 +72,26 @@ export class WebviewSurfaceRegistry implements vscode.Disposable {
     return results.some(Boolean)
   }
 
-  public async postTo(surfaceId: string, message: unknown): Promise<boolean> {
+  public async postTo(
+    surfaceId: string,
+    message: unknown,
+    onFailure?: WebviewDeliveryFailure,
+  ): Promise<boolean> {
     const surface = this.surfaces.get(surfaceId)
-    if (surface === undefined) return false
-    try {
-      return await surface.postMessage(message)
-    } catch {
+    if (surface === undefined) {
+      onFailure?.('surface-missing')
       return false
     }
+    const readyAtPost = onFailure === undefined || surface.isReady
+    let delivered: boolean
+    try {
+      delivered = await surface.postMessage(message)
+    } catch {
+      onFailure?.('vscode-post-error', surface.kind)
+      return false
+    }
+    if (!delivered) onFailure?.(readyAtPost ? 'vscode-post-rejected' : 'surface-not-ready', surface.kind)
+    return delivered
   }
 
   public dispose(): void {
