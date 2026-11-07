@@ -65,7 +65,7 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
   const pluginInstallRequests = new PluginInstallRequestCoordinator()
   const configuration = new VsCodeConfigurationSource(vscode.workspace)
   const extensionVersion = readExtensionVersion(context)
-  const channel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME)
+  const channel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME, { log: true })
   const diagnostics = new RedactedDiagnostics(channel, () =>
     diagnosticLevel(vscode.workspace.getConfiguration('dsh.developer').get<string>('logLevel')),
   )

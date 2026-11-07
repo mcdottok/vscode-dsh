@@ -6,12 +6,18 @@ function fakeChannel(): {
   readonly channel: ConstructorParameters<typeof RedactedDiagnostics>[0]
 } {
   const lines: string[] = []
+  const record =
+    (level: string): ((line: string) => void) =>
+    (line: string): void => {
+      lines.push(`[${level}] ${line}`)
+    }
   return {
     lines,
     channel: {
-      appendLine: (line: string): void => {
-        lines.push(line)
-      },
+      debug: record('debug'),
+      info: record('info'),
+      warn: record('warn'),
+      error: record('error'),
       show: (..._args: unknown[]): void => undefined,
       dispose: () => undefined,
     },
@@ -29,13 +35,17 @@ describe('RedactedDiagnostics', () => {
       diagnostics.connectionProgress({ phase: 'discovery', status: 'succeeded', count })
     expect(diagnostics.connectionOutput()).toHaveLength(64)
     expect(diagnostics.connectionOutput().at(-1)?.count).toBe(69)
-    expect(lines.at(-1)).toContain('connection-progress')
+    expect(lines.at(-1)).toMatch(/^\[info\] connection-progress phase=discovery status=succeeded /u)
     const late = vi.fn()
     const detach = diagnostics.subscribeConnectionOutput(late)
     expect(late).toHaveBeenCalledWith(diagnostics.connectionOutput())
     diagnostics.connectionProgress({ phase: 'connect', status: 'started', mode: 'custom' })
     expect(diagnostics.connectionOutput()).toHaveLength(1)
     expect(diagnostics.connectionOutput()[0]?.elapsedMs).toBe(0)
+    diagnostics.connectionProgress({ phase: 'connect', status: 'failed', code: 'BACKEND_UNREACHABLE' })
+    expect(lines.at(-1)).toMatch(
+      /^\[warn\] connection-progress phase=connect status=failed .*code=BACKEND_UNREACHABLE$/u,
+    )
     unsubscribe()
     detach()
     const calls = changed.mock.calls.length
@@ -74,16 +84,16 @@ describe('RedactedDiagnostics', () => {
     })
 
     expect(lines).toHaveLength(1)
-    const entry = JSON.parse(lines[0] ?? '') as { fields: Record<string, string> }
-    expect(entry.fields.requestType).toBe('session.open')
-    expect(entry.fields.name).toBe('TypeError')
-    expect(entry.fields.message).not.toContain('super-secret')
+    const line = lines[0] ?? ''
+    expect(line).toMatch(/^\[error\] request-unexpected requestType=session.open name=TypeError /u)
+    expect(line).not.toMatch(/[\r\n]/u)
+    expect(line).not.toContain('super-secret')
     // The value is replaced and the separator it matched is kept, so the
     // diagnostic still reads as the `token=…` pair it came from.
-    expect(entry.fields.message).toContain('token=[redacted]')
-    expect(entry.fields.stack).toContain('[redacted]')
-    expect(entry.fields).not.toHaveProperty('pid')
-    expect(entry.fields).not.toHaveProperty('endpoint')
+    expect(line).toContain('token=[redacted]')
+    expect(line).toContain('password=[redacted]')
+    expect(line).not.toContain('pid=')
+    expect(line).not.toContain('endpoint=')
     diagnostics.dispose()
   })
 
@@ -97,7 +107,7 @@ describe('RedactedDiagnostics', () => {
     diagnostics.log('error', 'request-unexpected', { name: 'TypeError' })
 
     expect(lines).toHaveLength(1)
-    expect(lines[0]).toContain('"level":"error"')
+    expect(lines[0]).toBe('[error] request-unexpected name=TypeError')
     diagnostics.dispose()
   })
 
@@ -109,7 +119,7 @@ describe('RedactedDiagnostics', () => {
     diagnostics.log('debug', 'connection-state', { state: 'connecting' })
 
     expect(lines).toHaveLength(1)
-    expect(lines[0]).toContain('"level":"info"')
+    expect(lines[0]).toBe('[info] connection-state state=connected')
     diagnostics.dispose()
   })
 
@@ -187,7 +197,7 @@ describe('RedactedDiagnostics', () => {
     const snapshotEntry = JSON.parse(snapshotLine) as { event: string }
     expect(snapshotEntry.event).toBe('diagnostic')
     expect(snapshotLine).not.toContain(privateEvent)
-    expect(lines[0]).toContain('"event":"diagnostic"')
+    expect(lines[0]).toBe('[warn] diagnostic state=connected')
     expect(lines[0]).not.toContain(privateEvent)
     diagnostics.dispose()
   })

@@ -23,7 +23,7 @@ export class RedactedDiagnostics implements vscode.Disposable {
   private disposed = false
 
   public constructor(
-    private readonly channel: Pick<vscode.OutputChannel, 'appendLine' | 'show' | 'dispose'>,
+    private readonly channel: Pick<vscode.LogOutputChannel, DiagnosticLevel | 'show' | 'dispose'>,
     /** Read on every event so a settings change applies without a reload. */
     private readonly level: () => DiagnosticLevel = () => 'info',
   ) {}
@@ -38,9 +38,7 @@ export class RedactedDiagnostics implements vscode.Disposable {
       event: DIAGNOSTIC_EVENTS.has(event) ? event : 'diagnostic',
       fields: safe,
     }
-    const line = JSON.stringify(entry)
-    const boundedLine = line.length > 8_192 ? `${line.slice(0, 8_192)}…` : line
-    this.channel.appendLine(boundedLine)
+    this.channel[level](formatOutput(entry.event, safe))
 
     // Recent events cross the Host/Webview boundary as opaque JSON strings.
     // Keep their structured metadata and a simple error class name, but never
@@ -84,7 +82,9 @@ export class RedactedDiagnostics implements vscode.Disposable {
           : Math.max(0, Date.now() - this.connectionStartedAt),
     }
     this.connectionLines = [...this.connectionLines.slice(-63), entry]
-    this.channel.appendLine(JSON.stringify({ event: 'connection-progress', ...entry }))
+    const { phase, status, ...details } = entry
+    const level = status === 'failed' ? 'warn' : 'info'
+    this.channel[level](formatOutput('connection-progress', { phase, status, ...details }))
     for (const listener of this.connectionListeners) listener(this.connectionLines)
   }
 
@@ -106,6 +106,18 @@ export class RedactedDiagnostics implements vscode.Disposable {
     this.connectionLines = []
     this.channel.dispose()
   }
+}
+
+function formatOutput(event: string, fields: Readonly<Record<string, unknown>>): string {
+  const parts = [event]
+  for (const [key, value] of Object.entries(fields)) {
+    if (key === 'time' || value === undefined) continue
+    const text =
+      typeof value === 'string' && /^[A-Za-z0-9_.+:/-]+$/u.test(value) ? value : JSON.stringify(value)
+    parts.push(`${key}=${text}`)
+  }
+  const line = parts.join(' ')
+  return line.length > 8_192 ? `${line.slice(0, 8_192)}…` : line
 }
 
 const SAFE_FIELD =

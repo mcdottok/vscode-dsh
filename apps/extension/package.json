@@ -560,7 +560,7 @@
             "debug"
           ],
           "default": "info",
-          "description": "Extension diagnostics verbosity. Secrets and prompt bodies are always redacted."
+          "description": "Extension diagnostics verbosity. VS Code also applies the Output channel log level. Secrets and prompt bodies are always redacted."
         }
       }
     }
