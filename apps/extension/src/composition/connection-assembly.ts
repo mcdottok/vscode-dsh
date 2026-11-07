@@ -19,7 +19,6 @@ import {
   AppError,
   type AppErrorCode,
   type BackendEndpoint,
-  type BackendState,
   type DshBackend,
   type DshRuntimeUpdateProgress,
   isLoopbackEndpoint,
@@ -70,6 +69,7 @@ import {
 } from './runtime.js'
 import { createExportFileSystem } from './export-file-system.js'
 import { sameWorkspacePath } from './workspace-state.js'
+import type { PublishConnectionState } from './host-event-pipeline.js'
 import { EndpointNetwork } from '../backend/endpoint-network.js'
 import { ExternalConnectionAccess } from '../backend/external-connection-access.js'
 import { createCredentialScope } from '../backend/credential-scope.js'
@@ -462,7 +462,7 @@ export interface ConnectionLifecycleDependencies {
     signal?: AbortSignal,
   ) => Promise<string | undefined>
   readonly attach: (backend: DshBackend) => Promise<void>
-  readonly publishState: (state: BackendState) => void
+  readonly publishState: PublishConnectionState
   readonly disposeAccountLifecycleHost: () => Promise<void>
   readonly detachSessionAdapters: () => void
 }
@@ -744,7 +744,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
     // Commands may connect before the Webview exists. app.ready must always
     // receive a fresh authoritative snapshot even when the initial publish
     // had no recipient.
-    publishState(result.state)
+    publishState(result.state, 'post-attach')
     return { connected: true }
   }
   let connectionOperation: Promise<unknown> | undefined
@@ -805,7 +805,10 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
               })
         deps.onDesktopRecoveryFailure?.(failure.code)
         if (!coordinator.reportPreparationFailure?.(failure))
-          publishState({ kind: 'failed', message: failure.message, retryable: failure.retryable })
+          publishState(
+            { kind: 'failed', message: failure.message, retryable: failure.retryable },
+            'connection-failure',
+          )
         throw failure
       }
     })()
@@ -1239,7 +1242,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
         await context.workspaceState.update('dsh.desktop.lastEndpoint', undefined)
         await context.workspaceState.update('dsh.lastEndpoint', undefined)
         await resetConnectionSettings(vscode.workspace)
-        publishState({ kind: 'idle' })
+        publishState({ kind: 'idle' }, 'reset')
       } finally {
         configuringTransport = false
         resettingConnection = false

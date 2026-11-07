@@ -143,6 +143,31 @@ describe('RedactedDiagnostics', () => {
     diagnostics.dispose()
   })
 
+  it('only exposes known publication sources and valid generations for connection-state', () => {
+    const { lines, channel } = fakeChannel()
+    const diagnostics = new RedactedDiagnostics(channel)
+    const fields = { state: 'connected', source: 'post-attach', connectionGeneration: 3 }
+    diagnostics.log('info', 'connection-state', fields)
+    diagnostics.log('info', 'connection-state', {
+      ...fields,
+      source: '/private/path',
+      connectionGeneration: 1.5,
+    })
+    diagnostics.log('info', 'reconnect-attempt', fields)
+
+    expect(lines).toEqual([
+      '[info] connection-state state=connected source=post-attach connectionGeneration=3',
+      '[info] connection-state state=connected',
+      '[info] reconnect-attempt state=connected',
+    ])
+    const snapshot = diagnostics.recentEvents()
+    expect(snapshot[0]).toContain(
+      '"fields":{"state":"connected","source":"post-attach","connectionGeneration":3}',
+    )
+    expect(snapshot.slice(1).every((line) => line.endsWith('"fields":{"state":"connected"}}'))).toBe(true)
+    diagnostics.dispose()
+  })
+
   it('does not expose exception stacks and absolute paths through the Webview snapshot', () => {
     const { channel } = fakeChannel()
     const diagnostics = new RedactedDiagnostics(channel)

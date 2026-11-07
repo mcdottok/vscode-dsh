@@ -5,6 +5,17 @@ import { connectionLogEntrySchema } from '@dsh-vscode/webview-protocol'
 
 export type DiagnosticLevel = 'error' | 'warn' | 'info' | 'debug'
 
+const CONNECTION_STATE_SOURCES = [
+  'coordinator',
+  'post-attach',
+  'connection-failure',
+  'reset',
+  'configuration-reload',
+  'backend-recovery',
+  'desktop-recovery',
+] as const
+export type ConnectionStateSource = (typeof CONNECTION_STATE_SOURCES)[number]
+
 const LEVEL_RANK: Record<DiagnosticLevel, number> = { error: 0, warn: 1, info: 2, debug: 3 }
 
 const MAX_RECENT_ENTRIES = 32
@@ -31,7 +42,7 @@ export class RedactedDiagnostics implements vscode.Disposable {
   public log(level: DiagnosticLevel, event: string, fields: Readonly<Record<string, unknown>> = {}): void {
     if (this.disposed) return
     if (LEVEL_RANK[level] > LEVEL_RANK[this.level()]) return
-    const safe = redact(fields)
+    const safe = redact(event, fields)
     const entry = {
       time: new Date().toISOString(),
       level,
@@ -137,6 +148,8 @@ const RECENT_EVENT_FIELDS = new Set([
   'ownership',
   'requestType',
   'state',
+  'source',
+  'connectionGeneration',
   'trigger',
   'change',
   'surfaceKind',
@@ -193,10 +206,19 @@ function publicRecentEventFields(
   return result
 }
 
-function redact(value: unknown): Readonly<Record<string, unknown>> {
+function redact(event: string, value: unknown): Readonly<Record<string, unknown>> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return {}
   const result: Record<string, unknown> = {}
   for (const [key, entry] of Object.entries(value)) {
+    if (event === 'connection-state' && key === 'source') {
+      if (typeof entry === 'string' && CONNECTION_STATE_SOURCES.some((source) => source === entry))
+        result[key] = entry
+      continue
+    }
+    if (event === 'connection-state' && key === 'connectionGeneration') {
+      if (typeof entry === 'number' && Number.isSafeInteger(entry) && entry >= 0) result[key] = entry
+      continue
+    }
     if (REDACTED_TEXT_FIELD.test(key)) {
       if (typeof entry === 'string') result[key] = redactText(entry, key === 'name' ? 128 : 2_048)
       continue

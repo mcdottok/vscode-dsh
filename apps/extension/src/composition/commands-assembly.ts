@@ -1,12 +1,7 @@
 import { sameWorkspacePath } from './workspace-state.js'
 import { WORKSPACE_HANDOFF, WORKSPACE_BROWSER_STARTED_AT } from './workspace-browser.js'
 import * as vscode from 'vscode'
-import {
-  AppError,
-  type BackendState,
-  type EditorContextKind,
-  type EditorContextOwner,
-} from '@dsh-vscode/domain'
+import { AppError, type EditorContextKind, type EditorContextOwner } from '@dsh-vscode/domain'
 import type { BackendService, DshConnectionCoordinator, EditorContextUseCases } from '@dsh-vscode/application'
 import { registerCommands } from '../commands/register-commands.js'
 import { runCleanupSequence } from '../backend/cleanup-sequence.js'
@@ -30,7 +25,7 @@ import type { EditorChatSurfaceManager } from '../view/editor-chat-surface-manag
 import { DshWebviewPanelSurface } from '../view/dsh-webview-panel-surface.js'
 import type { WebviewSurfaceRegistry } from '../view/webview-surface-registry.js'
 import { stateSubscriptionDisposable } from './public-projection.js'
-import type { PostFeatureEvent } from './host-event-pipeline.js'
+import type { PostFeatureEvent, PublishConnectionState } from './host-event-pipeline.js'
 import { SESSION_DROP_EDITOR_VIEW_TYPE } from '@dsh-vscode/webview-protocol'
 import { createSessionDropEditorProvider } from '../view/session-drop-editor.js'
 import type { RequestGateway } from './request-handler.js'
@@ -71,7 +66,7 @@ export interface CommandsAssemblyDependencies {
   readonly endpointLaunchUrls: Map<string, string>
   readonly reconnect: (signal?: AbortSignal) => Promise<unknown>
   readonly reconnectOnTransportChange: (signal?: AbortSignal) => Promise<unknown>
-  readonly publishState: (state: BackendState) => void
+  readonly publishState: PublishConnectionState
   readonly postEvent: (name: string, payload: unknown) => Promise<boolean>
   readonly postFeatureEvent: PostFeatureEvent
   readonly postEditorContextAvailabilityEvent: () => Promise<void>
@@ -190,7 +185,7 @@ export function createCommandsAssembly(deps: CommandsAssemblyDependencies): Comm
     },
   })
   const stateSubscription = coordinator.subscribe((state) => {
-    publishState(state)
+    publishState(state, 'coordinator')
     if (state.kind === 'connected') automaticSelection.schedule()
     else automaticSelection.reset()
   })
@@ -383,7 +378,10 @@ export function createCommandsAssembly(deps: CommandsAssemblyDependencies): Comm
             return
           const current = coordinator.getState()
           if (current.kind === 'connected' || current.kind === 'failed') return
-          publishState({ kind: 'failed', message: 'DSH configuration reload failed.', retryable: true })
+          publishState(
+            { kind: 'failed', message: 'DSH configuration reload failed.', retryable: true },
+            'configuration-reload',
+          )
         })
       }),
     )

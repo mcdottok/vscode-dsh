@@ -256,8 +256,8 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
     temporaryWorkspaceManager,
     runtimeUpdateProgress,
   })
-  const publishState = (state: Parameters<typeof publishRawState>[0]): void => {
-    publishRawState(desktopRecoveryState(state, desktopRecoveryDepth > 0))
+  const publishState: typeof publishRawState = (state, source) => {
+    publishRawState(desktopRecoveryState(state, desktopRecoveryDepth > 0), source)
   }
   const {
     changeTracker,
@@ -305,7 +305,8 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
       recoverDesktop: () => recoverDesktop(),
       publishRecoveredState: (backend) => {
         const state = coordinator.getState()
-        if (state.kind === 'connected' && state.backend === backend.connection) publishState(state)
+        if (state.kind === 'connected' && state.backend === backend.connection)
+          publishState(state, 'backend-recovery')
       },
     })
   const desktopPairing = new DesktopPairing(context.secrets, process.platform, diagnostics)
@@ -373,13 +374,13 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
       return false
     lossRecoveryPending = true
     desktopRecoveryDepth++
-    publishState({ kind: 'discovering', attempt: 1, phase: 'discovery' })
+    publishState({ kind: 'discovering', attempt: 1, phase: 'discovery' }, 'desktop-recovery')
     void reconnect(pairingLifetime.signal, 'connection-lost')
       .catch(() => undefined)
       .finally(() => {
         lossRecoveryPending = false
         desktopRecoveryDepth--
-        if (!pairingLifetime.signal.aborted) publishState(coordinator.getState())
+        if (!pairingLifetime.signal.aborted) publishState(coordinator.getState(), 'desktop-recovery')
       })
     return true
   }

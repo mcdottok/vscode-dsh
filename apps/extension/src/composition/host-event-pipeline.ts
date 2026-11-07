@@ -15,7 +15,7 @@ import {
   type FeatureHostMessage,
   type HostMessage,
 } from '@dsh-vscode/webview-protocol'
-import type { RedactedDiagnostics } from '../backend/diagnostics.js'
+import type { ConnectionStateSource, RedactedDiagnostics } from '../backend/diagnostics.js'
 import type { TemporaryWorkspaceManager } from '../backend/temporary-workspace.js'
 import { sanitizePublicValue } from '../view/public-value.js'
 import type { WebviewDeliveryFailure } from '../view/webview-surface-registry.js'
@@ -63,6 +63,8 @@ export type PublishAccountError = (
   code: 'state-stream-failed' | 'expiry-stream-failed' | 'browser-open-failed',
 ) => void
 
+export type PublishConnectionState = (state: BackendState, source: ConnectionStateSource) => void
+
 export interface HostEventPipelineDependencies {
   readonly transcript: Pick<TranscriptWindowService, 'accept' | 'dispose'>
   readonly post: PostHostMessage
@@ -90,7 +92,7 @@ export interface HostEventPipeline {
   /** Surface-directed variant: the payload is state of that surface, not a broadcast. */
   readonly postEventTo: PostSurfaceEvent
   readonly postBackendEvent: (backend: DshBackend, event: BackendEvent) => Promise<boolean>
-  readonly publishState: (state: BackendState) => void
+  readonly publishState: PublishConnectionState
   readonly nextFeatureLocalSequence: (this: void) => number
 }
 
@@ -299,10 +301,14 @@ export function createHostEventPipeline(deps: HostEventPipelineDependencies): Ho
   runtimeUpdateProgress.current = (progress) => {
     void postEvent('runtime.update.progress', progress)
   }
-  const publishState = (state: BackendState): void => {
+  const publishState: PublishConnectionState = (state, source) => {
     if (state.kind !== 'connected') deps.transcript?.dispose()
     void updateContextKeys(vscode.commands, state)
-    diagnostics.log('info', 'connection-state', { state: state.kind })
+    diagnostics.log('info', 'connection-state', {
+      state: state.kind,
+      source,
+      connectionGeneration: state.kind === 'connected' ? state.backend.connectionGeneration : undefined,
+    })
     const payload = publicState(state, diagnostics.connectionOutput?.())
     void postEvent('connection.snapshot', payload)
   }

@@ -64,7 +64,7 @@ describe('native session navigation through the Host pipeline', () => {
     backendService.attach(backend, (event) => {
       void pipeline.postBackendEvent(backend, event)
     })
-    pipeline.publishState({ kind: 'connected', backend: backend.connection })
+    pipeline.publishState({ kind: 'connected', backend: backend.connection }, 'coordinator')
     try {
       expect(changed).toHaveBeenCalledOnce()
       changed.mockClear()
