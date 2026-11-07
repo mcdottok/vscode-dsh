@@ -65,7 +65,7 @@ describe('native session editor drop', () => {
     expect(manifest.activationEvents).toContain(`onCustomEditor:${SESSION_DROP_EDITOR_VIEW_TYPE}`)
     expect(manifest.contributes.customEditors).toContainEqual({
       viewType: SESSION_DROP_EDITOR_VIEW_TYPE,
-      displayName: 'DeepSeek Harness Chat',
+      displayName: 'DSH Coding Agent Chat',
       selector: [{ filenamePattern: '*.dsh-chat' }],
       priority: 'default',
     })

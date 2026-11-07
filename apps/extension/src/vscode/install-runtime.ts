@@ -56,7 +56,7 @@ export class RuntimeInstaller {
           )
         })
     }
-    const terminal = this.dependencies.window.createTerminal({ name: 'Install DeepSeek Harness' })
+    const terminal = this.dependencies.window.createTerminal({ name: 'Install DSH CLI' })
     terminal.show(true)
     terminal.sendText(INSTALL_COMMAND, true)
     return Promise.resolve()
@@ -79,7 +79,7 @@ export class RuntimeInstaller {
     if (this.dependencies.verifyExecutable !== undefined && !(await this.dependencies.verifyExecutable(path)))
       throw new AppError({
         code: 'DSH_INCOMPATIBLE',
-        message: 'The selected executable is not a supported DeepSeek Harness runtime.',
+        message: 'The selected executable is not a supported DSH runtime.',
         retryable: false,
         context: { operation: 'runtime.select', reason: 'invalid-executable' },
       })

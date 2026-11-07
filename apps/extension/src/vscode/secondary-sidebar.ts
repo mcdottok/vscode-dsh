@@ -16,6 +16,6 @@ export async function moveOrExplainSecondarySidebar(
     // Keep the manual route available when the workbench command is absent or fails.
   }
   await window.showInformationMessage(
-    'Right-click the DeepSeek Harness Chat view title, choose Move View, then a new Secondary Side Bar entry.',
+    'Right-click the Chat view title in DSH Coding Agent, choose Move View, then a new Secondary Side Bar entry.',
   )
 }

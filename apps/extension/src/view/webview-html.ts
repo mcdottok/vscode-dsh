@@ -1,5 +1,6 @@
 import * as vscode from 'vscode'
 import { randomBytes } from 'node:crypto'
+import { EXTENSION_DISPLAY_NAME } from '../constants.js'
 
 export function createWebviewHtml(
   webview: vscode.Webview,
@@ -32,7 +33,7 @@ export function createWebviewHtml(
     <meta name="color-scheme" content="light dark">
     <meta http-equiv="Content-Security-Policy" content="${csp}">
   <link rel="stylesheet" href="${style.toString()}">
-    <title>DeepSeek Harness</title>
+    <title>${EXTENSION_DISPLAY_NAME}</title>
   </head>
   <body>
     <main id="root" aria-live="polite"></main>

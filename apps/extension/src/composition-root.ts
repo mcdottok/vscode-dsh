@@ -27,7 +27,7 @@ export { createManagedEndpointLoginHandler } from './composition/connection-asse
 import { PluginInstallRequestCoordinator } from './plugins/plugin-bundle-feature-handler.js'
 import { diagnosticLevel, RedactedDiagnostics } from './backend/diagnostics.js'
 import { VsCodeConfigurationSource } from './config/configuration-source.js'
-import { OUTPUT_CHANNEL_NAME } from './constants.js'
+import { EXTENSION_DISPLAY_NAME } from './constants.js'
 import { workspaceFolderId } from './editor/workspace-path-guard.js'
 import { DSH_CHAT_VIEW_OWNER_ID } from './editor/editor-context-provider.js'
 import { sessionWorkspaceFolderId, hasLocalWorkspaceAuthority } from './view/session-workspace-scope.js'
@@ -65,7 +65,7 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
   const pluginInstallRequests = new PluginInstallRequestCoordinator()
   const configuration = new VsCodeConfigurationSource(vscode.workspace)
   const extensionVersion = readExtensionVersion(context)
-  const channel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME, { log: true })
+  const channel = vscode.window.createOutputChannel(EXTENSION_DISPLAY_NAME, { log: true })
   const diagnostics = new RedactedDiagnostics(channel, () =>
     diagnosticLevel(vscode.workspace.getConfiguration('dsh.developer').get<string>('logLevel')),
   )

@@ -2,14 +2,14 @@
 
 [简体中文](https://github.com/mcdottok/vscode-dsh/blob/main/README.md) | English
 
-Develop with DeepSeek Harness in VS Code, with an editor workflow similar to Codex and Claude Code extensions: chat about your project, attach selections and files, follow tool execution, and review changes. Run DSH CLI locally or connect to Desktop and continue the same workspace and session.
+DSH Coding Agent is a community-maintained VS Code extension for the DSH runtime. Chat about your project, attach selections and files, follow tool execution, and review changes. Use a local DSH CLI or connect to Desktop to continue the same workspace and session.
 
 ## Install and connect
 
 1. Search for and install **DSH Coding Agent** in the VS Code Marketplace, ⚠️ **this method is temporarily unavailable and the extension has been delisted**, please wait for it to be relisted.
 2. Download the `.vsix` from GitHub Releases, then install it with **Extensions: Install from VSIX...** in VS Code.
 
-Open and trust a project folder, then expand **DSH** on the right side bar. Choose either of the following ways to use DSH.
+Open and trust a project folder, then expand **DSH** in the right sidebar. Choose either of the following ways to connect to DSH.
 
 ### Option 1: Connect to Desktop and continue shared sessions
 

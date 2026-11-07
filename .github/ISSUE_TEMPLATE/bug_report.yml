@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a problem with the DeepSeek Harness extension
+description: Report a problem with DSH Coding Agent
 labels: [bug]
 body:
   - type: markdown
@@ -73,4 +73,4 @@ body:
     id: logs
     attributes:
       label: Extension Host log excerpt
-      description: The `DeepSeek Harness` output channel. Redact anything sensitive; secrets and prompt bodies are already redacted by the extension.
+      description: The `DSH Coding Agent` output channel. Redact anything sensitive before sharing.

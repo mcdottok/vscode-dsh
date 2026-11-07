@@ -617,7 +617,7 @@ describe('App connected rendering', () => {
   it.each([false, true])('renders the page when connected (active=%s)', (activeSession) => {
     currentStore = storeFor(connectedState(activeSession))
     render(<App />)
-    expect(screen.queryByText('DeepSeek Harness view failed')).toBeNull()
+    expect(screen.queryByText('DSH Coding Agent view failed')).toBeNull()
     expect(screen.getByRole('main')).toBeDefined()
   })
 

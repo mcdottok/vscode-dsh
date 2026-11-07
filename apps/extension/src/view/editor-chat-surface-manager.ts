@@ -1,4 +1,5 @@
 import * as vscode from 'vscode'
+import { EXTENSION_DISPLAY_NAME } from '../constants.js'
 import {
   DshWebviewPanelSurface,
   type DshWebviewPanelSurfaceDependencies,
@@ -18,8 +19,6 @@ export interface EditorChatSurfaceManagerDependencies {
   /** Fired after every create/restore/dispose with the new editor-surface count. */
   readonly onCountChanged: (count: number) => void
 }
-
-const DEFAULT_EDITOR_CHAT_TITLE = 'DeepSeek Harness'
 
 /**
  * The session an editor chat was showing before a window reload. A panel
@@ -71,7 +70,7 @@ export class EditorChatSurfaceManager implements vscode.Disposable {
     if (surface.sessionId !== undefined) this.surfaceIdBySession.delete(surface.sessionId)
     surface.sessionId = sessionId
     this.surfaceIdBySession.set(sessionId, surfaceId)
-    surface.setTitle(title ?? DEFAULT_EDITOR_CHAT_TITLE)
+    surface.setTitle(title ?? EXTENSION_DISPLAY_NAME)
   }
 
   /** Create the session's editor tab, or reveal the existing one. */
@@ -85,7 +84,7 @@ export class EditorChatSurfaceManager implements vscode.Disposable {
     }
     const surfaceId = this.surfaceIdForSession(sessionId)
     this.surfaceIdBySession.set(sessionId, surfaceId)
-    return this.create(surfaceId, sessionId, title ?? DEFAULT_EDITOR_CHAT_TITLE, column)
+    return this.create(surfaceId, sessionId, title ?? EXTENSION_DISPLAY_NAME, column)
   }
 
   /**

@@ -42,7 +42,7 @@ describe('moving the Chat view to the secondary sidebar', () => {
       await moveOrExplainSecondarySidebar(ui.commands, ui.window)
 
       expect(ui.showInformationMessage).toHaveBeenCalledWith(
-        'Right-click the DeepSeek Harness Chat view title, choose Move View, then a new Secondary Side Bar entry.',
+        'Right-click the Chat view title in DSH Coding Agent, choose Move View, then a new Secondary Side Bar entry.',
       )
     },
   )

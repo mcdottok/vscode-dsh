@@ -270,7 +270,7 @@ describe('EditorChatSurfaceManager', () => {
   it('carries the count and readiness of an unbound restored panel', () => {
     const harness = createHarness()
     const restored = {
-      title: 'DeepSeek Harness',
+      title: 'DSH Coding Agent',
       visible: true,
       webview: {
         options: undefined,

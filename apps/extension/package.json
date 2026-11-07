@@ -78,7 +78,7 @@
     "customEditors": [
       {
         "viewType": "dsh.sessionDrop",
-        "displayName": "DeepSeek Harness Chat",
+        "displayName": "DSH Coding Agent Chat",
         "selector": [
           {
             "filenamePattern": "*.dsh-chat"
@@ -111,7 +111,7 @@
     "commands": [
       {
         "command": "dsh.openSidebar",
-        "title": "DSH: Open Chat / 打开聊天",
+        "title": "DSH Coding Agent: Open Chat / 打开聊天",
         "icon": "resources/dsh.svg"
       },
       {
@@ -149,7 +149,7 @@
       },
       {
         "command": "dsh.installRuntime",
-        "title": "DSH: Install DeepSeek Harness"
+        "title": "DSH: Install CLI"
       },
       {
         "command": "dsh.selectExecutable",
@@ -396,7 +396,7 @@
       ]
     },
     "configuration": {
-      "title": "DeepSeek Harness",
+      "title": "DSH Coding Agent",
       "properties": {
         "dsh.editor.enabled": {
           "type": "boolean",

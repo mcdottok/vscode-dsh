@@ -510,7 +510,7 @@ function publicErrorMessage(
         return 'The DSH installation command failed. Check the install output and try again.'
     }
     if (context?.operation === 'runtime.select' && context.reason === 'invalid-executable')
-      return 'The selected file is not a supported DeepSeek Harness executable.'
+      return 'The selected file is not a supported DSH executable.'
   }
   if (requestType === 'runtime.update.install' || requestType === 'runtime.update.check') {
     if (context?.operation === 'runtime.update') {
@@ -538,8 +538,8 @@ function publicErrorMessage(
     }
   }
   const fallback: Record<string, string> = {
-    DSH_NOT_FOUND: 'DeepSeek Harness was not found.',
-    DSH_INCOMPATIBLE: 'The installed DeepSeek Harness version is not supported.',
+    DSH_NOT_FOUND: 'The DSH runtime was not found.',
+    DSH_INCOMPATIBLE: 'The installed DSH runtime version is not supported.',
     BACKEND_UNREACHABLE: 'The local DSH instance is unreachable.',
     BACKEND_BUSY: 'The DSH instance is busy.',
     NO_RUNNING_INSTANCE: 'No compatible local DSH instance is running.',

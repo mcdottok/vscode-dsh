@@ -72,7 +72,7 @@ describe('streaming activity clock', () => {
     act(() => {
       document.dispatchEvent(new Event('visibilitychange'))
     })
-    expect(screen.getByRole('status').textContent).toBe('深度求索中，用时 1 分钟 5 秒…')
+    expect(screen.getByRole('status').textContent).toBe('正在回复，用时 1 分钟 5 秒…')
     view.unmount()
     expect(removed).toHaveBeenCalledWith('visibilitychange', expect.any(Function))
     expect(vi.getTimerCount()).toBe(0)

@@ -533,7 +533,7 @@ export class DshConnectionCoordinator {
       })
       throw new AppError({
         code: 'DSH_INCOMPATIBLE',
-        message: 'The selected executable did not report a valid DeepSeek Harness version.',
+        message: 'The selected executable did not report a valid DSH version.',
         retryable: false,
       })
     }
@@ -542,7 +542,7 @@ export class DshConnectionCoordinator {
       this.publish({ kind: 'runtime-missing', searchedLocations })
       throw new AppError({
         code: 'DSH_NOT_FOUND',
-        message: 'DeepSeek Harness was not found. Install it or select an executable.',
+        message: 'The DSH runtime was not found. Install it or select an executable.',
         retryable: true,
         context: { searched: searchedLocations.length },
       })
