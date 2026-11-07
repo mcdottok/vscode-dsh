@@ -10,7 +10,10 @@ export type LoopbackFrameChannel = 'mux' | 'host'
 
 /** Only the event carrier surface is required; DOM constructor constants are unused. */
 export interface LoopbackWebSocketConstructor {
-  new (url: string): Pick<WebSocket, 'readyState' | 'close' | 'addEventListener' | 'removeEventListener'>
+  new (
+    url: string,
+    options?: { readonly headers?: Readonly<Record<string, string>> },
+  ): Pick<WebSocket, 'readyState' | 'close' | 'addEventListener' | 'removeEventListener'>
 }
 
 /**
@@ -116,6 +119,8 @@ export async function* readLoopbackWebSocket(options: {
   baseUrl: string
   webSocket?: LoopbackWebSocketConstructor | undefined
   frameParser?: LoopbackFrameParser | undefined
+  /** DSH 在 /api 下的 WebSocket 升级要求浏览器会话 cookie，缺失会被 HTTP 401 拒绝。 */
+  authCookie?: string | undefined
   onEnvelope: (message: RpcMessage) => void
 }): AsyncGenerator<unknown> {
   const { signal } = options
@@ -130,7 +135,11 @@ export async function* readLoopbackWebSocket(options: {
 
   const target = new URL(options.path, options.baseUrl)
   target.protocol = target.protocol === 'https:' ? 'wss:' : 'ws:'
-  const socket = new WebSocketConstructor(target.toString())
+  const negotiated =
+    options.authCookie === undefined || options.authCookie.trim() === ''
+      ? undefined
+      : { headers: { Cookie: options.authCookie } }
+  const socket = new WebSocketConstructor(target.toString(), negotiated)
   const inbox = new WebSocketQueue(256)
   let wake: (() => void) | undefined
   let resolveOpen: (() => void) | undefined

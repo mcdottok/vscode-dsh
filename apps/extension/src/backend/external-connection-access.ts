@@ -446,7 +446,11 @@ function parseSessionCookie(
   now: number,
   secure: boolean,
 ): { readonly value: string; readonly expiresAt: number } | undefined {
-  if (response.status !== 303 || response.headers.get('location') !== './') return undefined
+  // DSH 的本地回环桥可能以 401 携带 Set-Cookie 完成 token 交换，而不是 303 重定向。
+  // 状态码不再是判据：303 仍要求 Location，其余交给下方对 cookie 属性的严格校验。
+  if (response.status === 303) {
+    if (response.headers.get('location') !== './') return undefined
+  }
   const values = response.headers.getSetCookie()
   for (const header of values) {
     const parts = header.split(';').map((part) => part.trim())

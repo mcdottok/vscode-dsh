@@ -19,9 +19,12 @@ export function createWebviewHtml(
     // stylesheet elements restricted to packaged resources, and do not relax
     // script-src or permit model-authored HTML.
     "style-src-attr 'unsafe-inline'",
-    `script-src 'nonce-${nonce}'`,
+    // VS Code 1.144 起，动态 import() 的模块加载受 script-src 约束；只放行 nonce
+    // 会拦掉 webview.js 用 import() 拉取的 assets/*.js 分块，页面因此无法完成初始化。
+    `script-src ${webview.cspSource} 'nonce-${nonce}'`,
     `font-src ${webview.cspSource}`,
-    "connect-src 'none'",
+    // 同一批分块请求在 Chromium 里按 connect-src 判定；'none' 会让它们全部被拦。
+    `connect-src ${webview.cspSource}`,
     "frame-src 'none'",
   ].join('; ')
   return `<!doctype html>

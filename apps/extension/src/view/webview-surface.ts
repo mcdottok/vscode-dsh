@@ -82,7 +82,9 @@ export class WebviewSurfaceChannel implements vscode.Disposable {
   }
 
   public postMessage(message: unknown): Thenable<boolean> {
-    return this.ready ? this.webview.postMessage(message) : Promise.resolve(false)
+    // 握手应答必须能在就绪前送出：Webview 的 initialize() 会 await app.ready 的
+    // 响应，若这里因 ready=false 返回 false，双方就会互等。
+    return this.webview.postMessage(message)
   }
 
   /** A resolved surface may still be loading its client script. */

@@ -43,6 +43,8 @@ export interface LoopbackApiClientOptions {
   readonly retryPolicy: RetryPolicy
   readonly fetch: typeof globalThis.fetch
   readonly webSocket?: LoopbackWebSocketConstructor
+  /** 事件流 WebSocket 与 HTTP RPC 共用同一枚会话 cookie。 */
+  readonly authCookie?: (endpoint: BackendEndpoint) => string | undefined
   /** Optional exact-version frame contract for an older Host API family. */
   readonly frameParser?: LoopbackFrameParser
 }
@@ -423,6 +425,7 @@ export class LoopbackApiClient extends AbstractApiClient implements DshTransport
       baseUrl: this.options.endpoint.baseUrl,
       webSocket: this.options.webSocket,
       frameParser: this.options.frameParser,
+      authCookie: this.options.authCookie?.(this.options.endpoint),
       onEnvelope: (message) => this.onEnvelope(message),
     })
   }
