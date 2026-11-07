@@ -304,7 +304,7 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
         if (state.kind === 'connected' && state.backend === backend.connection) publishState(state)
       },
     })
-  const desktopPairing = new DesktopPairing(context.secrets)
+  const desktopPairing = new DesktopPairing(context.secrets, process.platform, diagnostics)
   const desktopAutoDiscovery = new DesktopAutoDiscovery()
   const localAutomaticDiscovery = process.platform === 'win32' && vscode.env.remoteName === undefined
   const {
@@ -316,6 +316,7 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
     pauseAutomaticConnection,
     isAutomaticConnectionPaused,
   } = createConnectionLifecycle({
+    diagnostics,
     desktopPairing,
     ...(localAutomaticDiscovery
       ? {
@@ -369,7 +370,7 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
     lossRecoveryPending = true
     desktopRecoveryDepth++
     publishState({ kind: 'discovering', attempt: 1, phase: 'discovery' })
-    void reconnect(pairingLifetime.signal)
+    void reconnect(pairingLifetime.signal, 'connection-lost')
       .catch(() => undefined)
       .finally(() => {
         lossRecoveryPending = false
@@ -420,14 +421,17 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
         const newlyAvailable = available && !lastAutomaticAvailable
         lastAutomaticAvailable = available
         if (state.kind !== 'connected' && newlyAvailable)
-          if (!isAutomaticConnectionPaused()) await reconnect(pairingLifetime.signal)
+          if (!isAutomaticConnectionPaused()) await reconnect(pairingLifetime.signal, 'desktop-available')
         return
       }
       if (!origin) return
       if (!(await desktopPairing.has(origin))) return
       let changed: boolean
       try {
-        changed = await desktopPairing.changed(origin, pairingLifetime.signal)
+        changed = await desktopPairing.changed(origin, pairingLifetime.signal, () => {
+          const currentState = coordinator.getState()
+          return currentState.kind === 'connected' ? currentState.backend.endpoint.baseUrl : undefined
+        })
       } catch {
         lastPairAvailable = false
         return
@@ -443,7 +447,8 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
       const currentState = coordinator.getState()
       const returned = !lastPairAvailable
       lastPairAvailable = true
-      if (changed || (returned && currentState.kind === 'failed')) await reconnect(pairingLifetime.signal)
+      if (changed || (returned && currentState.kind === 'failed'))
+        await reconnect(pairingLifetime.signal, changed ? 'desktop-pairing-changed' : 'desktop-pairing-restored')
     })()
       .catch(() => undefined)
       .finally(() => {
@@ -511,7 +516,7 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
     currentWorkspaceFolders,
     currentWorkspaceFolder,
     connect,
-    reconnect,
+    reconnect: (signal) => reconnect(signal, 'webview'),
     configureConnection,
     runtimeUseCases,
     runtimeLocator,
@@ -596,7 +601,7 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
     authorizeExternalConnection: async () => {
       const endpoint = selectedCustomEndpoint(configuration)
       await externalConnection.authorize(endpoint)
-      await reconnect()
+      await reconnect(undefined, 'external-authorization')
     },
     clearExternalCredentials: async () => {
       pauseAutomaticConnection()

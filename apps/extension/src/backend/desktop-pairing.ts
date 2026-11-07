@@ -1,6 +1,7 @@
 import { createConnection } from 'node:net'
 import { createDecipheriv, createHash, createHmac, randomBytes } from 'node:crypto'
 import { parseDesktopLaunchUrl } from '../vscode/connect-desktop.js'
+import type { RedactedDiagnostics } from './diagnostics.js'
 
 interface PairingRecord {
   readonly version: 1
@@ -105,6 +106,22 @@ export function resolvePairedDesktop(key: string, signal?: AbortSignal, pipe?: s
   })
 }
 
+function pairingChange(
+  previous: string | undefined,
+  current: string,
+): 'first-read' | 'address-changed' | 'token-only' | 'url-format-changed' | 'unclassified' {
+  if (previous === undefined) return 'first-read'
+  try {
+    const before = parseDesktopLaunchUrl(previous)
+    const after = parseDesktopLaunchUrl(current)
+    if (before.endpoint.baseUrl !== after.endpoint.baseUrl) return 'address-changed'
+    if (before.token !== after.token) return 'token-only'
+    return 'url-format-changed'
+  } catch {
+    return 'unclassified'
+  }
+}
+
 /** Pairing keys remain in native SecretStorage; never enter configuration or the Webview. */
 export class DesktopPairing {
   private lastLaunch: string | undefined
@@ -112,6 +129,7 @@ export class DesktopPairing {
   public constructor(
     private readonly secrets: Secrets,
     private readonly platform = process.platform,
+    private readonly diagnostics?: Pick<RedactedDiagnostics, 'log'>,
   ) {}
   private async read(origin: string): Promise<PairingRecord | undefined> {
     if (this.platform !== 'win32') return undefined
@@ -136,10 +154,24 @@ export class DesktopPairing {
     this.lastLaunch = url
     return url
   }
-  public async changed(origin: string, signal?: AbortSignal): Promise<boolean> {
+  public async changed(
+    origin: string,
+    signal?: AbortSignal,
+    getConnectedOrigin?: () => string | undefined,
+  ): Promise<boolean> {
     const previous = this.lastLaunch
     const url = await this.resolve(origin, signal)
-    return url !== undefined && url !== previous
+    if (url === undefined || url === previous) return false
+    const change = pairingChange(previous, url)
+    const connectedOrigin = change === 'first-read' ? getConnectedOrigin?.() : undefined
+    // resolve() has already saved the first address as the next comparison baseline.
+    const baseline =
+      connectedOrigin !== undefined && parseDesktopLaunchUrl(url).endpoint.baseUrl === connectedOrigin
+    this.diagnostics?.log('info', 'desktop-pairing-change', {
+      change,
+      status: baseline ? 'baseline' : 'changed',
+    })
+    return !baseline
   }
   public async has(origin: string): Promise<boolean> {
     return (await this.read(origin)) !== undefined

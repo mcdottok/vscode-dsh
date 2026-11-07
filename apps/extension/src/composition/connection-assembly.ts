@@ -413,7 +413,20 @@ export function createRuntimeAssembly(deps: RuntimeAssemblyDependencies): Runtim
   }
 }
 
+type ReconnectTrigger =
+  | 'manual'
+  | 'manual-desktop'
+  | 'webview'
+  | 'connection-configure'
+  | 'external-authorization'
+  | 'transport-change'
+  | 'connection-lost'
+  | 'desktop-available'
+  | 'desktop-pairing-changed'
+  | 'desktop-pairing-restored'
+
 export interface ConnectionLifecycleDependencies {
+  readonly diagnostics?: Pick<RedactedDiagnostics, 'log'>
   readonly discoverAutomaticDesktop?: (
     signal?: AbortSignal,
     expectedKey?: string,
@@ -442,7 +455,7 @@ export interface ConnectionLifecycle {
   readonly pauseAutomaticConnection: () => void
   readonly isAutomaticConnectionPaused: () => boolean
   readonly connect: (signal?: AbortSignal) => Promise<unknown>
-  readonly reconnect: (signal?: AbortSignal) => Promise<unknown>
+  readonly reconnect: (signal?: AbortSignal, trigger?: ReconnectTrigger) => Promise<unknown>
   /**
    * The transport-change listener's entry point. Distinct from `reconnect` so
    * `configureConnection` can suppress the per-write reconnects its own
@@ -723,10 +736,28 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
       .catch(() => undefined)
     return operation
   }
-  let reconnectOperation: Promise<unknown> | undefined
+  let reconnectOperation: { readonly promise: Promise<unknown>; readonly attempt: number } | undefined
   let reconnectAbort: AbortController | undefined
-  const reconnect = async (signal?: AbortSignal, replace = false): Promise<unknown> => {
-    if (reconnectOperation !== undefined && !replace) return reconnectOperation
+  let reconnectSequence = 0
+  const reconnect = async (
+    signal?: AbortSignal,
+    trigger: ReconnectTrigger = 'manual',
+    replace = false,
+  ): Promise<unknown> => {
+    if (reconnectOperation !== undefined && !replace) {
+      deps.diagnostics?.log('info', 'reconnect-attempt', {
+        trigger,
+        attempt: reconnectOperation.attempt,
+        status: 'reused',
+      })
+      return reconnectOperation.promise
+    }
+    const attempt = ++reconnectSequence
+    deps.diagnostics?.log('info', 'reconnect-attempt', {
+      trigger,
+      attempt,
+      status: reconnectOperation === undefined ? 'started' : 'replaced',
+    })
     connectionAbort?.abort(new DOMException('Reconnecting DSH.', 'AbortError'))
     reconnectAbort?.abort(new DOMException('Connection settings changed.', 'AbortError'))
     const abort = new AbortController()
@@ -738,17 +769,18 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
       operationSignal.throwIfAborted()
       detachSessionAdapters()
       endpointLaunchUrls.clear()
+      deps.diagnostics?.log('info', 'reconnect-attempt', { trigger, attempt, status: 'disconnecting' })
       await coordinator.disconnect()
       operationSignal.throwIfAborted()
       await externalConnection?.release()
       operationSignal.throwIfAborted()
       return connect(operationSignal)
     })()
-    reconnectOperation = operation
+    reconnectOperation = { promise: operation, attempt }
     try {
       return await operation
     } finally {
-      if (reconnectOperation === operation) reconnectOperation = undefined
+      if (reconnectOperation?.promise === operation) reconnectOperation = undefined
       if (reconnectAbort === abort) reconnectAbort = undefined
     }
   }
@@ -940,7 +972,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
   const reconnectOnTransportChange = (signal?: AbortSignal): Promise<unknown> => {
     if (configuringTransport || automaticConnectionPaused) return Promise.resolve(undefined)
     configurationRevision++
-    return reconnect(signal, true)
+    return reconnect(signal, 'transport-change', true)
   }
   const configureConnection = async (
     mode: 'auto' | 'custom' | 'desktop' | 'local',
@@ -949,6 +981,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
     desktop?: { readonly launchToken: string; readonly runtimeVersion: string },
   ): Promise<unknown> => {
     signal?.throwIfAborted()
+    const trigger = mode === 'desktop' || desktop !== undefined ? 'manual-desktop' : 'connection-configure'
     const revision = ++configurationRevision
     reconnectAbort?.abort(new DOMException('Connection settings changed.', 'AbortError'))
     // The explicitly submitted Desktop URL is never written to configuration or
@@ -1092,7 +1125,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
     signal?.throwIfAborted()
     if (revision !== configurationRevision)
       throw new DOMException('Connection selection changed.', 'AbortError')
-    return reconnect(signal, true)
+    return reconnect(signal, trigger, true)
   }
   let resetOperation: Promise<void> | undefined
   const resetConnection = (): Promise<void> => {
