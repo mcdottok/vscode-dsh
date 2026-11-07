@@ -6,6 +6,7 @@
     "noEmit": true,
     "types": ["node"]
   },
+  "files": ["scripts/read-stylesheet.mjs", "apps/extension/esbuild-import-meta-url.mjs"],
   "include": [
     "eslint.config.mjs",
     "vitest*.ts",

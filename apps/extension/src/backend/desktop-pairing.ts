@@ -40,7 +40,10 @@ export function resolvePairedDesktop(key: string, signal?: AbortSignal, pipe?: s
     const deadline = setTimeout(() => finish(undefined, 'PIPE_TIMEOUT'), 2000)
     let input = ''
     let complete = false
-    const finish = (url: string | undefined, code: DesktopPairingFailure = 'INVALID_PAIRING_RESPONSE'): void => {
+    const finish = (
+      url: string | undefined,
+      code: DesktopPairingFailure = 'INVALID_PAIRING_RESPONSE',
+    ): void => {
       if (complete) return
       complete = true
       clearTimeout(deadline)

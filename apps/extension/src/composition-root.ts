@@ -453,7 +453,10 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
       const returned = !lastPairAvailable
       lastPairAvailable = true
       if (changed || (returned && currentState.kind === 'failed'))
-        await reconnect(pairingLifetime.signal, changed ? 'desktop-pairing-changed' : 'desktop-pairing-restored')
+        await reconnect(
+          pairingLifetime.signal,
+          changed ? 'desktop-pairing-changed' : 'desktop-pairing-restored',
+        )
     })()
       .catch(() => undefined)
       .finally(() => {

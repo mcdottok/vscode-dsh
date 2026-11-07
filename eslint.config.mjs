@@ -59,17 +59,6 @@ export default tseslint.config(
     },
   },
   {
-    files: ['scripts/read-stylesheet.mjs', 'apps/extension/esbuild-import-meta-url.mjs'],
-    languageOptions: {
-      parserOptions: {
-        project: false,
-        projectService: {
-          allowDefaultProject: ['scripts/read-stylesheet.mjs', 'apps/extension/esbuild-import-meta-url.mjs'],
-        },
-      },
-    },
-  },
-  {
     files: [
       '**/*.config.{js,mjs,ts}',
       'eslint.config.mjs',

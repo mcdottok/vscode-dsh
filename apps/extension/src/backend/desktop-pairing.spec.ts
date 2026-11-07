@@ -97,26 +97,28 @@ it.each([
   { connectedOrigin: 'http://127.0.0.1:41234', status: 'baseline' },
   { connectedOrigin: 'http://127.0.0.1:42345', status: 'changed' },
   { connectedOrigin: undefined, status: 'changed' },
-])('classifies the first pairing read with active origin $connectedOrigin as $status', async ({
-  connectedOrigin,
-  status,
-}) => {
-  const origin = 'http://127.0.0.1:41234'
-  const log = vi.fn()
-  const pairing = new DesktopPairing(
-    {
-      get: () => Promise.resolve(undefined),
-      store: () => Promise.resolve(),
-      delete: () => Promise.resolve(),
-    },
-    'win32',
-    { log },
-  )
-  vi.spyOn(pairing, 'resolve').mockResolvedValue(`${origin}/?token=fixture-token`)
+])(
+  'classifies the first pairing read with active origin $connectedOrigin as $status',
+  async ({ connectedOrigin, status }) => {
+    const origin = 'http://127.0.0.1:41234'
+    const log = vi.fn()
+    const pairing = new DesktopPairing(
+      {
+        get: () => Promise.resolve(undefined),
+        store: () => Promise.resolve(),
+        delete: () => Promise.resolve(),
+      },
+      'win32',
+      { log },
+    )
+    vi.spyOn(pairing, 'resolve').mockResolvedValue(`${origin}/?token=fixture-token`)
 
-  await expect(pairing.changed(origin, undefined, () => connectedOrigin)).resolves.toBe(status === 'changed')
-  expect(log).toHaveBeenCalledWith('info', 'desktop-pairing-change', { change: 'first-read', status })
-})
+    await expect(pairing.changed(origin, undefined, () => connectedOrigin)).resolves.toBe(
+      status === 'changed',
+    )
+    expect(log).toHaveBeenCalledWith('info', 'desktop-pairing-change', { change: 'first-read', status })
+  },
+)
 
 it('isolates native pairing grants by the explicitly selected origin', async () => {
   const values = new Map<string, string>()
