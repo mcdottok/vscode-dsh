@@ -416,23 +416,6 @@ button.dsh-timeline__presented-file-reveal:hover {
   overflow: visible;
 }
 
-.dsh-activity-whale__body,
-.dsh-activity-whale__outline {
-  transform-box: view-box;
-  transform-origin: 12px 12px;
-  animation-duration: var(--dsh-motion-duration-loop-whale);
-  animation-timing-function: var(--dsh-motion-ease-standard);
-  animation-iteration-count: infinite;
-}
-
-.dsh-activity-whale__body {
-  animation-name: dsh-whale-sway;
-}
-
-.dsh-activity-whale__outline {
-  animation-name: dsh-whale-flukes;
-}
-
 .dsh-timeline__content--session-enter {
   animation: dsh-overlay-fade-in var(--dsh-motion-duration-fast) var(--dsh-motion-ease-enter) both;
 }

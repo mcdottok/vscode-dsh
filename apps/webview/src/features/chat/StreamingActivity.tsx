@@ -1,22 +1,83 @@
-import { useEffect, useState, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type ReactElement } from 'react'
 import type { Translate } from '../../i18n.js'
+import whaleMotions from './whale-motions.json'
 
-/** Decorative tail; the shared motion policy freezes it for Reduced Motion. */
+const { stem, poses, clips } = whaleMotions
+const restOutline = stem.start + poses.rest + stem.end
+const restPath = `path('${restOutline}')`
+const posePaths = new Map(
+  Object.entries(poses).map(([pose, outline]) => [pose, `path('${stem.start}${outline}${stem.end}')`]),
+)
+const easing = 'cubic-bezier(0.333333, 0, 0.666667, 1)'
+const whaleClips = clips.map(({ duration, keyframes }) => ({
+  duration: duration * 1_000,
+  frames: [
+    { offset: 0, d: restPath, easing },
+    ...keyframes.map(({ at, pose }) => ({
+      offset: at / duration,
+      d: posePaths.get(pose) ?? restPath,
+      easing,
+    })),
+    { offset: 1, d: restPath },
+  ],
+}))
+
 function WhaleTail(): ReactElement {
+  const pathRef = useRef<SVGPathElement>(null)
+  useEffect(() => {
+    const path = pathRef.current
+    if (typeof path?.animate !== 'function' || !window.CSS?.supports('d', restPath)) return
+
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+    let animation: Animation | undefined
+    let previousIndex = -1
+
+    const playNext = (): void => {
+      const count = whaleClips.length
+      const index =
+        previousIndex === -1
+          ? Math.floor(Math.random() * count)
+          : (previousIndex + 1 + Math.floor(Math.random() * (count - 1))) % count
+      const clip = whaleClips[index]
+      if (clip === undefined) return
+
+      previousIndex = index
+      const playing = path.animate(clip.frames, clip.duration)
+      animation = playing
+      playing.onfinish = () => {
+        if (animation === playing) playNext()
+      }
+    }
+    const stop = (): void => {
+      const playing = animation
+      animation = undefined
+      playing?.cancel()
+    }
+    const syncMotion = (): void => {
+      stop()
+      if (!reducedMotion.matches) playNext()
+    }
+    reducedMotion.addEventListener('change', syncMotion)
+    syncMotion()
+    return () => {
+      reducedMotion.removeEventListener('change', syncMotion)
+      stop()
+    }
+  }, [])
+
   return (
-    <svg className="dsh-activity-whale" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
-      <g
-        className="dsh-activity-whale__body"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path
-          className="dsh-activity-whale__outline"
-          d="M6.5 22C7.1 18.1 8.4 15.9 9.1 13.2C9.6 10.8 5.2 8.9 5 5C4.8 3.4 5.1 2.1 5.5 1.5C7.4 3.5 11.5 3.2 12.7 7.2C16.2 6.5 19.6 9.5 22 9.8C19.8 13 17 14 13.3 13.6C10.7 13.2 11.8 18 11.9 22"
-        />
-      </g>
+    <svg
+      className="dsh-activity-whale"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path ref={pathRef} d={restOutline} />
     </svg>
   )
 }
