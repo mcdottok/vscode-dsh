@@ -2,6 +2,7 @@ import { serverRequestSchema } from '@deepseek-ai/dsh-host-apiproxy/api'
 import { hostFrameSchema, muxFrameSchema } from '@deepseek-ai/dsh-host-apiproxy/api/events.schema'
 import type { RpcMessage } from '@deepseek-ai/dsh-host-apiproxy/api/rpc'
 import { AppError } from '@dsh-vscode/domain'
+import WebSocket from 'ws'
 
 import { record } from './loopback-rpc-envelope.js'
 import { cancelled } from './transport-errors.js'
@@ -10,7 +11,10 @@ export type LoopbackFrameChannel = 'mux' | 'host'
 
 /** Only the event carrier surface is required; DOM constructor constants are unused. */
 export interface LoopbackWebSocketConstructor {
-  new (url: string): Pick<WebSocket, 'readyState' | 'close' | 'addEventListener' | 'removeEventListener'>
+  new (
+    url: string,
+    options?: { readonly headers?: Readonly<Record<string, string>> },
+  ): Pick<globalThis.WebSocket, 'readyState' | 'close' | 'addEventListener' | 'removeEventListener'>
 }
 
 /**
@@ -116,12 +120,19 @@ export async function* readLoopbackWebSocket(options: {
   baseUrl: string
   webSocket?: LoopbackWebSocketConstructor | undefined
   frameParser?: LoopbackFrameParser | undefined
+  /** Use the same origin-scoped session cookie as HTTP when authentication is required. */
+  authCookie?: string | undefined
   onEnvelope: (message: RpcMessage) => void
 }): AsyncGenerator<unknown> {
   const { signal } = options
   if (signal.aborted) return
-  const WebSocketConstructor = options.webSocket ?? globalThis.WebSocket
-  if (typeof WebSocketConstructor !== 'function')
+  const negotiated =
+    options.authCookie === undefined || options.authCookie.trim() === ''
+      ? undefined
+      : { headers: { Cookie: options.authCookie } }
+  const HeaderWebSocket = options.webSocket ?? (negotiated === undefined ? undefined : WebSocket)
+  const StandardWebSocket = globalThis.WebSocket
+  if (HeaderWebSocket === undefined && typeof StandardWebSocket !== 'function')
     throw new AppError({
       code: 'BACKEND_UNREACHABLE',
       message: 'The Extension Host does not provide WebSocket transport.',
@@ -130,7 +141,10 @@ export async function* readLoopbackWebSocket(options: {
 
   const target = new URL(options.path, options.baseUrl)
   target.protocol = target.protocol === 'https:' ? 'wss:' : 'ws:'
-  const socket = new WebSocketConstructor(target.toString())
+  const socket =
+    HeaderWebSocket === undefined
+      ? new StandardWebSocket(target.toString())
+      : new HeaderWebSocket(target.toString(), negotiated)
   const inbox = new WebSocketQueue(256)
   let wake: (() => void) | undefined
   let resolveOpen: (() => void) | undefined
@@ -165,7 +179,7 @@ export async function* readLoopbackWebSocket(options: {
     openSettled = true
     resolveOpen?.()
   }
-  const handleMessage = (event: MessageEvent): void => {
+  const handleMessage = (event: { readonly data: unknown }): void => {
     if (typeof event.data !== 'string' || event.data.length > 8 * 1024 * 1024) {
       const error = new AppError({
         code: 'PROTOCOL_ERROR',

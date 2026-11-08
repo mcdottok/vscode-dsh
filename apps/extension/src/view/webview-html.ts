@@ -16,13 +16,12 @@ export function createWebviewHtml(
     `img-src ${webview.cspSource} data:`,
     `style-src ${webview.cspSource}`,
     `style-src-elem ${webview.cspSource}`,
-    // Shiki and React supply bounded token colors as style attributes. Keep
-    // stylesheet elements restricted to packaged resources, and do not relax
-    // script-src or permit model-authored HTML.
+    // Shiki and React supply bounded token colors as style attributes.
     "style-src-attr 'unsafe-inline'",
-    `script-src 'nonce-${nonce}'`,
+    // Allow packaged module chunks in addition to the nonced entry point.
+    `script-src 'nonce-${nonce}' ${webview.cspSource}`,
     `font-src ${webview.cspSource}`,
-    "connect-src 'none'",
+    `connect-src ${webview.cspSource}`,
     "frame-src 'none'",
   ].join('; ')
   return `<!doctype html>

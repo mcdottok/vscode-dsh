@@ -215,8 +215,19 @@ describe('external connection credentials', () => {
     await f.access.prepare(first, new AbortController().signal)
     expect(f.fetch.mock.calls.at(-1)?.[0]).toBe(`${first.baseUrl}/?token=rotated-fixture`)
   })
+  it('accepts a valid local Desktop session cookie returned with HTTP 401', async () => {
+    const f = fixture()
+    const local = endpoint('http://127.0.0.1:4321')
+    await f.access.authorize(local)
+    f.fetch.mockResolvedValueOnce(new Response(null, { status: 401, headers: login(false).headers }))
+
+    await f.access.prepare(local, new AbortController().signal)
+    expect(f.access.cookie(local)).toBe(cookie)
+  })
   it.each([
     { status: 200, headers: {} },
+    { status: 401, headers: login().headers },
+    { status: 500, headers: login().headers },
     {
       status: 303,
       headers: {

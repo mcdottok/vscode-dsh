@@ -10,7 +10,10 @@ class FakeWebSocket {
   public readyState = 0
   private readonly listeners = new Map<string, Set<(event: unknown) => void>>()
 
-  public constructor(url: string) {
+  public constructor(
+    url: string,
+    public readonly options?: { readonly headers?: Readonly<Record<string, string>> },
+  ) {
     this.url = url
     if (FakeWebSocket.openOnConstruct) this.readyState = 1
     FakeWebSocket.instances.push(this)
@@ -458,13 +461,21 @@ describe('LoopbackApiClient rc.6 event transport', () => {
     })
   })
 
-  it('opens mux and host event paths as WebSocket downlinks instead of SSE fetches', async () => {
+  it('opens authenticated mux and host event paths as WebSocket downlinks instead of SSE fetches', async () => {
     FakeWebSocket.instances.length = 0
-    const client = createClient()
+    const client = new LoopbackApiClient({
+      endpoint: { host: '127.0.0.1', port: 4567, baseUrl: 'http://127.0.0.1:4567' },
+      requestTimeoutMs: 1_000,
+      retryPolicy: { maximumAttempts: 1, baseDelayMs: 1, maximumDelayMs: 1 },
+      fetch: vi.fn(),
+      webSocket: FakeWebSocket,
+      authCookie: () => 'dsh-auth-fixture=session-fixture',
+    })
     const muxIterator = client.openMuxStream(new AbortController().signal)[Symbol.asyncIterator]()
     const muxNext = muxIterator.next()
     const muxSocket = FakeWebSocket.instances[0]
     expect(muxSocket?.url).toBe('ws://127.0.0.1:4567/api/events.mux')
+    expect(muxSocket?.options?.headers).toEqual({ Cookie: 'dsh-auth-fixture=session-fixture' })
     muxSocket?.open()
     muxSocket?.message(serverFrame({ type: 'session/subscribed', sessionId: 's1', lastSeq: 0 }))
     await expect(muxNext).resolves.toMatchObject({
@@ -477,6 +488,7 @@ describe('LoopbackApiClient rc.6 event transport', () => {
     const hostNext = hostIterator.next()
     const hostSocket = FakeWebSocket.instances[1]
     expect(hostSocket?.url).toBe('ws://127.0.0.1:4567/api/events.host')
+    expect(hostSocket?.options?.headers).toEqual({ Cookie: 'dsh-auth-fixture=session-fixture' })
     hostSocket?.open()
     hostSocket?.message(serverFrame({ type: 'host/session-status', sessionId: 's1', running: false }))
     await expect(hostNext).resolves.toMatchObject({

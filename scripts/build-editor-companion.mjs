@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { copyFile, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { build } from 'esbuild'
@@ -9,9 +10,15 @@ import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const staging = await mkdtemp(path.join(os.tmpdir(), 'dsh-editor-companion-build-'))
 try {
-  const pnpm = process.env.npm_execpath
-  if (pnpm === undefined || !/\.(?:c?js|mjs)$/u.test(pnpm))
-    throw new Error('Run the build through pnpm so its executable entry is explicit.')
+  // pnpm 11 不再导出 npm_execpath；按候选路径回退，保持 pnpm 作为唯一构建入口。
+  const pnpm = [
+    process.env.npm_execpath,
+    path.join(os.homedir(), '.local/lib/node_modules/pnpm/bin/pnpm.mjs'),
+    '/usr/lib/node_modules/pnpm/bin/pnpm.cjs',
+  ].find(
+    (candidate) => candidate !== undefined && /\.(?:c?js|mjs)$/u.test(candidate) && existsSync(candidate),
+  )
+  if (pnpm === undefined) throw new Error('Run the build through pnpm so its executable entry is explicit.')
   const result = spawnSync(
     process.execPath,
     [pnpm, '--filter', '@dsh-vscode/editor-bridge', 'pack', '--pack-destination', staging],

@@ -252,7 +252,12 @@ export class ExternalConnectionAccess {
       `${endpoint.baseUrl}/?token=${encodeURIComponent(credentials.launchToken)}`,
       { method: 'GET', redirect: 'manual', signal },
     )
-    const cookie = parseSessionCookie(response, this.now(), new URL(endpoint.baseUrl).protocol === 'https:')
+    const cookie = parseSessionCookie(
+      response,
+      this.now(),
+      new URL(endpoint.baseUrl).protocol === 'https:',
+      isLoopbackEndpoint(endpoint),
+    )
     await releaseResponse(response)
     signal.throwIfAborted()
     if (generation !== this.generation) throw cancelled()
@@ -445,8 +450,12 @@ function parseSessionCookie(
   response: Response,
   now: number,
   secure: boolean,
+  allowUnauthorizedCookie: boolean,
 ): { readonly value: string; readonly expiresAt: number } | undefined {
-  if (response.status !== 303 || response.headers.get('location') !== './') return undefined
+  // A local Desktop bridge can return the session cookie with HTTP 401.
+  if (response.status === 303) {
+    if (response.headers.get('location') !== './') return undefined
+  } else if (response.status !== 401 || !allowUnauthorizedCookie) return undefined
   const values = response.headers.getSetCookie()
   for (const header of values) {
     const parts = header.split(';').map((part) => part.trim())
