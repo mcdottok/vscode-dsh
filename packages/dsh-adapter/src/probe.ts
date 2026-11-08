@@ -19,6 +19,11 @@ export interface VersionedBackendProbeOptions {
    */
   readonly fetch?: typeof globalThis.fetch
   readonly preflightTimeoutMs?: number
+  /** Read version evidence from a selected endpoint after Host authorization. */
+  readonly readRuntimeVersion?: (
+    candidate: BackendCandidate,
+    signal?: AbortSignal,
+  ) => Promise<string | undefined>
 }
 
 export class VersionedBackendProbe implements BackendProbe {
@@ -41,13 +46,22 @@ export class VersionedBackendProbe implements BackendProbe {
   }
 
   private async probeAdapters(
-    candidate: BackendCandidate,
+    initialCandidate: BackendCandidate,
     signal?: AbortSignal,
   ): Promise<ConnectedBackend | undefined> {
     throwIfProbeAborted(signal)
-    if (isMalformedDshVersionHint(candidate.runtimeVersion)) return undefined
-    if (!(await this.preflight(candidate, signal))) return undefined
+    if (isMalformedDshVersionHint(initialCandidate.runtimeVersion)) return undefined
+    if (!(await this.preflight(initialCandidate, signal))) return undefined
     throwIfProbeAborted(signal)
+    const reportedVersion =
+      initialCandidate.runtimeVersion === undefined
+        ? await this.options.readRuntimeVersion?.(initialCandidate, signal)
+        : undefined
+    throwIfProbeAborted(signal)
+    const candidate =
+      reportedVersion !== undefined && isDshPackageVersion(reportedVersion)
+        ? { ...initialCandidate, runtimeVersion: reportedVersion }
+        : initialCandidate
     const hintedVersion =
       candidate.runtimeVersion !== undefined && isDshPackageVersion(candidate.runtimeVersion)
         ? candidate.runtimeVersion

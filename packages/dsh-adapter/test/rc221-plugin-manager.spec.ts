@@ -18,7 +18,7 @@ const bundle = {
   error: { code: 'unsupported-platform', diagnostic: 'private diagnostic' },
 }
 
-function transport(): DshTransport {
+function transport(bundles: readonly unknown[] = [bundle]): DshTransport {
   return {
     request: <T>() => Promise.reject<T>(new Error('Unexpected request')),
     remoteRequest: vi.fn((endpoint: string) =>
@@ -26,7 +26,7 @@ function transport(): DshTransport {
         ok: true,
         value:
           endpoint === 'pluginManager/listBundles'
-            ? [bundle]
+            ? bundles
             : {
                 stage: 'enable',
                 target: bundle.name,
@@ -62,5 +62,33 @@ describe('DSH 0.2.2-rc.1 plugin platform refusal', () => {
     await expect(new Alpha214PluginBundleRepository(transport()).listBundles()).rejects.toMatchObject({
       code: 'PROTOCOL_ERROR',
     })
+  })
+})
+
+describe('DSH runtime evidence from the official catalog', () => {
+  const offered = {
+    ...bundle,
+    version: '0.2.1-rc.2',
+    installTarget: { spec: `${bundle.name}@0.2.2-rc.1`, version: '0.2.2-rc.1' },
+  }
+
+  it('uses the running version behind official install targets instead of installed bundle versions', async () => {
+    const repository = new Rc221PluginBundleRepository(transport([offered, bundle]))
+    await expect(repository.readRuntimeVersion()).resolves.toBe('0.2.2-rc.1')
+  })
+
+  it('declines missing or conflicting runtime evidence', async () => {
+    const otherName = '@example/other-tool'
+    const conflict = {
+      ...offered,
+      name: otherName,
+      installTarget: { spec: `${otherName}@0.2.1-rc.2`, version: '0.2.1-rc.2' },
+    }
+    await expect(
+      new Rc221PluginBundleRepository(transport([bundle])).readRuntimeVersion(),
+    ).resolves.toBeUndefined()
+    await expect(
+      new Rc221PluginBundleRepository(transport([offered, conflict])).readRuntimeVersion(),
+    ).resolves.toBeUndefined()
   })
 })

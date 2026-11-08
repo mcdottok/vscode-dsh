@@ -218,6 +218,8 @@ Plugin 安装前的二次 inspect、registry、Host 确认或 Adapter 本地验�
 
 设置页提供 DSH Desktop 与 DSH CLI 两条明确路径。Desktop 接受用户主动粘贴的完整 loopback 浏览器访问地址，作为一次性、只写的密码输入提交给 Host；Host 校验并分离 origin 与 token，仅向配置与工作区状态保存 origin，凭据进入 VS Code SecretStorage。Host 不把地址或凭据返回 Webview，输入提交和关闭后清空，不进入持久化界面状态或日志。原生命令入口仍可使用。
 
+已授权的本机自定义连接没有版本提示时，Host 可在选择适配器前调用只读的 `pluginManager/listBundles`。固定上游的[目录实现](https://github.com/deepseek-ai/deepseek-harness/blob/66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db/packages/boot/plugin-manager/src/index.ts)和[安装目标实现](https://github.com/deepseek-ai/deepseek-harness/blob/66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db/packages/boot/plugin-manager/src/official-install-target.ts)将运行中的内核版本写入官方目录条目的 `installTarget.version`。扩展只接受一致的有效版本作为本次探测的提示，仍由适配器验证协议，缺失、冲突或超时继续走既有兼容探测。连接插件可沿用现有的授权转发接口，无需为识别版本新增路由。
+
 DSH CLI 选择显式写入 `new-isolated` 与 `runtime.autoStart: true`，通过已定位的全局包或所选可执行文件启动插件拥有的服务；清空活动连接的 Desktop 端点和版本覆盖，避免错误附加到桌面端。未受信任工作区不能启动本机服务。版本安装仅修改 DSH CLI，不升级 Desktop，安装后由用户点击启动连接。Desktop 端点在 Host 侧单独记忆，配对凭据继续保留；重载后切回 Desktop 可复用保存的连接，地址失效时走既有恢复。没有保存记录且输入为空时执行本机自动发现，失败明确提供手动连接建议，不启动或接入 npm 实例。设置写入队列释放后才重连，避免自动恢复被切换过程抑制或等待自身的队列；新的连接选择使旧发现与迟到恢复失效。
 
 ### 桌面端的自动恢复

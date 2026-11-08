@@ -18,6 +18,7 @@
 
 ## 未发布
 
+- 修复手动连接 DSH Desktop 时未识别内核版本导致会话流断开的问题。扩展在授权后从官方组件目录读取版本，用户无需手填版本即可连接支持该接口的 Desktop。
 - 调整 Webview 资源策略，允许加载扩展随包提供的动态模块。
 - 兼容本机 Desktop 在返回 HTTP 401 时同时下发有效会话 Cookie 的授权流程，并为旧版 WebSocket 事件流传递同源会话 Cookie。
 - 为构建编辑器配套组件的脚本增加 pnpm 入口回退。感谢 [LittleFishStars](https://github.com/LittleFishStars) 的 [PR #3](https://github.com/mcdottok/vscode-dsh/pull/3)。

@@ -53,6 +53,35 @@ describe('DSH package version validation', () => {
 })
 
 describe('VersionedBackendProbe version classification', () => {
+  it('uses Host version evidence only when the candidate has no version', async () => {
+    const reportedVersion = '0.2.2-rc.1'
+    const exact = compatibilityAdapter('exact', undefined, {
+      protocolVersion: 'rc221',
+      dshVersion: reportedVersion,
+      features: new Set(['session']),
+    })
+    const readRuntimeVersion = vi.fn(() => Promise.resolve(reportedVersion))
+    const probe = new VersionedBackendProbe([exact], { readRuntimeVersion })
+    const pinned = candidate(3940)
+    const unversioned: BackendCandidate = {
+      endpoint: pinned.endpoint,
+      source: pinned.source,
+      confidence: pinned.confidence,
+    }
+
+    await expect(probe.probe(unversioned)).resolves.toMatchObject({
+      capabilities: { dshVersion: reportedVersion, compatibilityMode: 'exact' },
+    })
+    expect(readRuntimeVersion).toHaveBeenCalledWith(unversioned, undefined)
+
+    await probe.probe(pinned)
+    expect(readRuntimeVersion).toHaveBeenCalledTimes(1)
+    expect(exact.probe.mock.calls).toEqual([
+      [{ ...unversioned, runtimeVersion: reportedVersion }, undefined],
+      [pinned, undefined],
+    ])
+  })
+
   it('fails with DSH_INCOMPATIBLE when every exact adapter declines a known RC6 endpoint', async () => {
     const probe = vi.fn((): Promise<never> => Promise.reject(incompatibleError()))
     const adapter = { id: 'fixture', supportedVersion: 'fixture', probe, createTransport: vi.fn() }

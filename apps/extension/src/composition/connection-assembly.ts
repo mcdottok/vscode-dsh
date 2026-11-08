@@ -30,7 +30,12 @@ import {
   RuntimeUseCases,
   type ConnectionRequest,
 } from '@dsh-vscode/application'
-import { VersionedBackendFactory, VersionedBackendProbe } from '@dsh-vscode/dsh-adapter'
+import {
+  AlphaLoopbackApiClient,
+  Rc221PluginBundleRepository,
+  VersionedBackendFactory,
+  VersionedBackendProbe,
+} from '@dsh-vscode/dsh-adapter'
 import { createAdapterOptions } from '../backend/adapter-options.js'
 import { createVersionAdapters } from '../backend/version-adapters.js'
 import { CompanionRegistryDiscoveryProvider } from '../backend/discovery/companion-provider.js'
@@ -250,7 +255,25 @@ export function createRuntimeAssembly(deps: RuntimeAssemblyDependencies): Runtim
     network.fetch,
   )
   const adapters = createVersionAdapters(adapterOptions)
-  const probe = new VersionedBackendProbe(adapters, { fetch: network.fetch })
+  const probe = new VersionedBackendProbe(adapters, {
+    fetch: network.fetch,
+    readRuntimeVersion: async ({ endpoint, source }, signal) => {
+      if (source !== 'configured' || !isLoopbackEndpoint(endpoint) || !externalConnection.cookie(endpoint))
+        return undefined
+      const deadline = AbortSignal.timeout(2_000)
+      const transport = new AlphaLoopbackApiClient({ ...adapterOptions, endpoint })
+      try {
+        return await new Rc221PluginBundleRepository(transport).readRuntimeVersion(
+          signal === undefined ? deadline : AbortSignal.any([signal, deadline]),
+        )
+      } catch {
+        signal?.throwIfAborted()
+        return undefined
+      } finally {
+        await transport.close()
+      }
+    },
+  })
   const factory = new VersionedBackendFactory(adapters)
   const supervisor = new DshProcessSupervisor({
     probeWebNoOpen: (runtime, signal) =>
