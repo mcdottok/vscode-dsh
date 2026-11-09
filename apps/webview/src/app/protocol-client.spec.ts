@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { PROTOCOL_VERSION, type ProtocolEnvelope } from '@dsh-vscode/webview-protocol'
+import {
+  PROTOCOL_VERSION,
+  splitProjectionBaseline,
+  type ProtocolEnvelope,
+} from '@dsh-vscode/webview-protocol'
 import { ProtocolClient, publicProtocolErrorMessage } from './protocol-client.js'
 
 const listeners = new Set<(event: MessageEvent<unknown>) => void>()
@@ -23,6 +27,101 @@ beforeEach(() => {
 afterEach(() => listeners.clear())
 
 describe('ProtocolClient', () => {
+  it('publishes one complete projection baseline after all bounded parts arrive', () => {
+    const client = new ProtocolClient({
+      postMessage: () => undefined,
+      getState: () => undefined,
+      setState: () => undefined,
+    })
+    const received = vi.fn()
+    client.subscribe(received)
+    const payload = {
+      projections: Object.fromEntries(
+        Array.from({ length: 300 }, (_, index) => [
+          `session-${index}`,
+          {
+            asOfSequence: index,
+            values: { rows: Array.from({ length: 100 }, (_, row) => ({ row, valid: true })) },
+          },
+        ]),
+      ),
+    }
+    const parts = splitProjectionBaseline(payload, 'batch-1')
+    try {
+      for (const [index, part] of parts.entries()) {
+        client.handle({
+          protocolVersion: PROTOCOL_VERSION,
+          message: {
+            type: 'event',
+            name: 'session.projection.baseline.part',
+            sequence: index + 1,
+            payload: part,
+          },
+        })
+        expect(received).toHaveBeenCalledTimes(index === parts.length - 1 ? 1 : 0)
+      }
+      expect(received).toHaveBeenCalledWith({
+        type: 'event',
+        name: 'session.projection.baseline',
+        sequence: parts.length,
+        payload,
+      })
+    } finally {
+      client.dispose()
+    }
+  })
+
+  it('discards an unfinished projection transfer when the connection changes', () => {
+    const client = new ProtocolClient({
+      postMessage: () => undefined,
+      getState: () => undefined,
+      setState: () => undefined,
+    })
+    const received = vi.fn()
+    client.subscribe(received)
+    const parts = splitProjectionBaseline(
+      {
+        projections: Object.fromEntries(
+          Array.from({ length: 300 }, (_, index) => [
+            `session-${index}`,
+            {
+              asOfSequence: index,
+              values: { rows: Array.from({ length: 100 }, (_, row) => ({ row, valid: true })) },
+            },
+          ]),
+        ),
+      },
+      'old-batch',
+    )
+    try {
+      client.handle({
+        protocolVersion: PROTOCOL_VERSION,
+        message: { type: 'event', name: 'session.projection.baseline.part', sequence: 1, payload: parts[0] },
+      })
+      client.handle({
+        protocolVersion: PROTOCOL_VERSION,
+        message: { type: 'event', name: 'connection.lost', sequence: 2, payload: {} },
+      })
+      for (const [index, part] of parts.slice(1).entries())
+        client.handle({
+          protocolVersion: PROTOCOL_VERSION,
+          message: {
+            type: 'event',
+            name: 'session.projection.baseline.part',
+            sequence: index + 3,
+            payload: part,
+          },
+        })
+      expect(
+        received.mock.calls.filter(
+          ([message]) => (message as { name: string }).name === 'session.projection.baseline',
+        ),
+      ).toHaveLength(0)
+    } finally {
+      client.dispose()
+    }
+  })
+
   it('cancels only the requested Host operation and ignores its late response', async () => {
     const posted: ProtocolEnvelope[] = []
     const client = new ProtocolClient({

@@ -4,6 +4,8 @@ import {
   featureHostEnvelopeSchema,
   featureWebviewEnvelopeSchema,
   webviewRequestSchema,
+  ProjectionBaselineReceiver,
+  projectionBaselinePartSchema,
   type FeatureHostEvent,
   type FeatureHostMessage,
   type FeatureRequest,
@@ -104,6 +106,7 @@ export class ProtocolClient {
   private readonly listeners = new Set<(message: HostMessage) => void>()
   private readonly featureListeners = new Set<(message: FeatureHostEvent) => void>()
   private readonly sequences = new Map<string, number>()
+  private readonly projectionBaseline = new ProjectionBaselineReceiver()
   private readonly featureSequences = new Map<string, number>()
   private readonly featureGenerations = new Map<string, number>()
   private featureBackendIdentity: FeatureBackendIdentity | undefined
@@ -221,6 +224,25 @@ export class ProtocolClient {
     const previous = this.sequences.get(message.name) ?? -1
     if (message.sequence <= previous) return
     this.sequences.set(message.name, message.sequence)
+    if (message.name === 'session.projection.baseline.part') {
+      const part = projectionBaselinePartSchema.parse(message.payload)
+      const baseline = this.projectionBaseline.accept(part)
+      if (baseline !== undefined)
+        this.handleLegacyMessage({
+          type: 'event',
+          name: 'session.projection.baseline',
+          sequence: message.sequence,
+          payload: baseline,
+        })
+      return
+    }
+    if (
+      message.name === 'session.projection.baseline' ||
+      message.name === 'connection.snapshot' ||
+      message.name === 'connection.lost' ||
+      message.name === 'ui.resync'
+    )
+      this.projectionBaseline.clear()
     if (message.name === 'connection.snapshot' || message.name === 'connection.lost')
       this.updateFeatureBackendIdentity(
         message.name === 'connection.lost' ? { kind: 'lost' } : message.payload,
@@ -343,6 +365,7 @@ export class ProtocolClient {
       pending.reject(new Error(translate('app.error.webviewDisposed')))
     }
     this.pending.clear()
+    this.projectionBaseline.clear()
     this.listeners.clear()
     this.featureListeners.clear()
     this.featureSequences.clear()
