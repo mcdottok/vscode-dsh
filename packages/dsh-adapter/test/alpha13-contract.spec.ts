@@ -150,14 +150,28 @@ describe('DSH 0.1.3-alpha.1 Session v2 contract', () => {
 
     await expect(adapter.probeCompatibility(candidate('0.1.3-alpha.2'))).resolves.toBeUndefined()
 
-    const connected = await new VersionedBackendProbe([
+    FakeWebSocket.instances.length = 0
+    const probing = new VersionedBackendProbe([
       adapter,
       new Alpha5VersionAdapter({
         requestTimeoutMs: 1_000,
         retryPolicy: { maximumAttempts: 1, baseDelayMs: 1, maximumDelayMs: 1 },
         fetch,
+        webSocket: FakeWebSocket,
       }),
     ]).probe(candidate('0.1.3-alpha.3'))
+    const socket = await waitForSocket()
+    socket.open()
+    await waitForSent(socket, 1)
+    socket.message(
+      streamItem(socket, {
+        type: 'baseline',
+        value: { queues: {}, jobs: {}, projections: {} },
+      }),
+    )
+    const connected = await probing
+    expect(socket.readyState).toBe(3)
+    expect(JSON.parse(socket.sent[1] ?? '{}')).toMatchObject({ type: 'cancel' })
 
     expect(connected).toMatchObject({
       capabilities: {

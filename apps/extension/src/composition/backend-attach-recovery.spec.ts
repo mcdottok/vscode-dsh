@@ -11,7 +11,9 @@ it.each([true, false])(
     const postBackendEvent = vi.fn().mockResolvedValue(true)
     const recoverDesktop = vi.fn(() => recoverable)
     const detach = vi.fn()
+    const log = vi.fn()
     const dependencies = {
+      diagnostics: { log },
       backendService: {
         attach: (_backend: DshBackend, handler: (event: BackendEvent) => void) => {
           onEvent = handler
@@ -33,6 +35,7 @@ it.each([true, false])(
     const lost = { type: 'connection.lost', reason: 'Fixture transport closed' } as const
     onEvent?.(lost)
     expect(detach).toHaveBeenCalledOnce()
+    expect(log).toHaveBeenCalledWith('warn', 'connection-stream-lost', { message: lost.reason })
     expect(recoverDesktop).toHaveBeenCalledOnce()
     expect(postBackendEvent).toHaveBeenCalledTimes(recoverable ? 0 : 1)
   },

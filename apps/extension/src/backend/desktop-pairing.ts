@@ -19,6 +19,8 @@ type DesktopPairingFailure =
   | 'PIPE_TIMEOUT'
   | 'PIPE_NOT_FOUND'
   | 'PIPE_REFUSED'
+  | 'PIPE_ACCESS_DENIED'
+  | 'PIPE_OPERATION_DENIED'
   | 'PIPE_ERROR'
   | 'PIPE_CLOSED'
   | 'INVALID_PAIRING_RESPONSE'
@@ -28,6 +30,19 @@ export class DesktopPairingError extends Error {
   public constructor(readonly code: DesktopPairingFailure) {
     super('Paired Desktop unavailable')
   }
+}
+
+export function isPairingTransportFailure(error: unknown): error is DesktopPairingError {
+  return (
+    error instanceof DesktopPairingError &&
+    [
+      'PIPE_TIMEOUT',
+      'PIPE_NOT_FOUND',
+      'PIPE_REFUSED',
+      'PIPE_ACCESS_DENIED',
+      'PIPE_OPERATION_DENIED',
+    ].includes(error.code)
+  )
 }
 
 export function resolvePairedDesktop(key: string, signal?: AbortSignal, pipe?: string): Promise<string> {
@@ -62,8 +77,9 @@ export function resolvePairedDesktop(key: string, signal?: AbortSignal, pipe?: s
     socket.on('error', (error: NodeJS.ErrnoException) => {
       const { code } = error
       if (code === 'ENOENT') finish(undefined, 'PIPE_NOT_FOUND')
-      else if (code === 'ECONNREFUSED' || code === 'EACCES' || code === 'EPERM')
-        finish(undefined, 'PIPE_REFUSED')
+      else if (code === 'ECONNREFUSED') finish(undefined, 'PIPE_REFUSED')
+      else if (code === 'EACCES') finish(undefined, 'PIPE_ACCESS_DENIED')
+      else if (code === 'EPERM') finish(undefined, 'PIPE_OPERATION_DENIED')
       else finish(undefined, 'PIPE_ERROR')
     })
     socket.on('close', () => finish(undefined, 'PIPE_CLOSED'))

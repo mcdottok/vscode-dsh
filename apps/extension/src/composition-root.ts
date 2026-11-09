@@ -353,7 +353,13 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
     onDesktopRecoveryFailure: (code) =>
       diagnostics.connectionProgress({ phase: 'connect', status: 'failed', code }),
     discoverDesktopVersion: async (endpoint, signal) => {
-      const candidates = await new WindowsDesktopDiscoveryProvider().discoverEndpoints([endpoint], signal)
+      const candidates = await new WindowsDesktopDiscoveryProvider(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        (entry) => diagnostics.log('info', 'desktop-discovery', { ...entry }),
+      ).discoverEndpoints([endpoint], signal)
       const versions = new Set(
         candidates
           .filter((candidate) => candidate.runtimeVersionEvidence === 'process-manifest')
@@ -611,7 +617,10 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
     connectDesktop: () =>
       connectDesktop({
         window: vscode.window,
-        discover: (endpoint) => new WindowsDesktopDiscoveryProvider().discoverEndpoints([endpoint]),
+        discover: (endpoint) =>
+          new WindowsDesktopDiscoveryProvider(undefined, undefined, undefined, undefined, (entry) =>
+            diagnostics.log('info', 'desktop-discovery', { ...entry }),
+          ).discoverEndpoints([endpoint]),
         connect: (endpoint, token, version) =>
           configureConnection('custom', endpoint.baseUrl, undefined, {
             launchToken: token,

@@ -49,6 +49,27 @@ export class ExternalConnectionAccess {
     return this.cookies.get(endpoint.baseUrl)
   }
 
+  /** 配对 IPC 不可用时只检查已有授权，认证和网络准备仍由正常连接链执行。 */
+  public async hasSavedAuthorization(
+    endpoint: BackendEndpoint,
+    callerSignal?: AbortSignal,
+  ): Promise<boolean> {
+    callerSignal?.throwIfAborted()
+    this.requireTrust()
+    const generation = this.generation
+    const signal = AbortSignal.any([
+      this.closed.signal,
+      this.revisionAbort.signal,
+      ...(callerSignal === undefined ? [] : [callerSignal]),
+      AbortSignal.timeout(this.dependencies.requestTimeoutMs()),
+    ])
+    const record = await waitForSignal(this.read(endpoint), signal)
+    signal.throwIfAborted()
+    this.requireTrust()
+    if (generation !== this.generation) throw cancelled()
+    return record?.approved === true
+  }
+
   public async authorize(
     endpoint: BackendEndpoint,
     callerSignal?: AbortSignal,

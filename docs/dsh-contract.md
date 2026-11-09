@@ -112,7 +112,7 @@ rc.2 与 rc.1 的 Connection / Gateway、全部 API Remote、Session V4、Accoun
 
 ### 未知版本
 
-对非空但未识别的标签，先进行公共握手，再按显式优先级只读 `probeCompatibility`。候选拒绝、超时或契约不匹配时尝试下一个；全部失败才拒绝连接。成功后保留真实版本标签、所选 Adapter 和内部兼容状态，界面不主动报警。只可复用经过证明安全的基础 wire：Session v2/v3/V4、`delivery`、turn-window、目录/交付事件和其他版本专属字段不能通过相近版本号猜测；未知 Remote 或事件安全降级为 unknown 或 `CAPABILITY_UNAVAILABLE`。畸形 SemVer-like 身份在 wire probe 前拒绝。
+对非空但未识别的标签，先进行公共握手，再按显式优先级只读 `probeCompatibility`。旧 alpha.5 回退除 `session/list` 外，还须读取 `session/control` 的完整 `queues/jobs/projections` 基线；来源为 [tag `dsh-v0.1.2-alpha.5`](https://github.com/deepseek-ai/deepseek-harness/tree/db6bdc3576c2d4e7c965e8e3ed0c2a731eed87f5) 的 Session Controller 类型与控制流实现。全空旧基线仍可接受，现代 projection-only 基线必须拒绝，不能因会话列表可读而误选 Session v0。探测不打开任意会话，取消并关闭一次性流。候选拒绝、超时或契约不匹配时尝试下一个；全部失败才拒绝连接。成功后保留真实版本标签、所选 Adapter 和内部兼容状态，界面不主动报警。只可复用经过证明安全的基础 wire：Session v2/v3/V4、`delivery`、turn-window、目录/交付事件和其他版本专属字段不能通过相近版本号猜测；未知 Remote 或事件安全降级为 unknown 或 `CAPABILITY_UNAVAILABLE`。畸形 SemVer-like 身份在 wire probe 前拒绝。
 
 ## 编辑器配套插件
 

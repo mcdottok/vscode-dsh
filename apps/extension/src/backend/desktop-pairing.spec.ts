@@ -1,7 +1,18 @@
 import { createServer, type Server } from 'node:net'
+import * as net from 'node:net'
 import { createCipheriv, randomBytes } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vitest'
-import { DesktopPairing, resolvePairedDesktop } from './desktop-pairing.js'
+import {
+  DesktopPairing,
+  DesktopPairingError,
+  isPairingTransportFailure,
+  resolvePairedDesktop,
+} from './desktop-pairing.js'
+
+vi.mock('node:net', async (importOriginal) => {
+  const actual = await importOriginal<typeof net>()
+  return { ...actual, createConnection: vi.fn(actual.createConnection) }
+})
 
 const servers: Server[] = []
 afterEach(async () => {
@@ -83,6 +94,43 @@ it('accepts only authenticated encrypted loopback launch addresses', async () =>
   await expect(
     resolvePairedDesktop(key, undefined, await host(key, 'http://example.com/?token=fixture')),
   ).rejects.toThrow('unavailable')
+})
+
+it.each([
+  { nativeCode: 'ECONNREFUSED', expected: 'PIPE_REFUSED' },
+  { nativeCode: 'EACCES', expected: 'PIPE_ACCESS_DENIED' },
+  { nativeCode: 'EPERM', expected: 'PIPE_OPERATION_DENIED' },
+])(
+  'keeps $nativeCode separate and releases the rejected pipe',
+  async ({ nativeCode, expected }): Promise<void> => {
+    const socket = new net.Socket()
+    const connection = vi.mocked(net.createConnection)
+    connection.mockReturnValueOnce(socket)
+    const destroy = vi.spyOn(socket, 'destroy')
+    try {
+      const result = resolvePairedDesktop(randomBytes(32).toString('base64url'))
+      const rejected = expect(result).rejects.toMatchObject({
+        code: expected,
+        message: 'Paired Desktop unavailable',
+      })
+      socket.emit(
+        'error',
+        Object.assign(new Error('private fixture path must not be exposed'), { code: nativeCode }),
+      )
+      await rejected
+      expect(destroy).toHaveBeenCalledOnce()
+    } finally {
+      connection.mockClear()
+      destroy.mockRestore()
+      socket.destroy()
+    }
+  },
+)
+
+it('does not classify cancellation, unknown transport or unauthenticated responses as fallback-safe', (): void => {
+  for (const code of ['REQUEST_CANCELLED', 'PIPE_ERROR', 'PIPE_CLOSED', 'INVALID_PAIRING_RESPONSE'] as const)
+    expect(isPairingTransportFailure(new DesktopPairingError(code))).toBe(false)
+  expect(isPairingTransportFailure(new Error('Paired Desktop unavailable'))).toBe(false)
 })
 
 it('cancels IPC without returning credentials', async () => {
