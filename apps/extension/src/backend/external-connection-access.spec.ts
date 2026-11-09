@@ -71,6 +71,64 @@ afterEach(async () => {
 })
 
 describe('external connection credentials', () => {
+  it('checks saved approval by execution environment and full origin without network or credential writes', async (): Promise<void> => {
+    const f = fixture()
+    const target = endpoint('http://127.0.0.1:3080')
+    await expect(f.access.hasSavedAuthorization(target)).resolves.toBe(false)
+    await f.access.authorize(target)
+    f.secrets.store.mockClear()
+    await expect(f.access.hasSavedAuthorization(target)).resolves.toBe(true)
+    await expect(f.access.hasSavedAuthorization(endpoint('http://127.0.0.1:3081'))).resolves.toBe(false)
+    const otherEnvironment = fixture('other-host', f.values)
+    await expect(otherEnvironment.access.hasSavedAuthorization(target)).resolves.toBe(false)
+    f.state.token = ''
+    await f.access.authorize(target)
+    f.secrets.store.mockClear()
+    await expect(f.access.hasSavedAuthorization(target)).resolves.toBe(true)
+    f.values.set(key(target), JSON.stringify({ version: 1, approved: false, allowInsecureHttp: false }))
+    await expect(f.access.hasSavedAuthorization(target)).resolves.toBe(false)
+    expect(f.fetch).not.toHaveBeenCalled()
+    expect(f.secrets.store).not.toHaveBeenCalled()
+    expect(f.secrets.delete).not.toHaveBeenCalled()
+  })
+  it('rejects cancelled, revoked-trust and superseded saved-approval reads', async (): Promise<void> => {
+    const f = fixture()
+    await f.access.authorize(first)
+    await expect(f.access.hasSavedAuthorization(first, AbortSignal.abort())).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+    f.state.trusted = false
+    await expect(f.access.hasSavedAuthorization(first)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+    f.state.trusted = true
+    let resolveRead: (value: string | undefined) => void = () => undefined
+    f.secrets.get.mockImplementationOnce(
+      () =>
+        new Promise<string | undefined>((resolve) => {
+          resolveRead = resolve
+        }),
+    )
+    const reading = f.access.hasSavedAuthorization(first)
+    const rejected = expect(reading).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.waitFor(() => expect(f.secrets.get).toHaveBeenCalled())
+    await f.access.authorize(second)
+    resolveRead(f.values.get(key(first)))
+    await rejected
+    f.secrets.get.mockClear()
+    let finishTrustRead: (value: string | undefined) => void = () => undefined
+    f.secrets.get.mockImplementationOnce(
+      () =>
+        new Promise<string | undefined>((resolve) => {
+          finishTrustRead = resolve
+        }),
+    )
+    const checkingTrust = f.access.hasSavedAuthorization(first)
+    const deniedTrust = expect(checkingTrust).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
+    await vi.waitFor(() => expect(f.secrets.get).toHaveBeenCalledOnce())
+    f.state.trusted = false
+    finishTrustRead(f.values.get(key(first)))
+    await deniedTrust
+    expect(f.fetch).not.toHaveBeenCalled()
+  })
   it('accepts a token from masked Desktop URL input without asking for it again', async () => {
     const f = fixture()
     await f.access.authorize(first, undefined, 'fixture-desktop-token')

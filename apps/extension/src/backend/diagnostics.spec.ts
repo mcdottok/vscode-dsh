@@ -97,6 +97,21 @@ describe('RedactedDiagnostics', () => {
     diagnostics.dispose()
   })
 
+  it('keeps stream-loss details in local Output without exposing them through recent snapshots', () => {
+    const { lines, channel } = fakeChannel()
+    const diagnostics = new RedactedDiagnostics(channel)
+    diagnostics.log('warn', 'connection-stream-lost', {
+      message: 'DSH event stream disconnected (PROTOCOL_ERROR), token=fixture-private',
+    })
+
+    expect(lines[0]).toContain('connection-stream-lost')
+    expect(lines[0]).toContain('PROTOCOL_ERROR')
+    expect(lines[0]).not.toContain('fixture-private')
+    expect(diagnostics.recentEvents()[0]).toContain('"event":"connection-stream-lost"')
+    expect(diagnostics.recentEvents()[0]).not.toContain('PROTOCOL_ERROR')
+    diagnostics.dispose()
+  })
+
   it('honors the configured verbosity instead of always appending every event', () => {
     const { lines, channel } = fakeChannel()
     const diagnostics = new RedactedDiagnostics(channel, () => 'error')

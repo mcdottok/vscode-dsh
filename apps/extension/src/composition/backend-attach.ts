@@ -130,6 +130,8 @@ export function createBackendAttach(deps: BackendAttachDependencies): BackendAtt
       )
         invalidateCurrentWorkspaceSessionDetails()
       if (event.type === 'connection.lost') {
+        // 恢复会吞掉原始事件，先在本地 Output 保留脱敏原因，避免只剩最终配对错误。
+        diagnostics.log('warn', 'connection-stream-lost', { message: event.reason })
         void disposeAccountLifecycleHost()
         invalidateCurrentWorkspaceSessionDetails()
         detachSessionAdapters()

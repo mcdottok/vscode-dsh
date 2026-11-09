@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+import { WebSocketServer } from 'ws'
+import type { BackendEndpoint } from '@dsh-vscode/domain'
+import { FakeWebSocket } from './support/fake-web-socket.js'
 
 import type { DshTransport } from '../src/contracts.js'
 import { VersionedBackendProbe } from '../src/probe.js'
@@ -30,12 +33,47 @@ function adapter(fetch: typeof globalThis.fetch): Alpha5VersionAdapter {
   })
 }
 
+async function confirmLegacyControl(): Promise<FakeWebSocket> {
+  await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1))
+  const socket = FakeWebSocket.instances[0]
+  if (socket === undefined) throw new Error('Compatibility socket was not created')
+  socket.open()
+  await vi.waitFor(() => expect(socket.sent).toHaveLength(1))
+  const frame = JSON.parse(socket.sent[0] ?? '{}') as { streamId: string; endpoint: string }
+  expect(frame.endpoint).toBe('session/control')
+  // dsh-v0.1.2-alpha.5 / db6bdc3576c2d4e7c965e8e3ed0c2a731eed87f5:
+  // packages/api/session-controller/src/types.ts SessionControlBaseline.
+  socket.message({
+    type: 'item',
+    streamId: frame.streamId,
+    value: { type: 'baseline', value: { queues: {}, jobs: {}, projections: {} } },
+  })
+  return socket
+}
+
+function compatibilityAdapter(fetch: typeof globalThis.fetch): Alpha5VersionAdapter {
+  return new Alpha5VersionAdapter({
+    requestTimeoutMs: 1000,
+    retryPolicy: { maximumAttempts: 1, baseDelayMs: 1, maximumDelayMs: 1 },
+    fetch,
+    webSocket: FakeWebSocket,
+  })
+}
+
 describe('DSH 0.1.2-alpha.5 Connection/Gateway contract', () => {
   it('uses alpha.5 as the newest verified implementation for an unknown future runtime', async () => {
     const fetch = vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
       Promise.resolve(response(init, { ok: true, value: { items: [] } })),
     )
-    const connected = await new VersionedBackendProbe([adapter(fetch)]).probe(candidate('0.1.2-alpha.6'))
+    FakeWebSocket.instances.length = 0
+    const probing = new VersionedBackendProbe([compatibilityAdapter(fetch)]).probe(candidate('0.1.2-alpha.6'))
+    const socket = await confirmLegacyControl()
+    const connected = await probing
+    expect(socket.closeCalls).toBe(1)
+    expect(socket.sent.map((entry) => (JSON.parse(entry) as { type: string }).type)).toEqual([
+      'open',
+      'cancel',
+    ])
 
     expect(connected).toMatchObject({
       ownership: 'external',
@@ -55,11 +93,15 @@ describe('DSH 0.1.2-alpha.5 Connection/Gateway contract', () => {
     const fetch = vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
       Promise.resolve(response(init, { ok: true, value: { items: [] } })),
     )
-    const connected = await new VersionedBackendProbe([adapter(fetch)]).probe({
+    FakeWebSocket.instances.length = 0
+    const probing = new VersionedBackendProbe([compatibilityAdapter(fetch)]).probe({
       endpoint,
       source: 'configured',
       confidence: 120,
     })
+    const socket = await confirmLegacyControl()
+    const connected = await probing
+    expect(socket.closeCalls).toBe(1)
 
     expect(connected).toMatchObject({
       ownership: 'external',
@@ -256,6 +298,144 @@ describe('DSH 0.1.2-alpha.5 Connection/Gateway contract', () => {
     await expect(pending).rejects.toMatchObject({ code: 'REQUEST_CANCELLED' })
     expect(observedSignal?.aborted).toBe(true)
   })
+})
+
+type ControlProbeMode = 'valid' | 'invalid' | 'end-before-baseline' | 'permission' | 'timeout' | 'abort'
+
+async function controlHost(
+  mode: ControlProbeMode,
+  onOpen?: () => void,
+): Promise<{
+  readonly endpoint: BackendEndpoint
+  readonly opened: Promise<void>
+  readonly frames: ReadonlyArray<{ readonly type: string; readonly endpoint?: string }>
+  readonly connections: () => number
+  readonly close: () => Promise<void>
+}> {
+  const server = new WebSocketServer({ host: '127.0.0.1', port: 0 })
+  const frames: Array<{ type: string; endpoint?: string }> = []
+  let resolveOpen: () => void = () => undefined
+  const opened = new Promise<void>((resolve) => {
+    resolveOpen = resolve
+  })
+  server.on('connection', (socket) => {
+    socket.on('message', (raw) => {
+      const bytes = Array.isArray(raw)
+        ? Buffer.concat(raw)
+        : raw instanceof ArrayBuffer
+          ? Buffer.from(raw)
+          : raw
+      const frame = JSON.parse(bytes.toString('utf8')) as {
+        type: string
+        endpoint?: string
+        streamId: string
+      }
+      frames.push(frame)
+      if (frame.type !== 'open') return
+      resolveOpen()
+      onOpen?.()
+      if (mode === 'timeout' || mode === 'abort') return
+      const reply =
+        mode === 'permission'
+          ? {
+              type: 'error',
+              streamId: frame.streamId,
+              error: { code: 'credential/rejected', message: 'fixture denied', details: {} },
+            }
+          : mode === 'end-before-baseline'
+            ? { type: 'end', streamId: frame.streamId }
+            : {
+                type: 'item',
+                streamId: frame.streamId,
+                value:
+                  mode === 'invalid'
+                    ? { type: 'baseline', value: { projections: {} } }
+                    : { type: 'baseline', value: { queues: {}, jobs: {}, projections: {} } },
+              }
+      socket.send(JSON.stringify(reply))
+    })
+  })
+  await new Promise<void>((resolve, reject) => {
+    server.once('listening', resolve)
+    server.once('error', reject)
+  })
+  const address = server.address()
+  if (typeof address !== 'object' || address === null) throw new Error('Missing fixture listener')
+  return {
+    endpoint: { host: '127.0.0.1', port: address.port, baseUrl: `http://127.0.0.1:${String(address.port)}` },
+    opened,
+    frames,
+    connections: () => server.clients.size,
+    close: () => {
+      for (const socket of server.clients) socket.terminate()
+      return new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      )
+    },
+  }
+}
+
+describe('alpha5 compatibility control over a real socket', () => {
+  it.each(['valid', 'invalid', 'end-before-baseline', 'timeout'] as const)(
+    'checks %s control baselines and releases its loopback socket',
+    async (mode): Promise<void> => {
+      const host = await controlHost(mode)
+      try {
+        const fetch = vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
+          Promise.resolve(response(init, { ok: true, value: { items: [] } })),
+        )
+        const subject = new Alpha5VersionAdapter({
+          requestTimeoutMs: mode === 'timeout' ? 100 : 5000,
+          retryPolicy: { maximumAttempts: 1, baseDelayMs: 1, maximumDelayMs: 1 },
+          fetch,
+        })
+        const result = await subject.probeCompatibility({
+          endpoint: host.endpoint,
+          source: 'configured',
+          confidence: 1,
+        })
+        if (mode === 'valid') expect(result).toMatchObject({ adapterId: 'dsh-0.1.2-alpha.5' })
+        else expect(result).toBeUndefined()
+        expect(host.frames[0]).toMatchObject({ type: 'open', endpoint: 'session/control' })
+        await vi.waitFor(() => expect(host.connections()).toBe(0))
+        if (mode !== 'end-before-baseline')
+          expect(host.frames).toContainEqual(expect.objectContaining({ type: 'cancel' }))
+      } finally {
+        await host.close()
+      }
+    },
+  )
+
+  it.each(['permission', 'abort'] as const)(
+    'propagates %s and releases its loopback socket',
+    async (mode): Promise<void> => {
+      const controller = new AbortController()
+      const host = await controlHost(mode, mode === 'abort' ? () => controller.abort() : undefined)
+      try {
+        const fetch = vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
+          Promise.resolve(response(init, { ok: true, value: { items: [] } })),
+        )
+        const subject = new Alpha5VersionAdapter({
+          requestTimeoutMs: 5000,
+          retryPolicy: { maximumAttempts: 1, baseDelayMs: 1, maximumDelayMs: 1 },
+          fetch,
+        })
+        const pending = subject.probeCompatibility(
+          { endpoint: host.endpoint, source: 'configured', confidence: 1 },
+          controller.signal,
+        )
+        const rejected = expect(pending).rejects.toMatchObject(
+          mode === 'permission' ? { code: 'PERMISSION_DENIED' } : { name: 'AbortError' },
+        )
+        await host.opened
+        await rejected
+        await vi.waitFor(() => expect(host.connections()).toBe(0))
+        if (mode === 'abort') expect(host.frames).toContainEqual(expect.objectContaining({ type: 'cancel' }))
+      } finally {
+        await host.close()
+      }
+    },
+  )
 })
 
 function versionedTransport(adapter: Alpha5VersionAdapter): DshTransport {
