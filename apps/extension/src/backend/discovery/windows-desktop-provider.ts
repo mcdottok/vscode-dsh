@@ -8,13 +8,41 @@ import { readAsarManifest } from './asar-manifest.js'
 type RunCommand = (executable: string, args: readonly string[], signal?: AbortSignal) => Promise<string>
 type ReadManifest = (file: string) => Promise<string>
 
-const PROCESS_ARGS = [
-  '-NoLogo',
-  '-NoProfile',
-  '-NonInteractive',
-  '-Command',
-  "@(Get-Process -Name 'DSH Desktop','DeepSeek Harness' -ErrorAction SilentlyContinue | ForEach-Object { [pscustomobject]@{ Id=$_.Id; Path=$_.Path } }) | ConvertTo-Json -Compress",
-] as const
+export interface DesktopDiscoveryDiagnostic {
+  readonly phase: 'process-query' | 'manifest-read' | 'identity-check' | 'complete'
+  readonly status: 'failed' | 'rejected' | 'succeeded'
+  readonly code?: string
+  readonly count?: number
+}
+
+type ObserveDiscovery = (diagnostic: DesktopDiscoveryDiagnostic) => void
+
+const PROCESS_SCRIPT = `
+$ErrorActionPreference='Stop'
+Add-Type -TypeDefinition @'
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+public static class DesktopImagePath {
+  [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
+  [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool QueryFullProcessImageName(IntPtr process, uint flags, StringBuilder path, ref int length);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr process);
+  public static string Read(int pid) {
+    IntPtr process=OpenProcess(0x1000, false, pid);
+    if(process==IntPtr.Zero) return null;
+    try {
+      var path=new StringBuilder(4096); int length=path.Capacity;
+      return QueryFullProcessImageName(process, 0, path, ref length) ? path.ToString() : null;
+    } finally { CloseHandle(process); }
+  }
+}
+'@
+@(Get-Process -Name 'DSH Desktop','DeepSeek Harness' -ErrorAction SilentlyContinue | ForEach-Object {
+  [pscustomobject]@{ Id=$_.Id; Path=[DesktopImagePath]::Read($_.Id) }
+}) | ConvertTo-Json -Compress
+`
+
+const PROCESS_ARGS = ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', PROCESS_SCRIPT] as const
 
 /** Packaged Electron hosts do not run `dsh web`; discover their verified loopback listeners. */
 export class WindowsDesktopDiscoveryProvider implements DiscoveryProvider {
@@ -26,6 +54,7 @@ export class WindowsDesktopDiscoveryProvider implements DiscoveryProvider {
     private readonly readManifest: ReadManifest = readDshPackageManifest,
     private readonly platform: NodeJS.Platform = process.platform,
     private readonly readArchiveManifest: typeof readAsarManifest = readAsarManifest,
+    private readonly observe?: ObserveDiscovery,
   ) {}
 
   public async discover(signal?: AbortSignal): Promise<readonly BackendCandidate[]> {
@@ -68,8 +97,10 @@ export class WindowsDesktopDiscoveryProvider implements DiscoveryProvider {
             !isPackage(core, '@deepseek-ai/dsh') ||
             !isDshPackageVersion(core.version) ||
             (official && desktop.version !== core.version)
-          )
+          ) {
+            this.observe?.({ phase: 'identity-check', status: 'rejected' })
             continue
+          }
           for (const listener of ownedListeners) {
             candidates.push({
               endpoint: {
@@ -85,14 +116,17 @@ export class WindowsDesktopDiscoveryProvider implements DiscoveryProvider {
               confidence: 90,
             })
           }
-        } catch {
-          // A disappearing process, missing package or malformed manifest is not runtime identity.
+        } catch (error) {
+          if (isDiscoveryCancellation(error, signal)) throw discoveryCancelled(signal?.reason ?? error)
+          this.observe?.({ phase: 'manifest-read', status: 'failed', code: discoveryFailureCode(error) })
         }
       }
       signal?.throwIfAborted()
+      this.observe?.({ phase: 'complete', status: 'succeeded', count: candidates.length })
       return candidates
     } catch (error) {
       if (isDiscoveryCancellation(error, signal)) throw discoveryCancelled(signal?.reason ?? error)
+      this.observe?.({ phase: 'process-query', status: 'failed', code: discoveryFailureCode(error) })
       return []
     }
   }
@@ -109,6 +143,21 @@ export class WindowsDesktopDiscoveryProvider implements DiscoveryProvider {
     if (wanted.size === 0) return []
     return (await this.discover(signal)).filter((candidate) => wanted.has(candidate.endpoint.port))
   }
+}
+
+function discoveryFailureCode(error: unknown): string {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    typeof error.code === 'string' &&
+    ['EPERM', 'EACCES', 'ENOENT', 'EISDIR', 'ENOTDIR', 'ERR_INVALID_ARG_VALUE'].includes(error.code)
+  )
+    return error.code
+  if (error instanceof SyntaxError) return 'INVALID_JSON'
+  if (typeof error === 'object' && error !== null && 'killed' in error && error.killed === true)
+    return 'TIMEOUT'
+  return 'UNAVAILABLE'
 }
 
 function isProcess(value: unknown): value is { Id: number; Path: string } {

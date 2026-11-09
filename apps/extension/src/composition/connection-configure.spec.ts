@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as vscode from 'vscode'
 import { AppError } from '@dsh-vscode/domain'
+import { DesktopPairingError } from '../backend/desktop-pairing.js'
 
 vi.mock('vscode', () => ({
   workspace: {
@@ -157,6 +158,25 @@ describe('connection.configure reconnect', () => {
     await lifecycle().configureConnection('desktop', 'http://127.0.0.1:43120/?token=fixture-only')
     expect(harness.configuration.connection.runtimeVersion).toBe('0.2.1-rc.2')
     await lifecycle().configureConnection('desktop', 'http://127.0.0.1:43121/?token=fixture-only')
+    expect(harness.configuration.connection.runtimeVersion).toBe('')
+  })
+
+  it('keeps a same-origin version when the pasted Desktop command supplies no discovered version', async () => {
+    harness.configuration.connection.mode = 'custom'
+    harness.configuration.connection.serverUrl = 'http://127.0.0.1:43120'
+    harness.configuration.connection.runtimeVersion = '0.2.2-rc.1'
+    const subject = lifecycle()
+    await subject.configureConnection('custom', 'http://127.0.0.1:43120', undefined, {
+      launchToken: 'fixture-only',
+      runtimeVersion: '',
+    })
+    expect(harness.configuration.connection.runtimeVersion).toBe('0.2.2-rc.1')
+    expect(harness.connects.at(-1)).toMatchObject({ runtimeVersion: '0.2.2-rc.1' })
+
+    await subject.configureConnection('custom', 'http://127.0.0.1:43121', undefined, {
+      launchToken: 'fixture-new',
+      runtimeVersion: '',
+    })
     expect(harness.configuration.connection.runtimeVersion).toBe('')
   })
 
@@ -461,6 +481,10 @@ describe('connection.configure reconnect', () => {
     resolve: ReturnType<typeof vi.fn<() => Promise<string>>>
     savePair: ReturnType<typeof vi.fn<(origin: string) => Promise<void>>>
     recovery: ReturnType<typeof vi.fn>
+    savedAuthorization: ReturnType<
+      typeof vi.fn<(endpoint: { readonly baseUrl: string }, signal?: AbortSignal) => Promise<boolean>>
+    >
+    log: ReturnType<typeof vi.fn>
   } {
     const global = new Map<string, unknown>()
     const workspace = new Map<string, unknown>()
@@ -490,6 +514,10 @@ describe('connection.configure reconnect', () => {
       return Promise.resolve()
     })
     const recovery = vi.fn()
+    const log = vi.fn()
+    const savedAuthorization = vi
+      .fn<(endpoint: { readonly baseUrl: string }, signal?: AbortSignal) => Promise<boolean>>()
+      .mockResolvedValue(true)
     const connect = vi.fn((request: unknown) => {
       harness.connects.push(request as never)
       return Promise.resolve({
@@ -505,6 +533,7 @@ describe('connection.configure reconnect', () => {
       discoverAutomaticDesktop: discover,
       discoverDesktopVersion: harness.desktopVersion,
       onDesktopRecoveryState: recovery,
+      diagnostics: { log },
       desktopPairing: {
         has: (origin: string) => Promise.resolve(origin === pairedOrigin),
         keyFor: (origin: string) => Promise.resolve(origin === pairedOrigin ? 'K'.repeat(43) : undefined),
@@ -514,6 +543,7 @@ describe('connection.configure reconnect', () => {
       },
       externalConnection: {
         authorizePairedDesktop: authorizePaired,
+        hasSavedAuthorization: savedAuthorization,
         clearAll,
         authorize,
         release: () => Promise.resolve(),
@@ -544,6 +574,8 @@ describe('connection.configure reconnect', () => {
       resolve,
       savePair,
       recovery,
+      savedAuthorization,
+      log,
     }
   }
 
@@ -799,6 +831,106 @@ describe('connection.configure reconnect', () => {
     )
     expect(f.discover).not.toHaveBeenCalled()
     expect(f.authorize).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    'PIPE_REFUSED',
+    'PIPE_ACCESS_DENIED',
+    'PIPE_OPERATION_DENIED',
+    'PIPE_NOT_FOUND',
+    'PIPE_TIMEOUT',
+  ] as const)(
+    'uses only the saved authorized configured origin after %s without new enrollment',
+    async (code): Promise<void> => {
+      const f = automaticFixture()
+      await f.subject.connect()
+      f.discover.mockClear()
+      f.authorizePaired.mockClear()
+      f.resolve.mockRejectedValueOnce(new DesktopPairingError(code))
+      await f.subject.reconnect()
+      expect(f.savedAuthorization).toHaveBeenCalledWith(
+        expect.objectContaining({ baseUrl: 'http://127.0.0.1:43120' }),
+        expect.any(AbortSignal),
+      )
+      expect(f.connect).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          endpoint: { baseUrl: 'http://127.0.0.1:43120', host: '127.0.0.1', port: 43120 },
+        }),
+        expect.any(AbortSignal),
+      )
+      expect(f.discover).not.toHaveBeenCalled()
+      expect(f.authorizePaired).not.toHaveBeenCalled()
+      expect(f.clearPair).not.toHaveBeenCalled()
+      expect(f.log).toHaveBeenCalledWith('info', 'desktop-preparation', {
+        phase: 'pairing-resolve',
+        attempt: 1,
+        status: 'configured-fallback',
+        code,
+      })
+      expect(JSON.stringify(f.log.mock.calls)).not.toContain('fixture-auto')
+      expect(JSON.stringify(f.log.mock.calls)).not.toContain('127.0.0.1')
+    },
+  )
+
+  it('does not fall back after an invalid encrypted pairing response', async (): Promise<void> => {
+    const f = automaticFixture()
+    await f.subject.connect()
+    f.connect.mockClear()
+    f.resolve.mockRejectedValueOnce(new DesktopPairingError('INVALID_PAIRING_RESPONSE'))
+    await expect(f.subject.connect()).rejects.toMatchObject({ code: 'PROTOCOL_ERROR' })
+    expect(f.savedAuthorization).not.toHaveBeenCalled()
+    expect(f.connect).not.toHaveBeenCalled()
+  })
+
+  it('does not use configured fallback without saved same-origin approval', async (): Promise<void> => {
+    const f = automaticFixture()
+    await f.subject.connect()
+    f.connect.mockClear()
+    f.savedAuthorization.mockResolvedValue(false)
+    f.resolve.mockRejectedValueOnce(new DesktopPairingError('PIPE_REFUSED'))
+    f.discover.mockResolvedValue(undefined)
+    const abort = new AbortController()
+    const pending = f.subject.connect(abort.signal)
+    const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.waitFor(() => expect(f.savedAuthorization).toHaveBeenCalled())
+    abort.abort()
+    await rejected
+    expect(f.connect).not.toHaveBeenCalled()
+  })
+
+  it.each([new DesktopPairingError('REQUEST_CANCELLED'), new DOMException('Cancelled', 'AbortError')])(
+    'rejects cancelled pairing results instead of falling back to stored credentials',
+    async (error): Promise<void> => {
+      const f = automaticFixture()
+      await f.subject.connect()
+      f.connect.mockClear()
+      f.resolve.mockRejectedValueOnce(error)
+      await expect(f.subject.connect()).rejects.toMatchObject({ name: 'AbortError' })
+      expect(f.savedAuthorization).not.toHaveBeenCalled()
+      expect(f.connect).not.toHaveBeenCalled()
+    },
+  )
+
+  it('does not use an old configured fallback when selection changes during the approval read', async (): Promise<void> => {
+    const f = automaticFixture()
+    await f.subject.connect()
+    f.connect.mockClear()
+    f.resolve.mockRejectedValueOnce(new DesktopPairingError('PIPE_REFUSED'))
+    const approval = deferred<boolean>()
+    f.savedAuthorization.mockReturnValueOnce(approval.promise)
+    const original = f.subject.connect()
+    const rejected = expect(original).rejects.toMatchObject({ name: 'AbortError' })
+    await vi.waitFor(() => expect(f.savedAuthorization).toHaveBeenCalled())
+    await f.subject.configureConnection('custom', 'http://127.0.0.1:43121')
+    approval.resolve(true)
+    await rejected
+    expect(f.connect).toHaveBeenCalledTimes(1)
+    expect(f.connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        endpoint: { baseUrl: 'http://127.0.0.1:43121', host: '127.0.0.1', port: 43121 },
+      }),
+      expect.anything(),
+    )
   })
 
   it('re-discovers only the original pairing identity when its IPC is temporarily unavailable', async () => {

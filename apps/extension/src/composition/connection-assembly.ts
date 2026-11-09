@@ -1,6 +1,10 @@
 import { parseDesktopLaunchUrl } from '../vscode/connect-desktop.js'
 import { resetConnectionSettings } from '../config/reset-connection-settings.js'
-import { DesktopPairingError, type DesktopPairing } from '../backend/desktop-pairing.js'
+import {
+  DesktopPairingError,
+  isPairingTransportFailure,
+  type DesktopPairing,
+} from '../backend/desktop-pairing.js'
 import { canRecoverDesktop, withDesktopRecovery } from '../backend/desktop-recovery.js'
 import {
   allowsAutomaticDesktop,
@@ -187,7 +191,9 @@ export function createRuntimeAssembly(deps: RuntimeAssemblyDependencies): Runtim
     new DefaultPortDiscoveryProvider(),
     new CompanionRegistryDiscoveryProvider(),
     new WindowsProcessDiscoveryProvider(),
-    new WindowsDesktopDiscoveryProvider(),
+    new WindowsDesktopDiscoveryProvider(undefined, undefined, undefined, undefined, (entry) =>
+      diagnostics.log('info', 'desktop-discovery', { ...entry }),
+    ),
     new LinuxProcessDiscoveryProvider(),
     new MacOsProcessDiscoveryProvider(),
   ])
@@ -575,6 +581,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
   ): Promise<unknown> => {
     if (resettingConnection) throw new DOMException('Connection reset in progress.', 'AbortError')
     const connectionRevision = resetRevision
+    const selectionRevision = configurationRevision
     automaticConnectionPaused = false
     const current = configuration.read()
     const development = usesDevelopmentRuntime(context)
@@ -630,11 +637,46 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
         )
       } catch (error) {
         signal?.throwIfAborted()
-        throw new AppError({
-          code: 'BACKEND_UNREACHABLE',
-          message: 'The paired Desktop is temporarily unavailable.',
-          retryable: true,
-          cause: error,
+        if (error instanceof Error && error.name === 'AbortError') throw error
+        if (error instanceof DesktopPairingError && error.code === 'REQUEST_CANCELLED')
+          throw new DOMException('Desktop pairing was cancelled.', 'AbortError')
+        if (error instanceof DesktopPairingError && error.code === 'INVALID_PAIRING_RESPONSE')
+          throw new AppError({
+            code: 'PROTOCOL_ERROR',
+            message: 'The paired Desktop returned an invalid authenticated response.',
+            retryable: false,
+            cause: error,
+          })
+        const credentialRevision = externalConnection?.revision
+        const approved =
+          isPairingTransportFailure(error) &&
+          mode === 'custom' &&
+          origin === current.connection.serverUrl &&
+          isLoopbackEndpoint(customEndpoint) &&
+          externalConnection !== undefined &&
+          (await externalConnection.hasSavedAuthorization(customEndpoint, signal))
+        signal?.throwIfAborted()
+        if (
+          connectionRevision !== resetRevision ||
+          selectionRevision !== configurationRevision ||
+          credentialRevision !== externalConnection?.revision ||
+          configuration.read().connection.mode !== mode ||
+          configuration.read().connection.serverUrl !== origin
+        )
+          throw new DOMException('Connection selection changed.', 'AbortError')
+        if (!approved)
+          throw new AppError({
+            code: 'BACKEND_UNREACHABLE',
+            message: 'The paired Desktop is temporarily unavailable.',
+            retryable: true,
+            cause: error,
+          })
+        // 仅复用同 origin 的批准记录；正常 coordinator 仍负责验证 Cookie/token 和宿主身份。
+        diagnostics?.log('info', 'desktop-preparation', {
+          phase: 'pairing-resolve',
+          ...(attempt === undefined ? {} : { attempt }),
+          status: 'configured-fallback',
+          code: desktopPreparationErrorCode(error, signal),
         })
       }
       signal?.throwIfAborted()
@@ -1154,16 +1196,18 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
           message: 'Enter an HTTP(S) endpoint such as http://127.0.0.1:3080.',
           retryable: false,
         })
+      const saved = configuration.read().connection
+      const desktopVersion =
+        desktop?.runtimeVersion.trim() ||
+        (saved.serverUrl === normalized ? saved.runtimeVersion : undefined) ||
+        ''
       writes = [
         // Write the endpoint before switching modes so the configuration is
         // never observed in a transient custom-without-endpoint state.
         ['connection.serverUrl', normalized],
         ...(desktop === undefined
           ? []
-          : [
-              ['connection.runtimeVersion', desktop.runtimeVersion] as const,
-              ['runtime.autoStart', false] as const,
-            ]),
+          : [['connection.runtimeVersion', desktopVersion] as const, ['runtime.autoStart', false] as const]),
         ['connection.mode', mode],
       ]
     } else {

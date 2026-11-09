@@ -12,11 +12,11 @@ const listeners = [
 ].join('\n')
 
 function fixture(options: { processes?: string; badManifest?: boolean; platform?: NodeJS.Platform } = {}): {
-  command: Mock<(name: string) => Promise<string>>
+  command: Mock<(name: string, args: readonly string[], signal?: AbortSignal) => Promise<string>>
   manifest: Mock<(file: string) => Promise<string>>
   provider: WindowsDesktopDiscoveryProvider
 } {
-  const command = vi.fn((name: string) =>
+  const command = vi.fn((name: string, _args: readonly string[], _signal?: AbortSignal) =>
     Promise.resolve(name === 'netstat.exe' ? listeners : (options.processes ?? processOutput)),
   )
   const manifest = vi.fn((file: string) =>
@@ -41,7 +41,7 @@ function fixture(options: { processes?: string; badManifest?: boolean; platform?
 describe('packaged Windows Desktop discovery', () => {
   it('reads official Electron identity from its packed manifests and requires matching versions', async () => {
     const image = 'C:\\Apps\\Harness\\DeepSeek Harness.exe'
-    const command = vi.fn((name: string) =>
+    const command = vi.fn((name: string, _args: readonly string[], _signal?: AbortSignal) =>
       Promise.resolve(name === 'netstat.exe' ? listeners : JSON.stringify([{ Id: 42, Path: image }])),
     )
     const archive = vi.fn((_file: string, member: string) =>
@@ -88,6 +88,9 @@ describe('packaged Windows Desktop discovery', () => {
       },
     ])
     expect(f.manifest).toHaveBeenCalledTimes(2)
+    const processScript = f.command.mock.calls.find((call) => call[0] === 'powershell.exe')?.[1]
+    expect(JSON.stringify(processScript)).toContain('OpenProcess(0x1000')
+    expect(JSON.stringify(processScript)).toContain('QueryFullProcessImageName')
     await expect(
       f.provider.discoverEndpoints([{ host: 'localhost', port: 43122, baseUrl: 'http://localhost:43122' }]),
     ).resolves.toEqual([])
@@ -100,6 +103,17 @@ describe('packaged Windows Desktop discovery', () => {
     { badManifest: true },
   ])('does not promote malformed or unrelated processes to DSH identity: %j', async (options) => {
     await expect(fixture(options).provider.discover()).resolves.toEqual([])
+  })
+
+  it('reports safe process and archive failures without leaking their original messages', async () => {
+    const observe = vi.fn()
+    const command = vi.fn(() =>
+      Promise.reject(Object.assign(new Error('private user path'), { code: 'EPERM' })),
+    )
+    const provider = new WindowsDesktopDiscoveryProvider(command, undefined, 'win32', undefined, observe)
+    expect(await provider.discover()).toEqual([])
+    expect(observe).toHaveBeenCalledWith({ phase: 'process-query', status: 'failed', code: 'EPERM' })
+    expect(JSON.stringify(observe.mock.calls)).not.toContain('private user path')
   })
 
   it('treats unavailable OS queries as optional but propagates cancellation', async () => {
