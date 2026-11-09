@@ -5,20 +5,60 @@ import {
   ProjectionBaselineReceiver,
   projectionBaselinePartSchema,
   type HostMessage,
+  type ProjectionBaseline,
+  type ProjectionBaselinePart,
 } from '@dsh-vscode/webview-protocol'
+import type { WebviewSurface } from '../view/webview-surface.js'
+import { WebviewSurfaceRegistry } from '../view/webview-surface-registry.js'
 import { createHostEventPipeline, type HostEventPipelineDependencies } from './host-event-pipeline.js'
 
 vi.mock('vscode', () => ({ commands: { executeCommand: () => Promise.resolve() } }))
 
-it('posts every large baseline part through the real Host schema before a later delta', async () => {
-  const posted: HostMessage[] = []
+it('restarts a missed baseline only for the affected surface before delivering the next delta', async () => {
+  const surfaces = new WebviewSurfaceRegistry()
+  const sidebar: HostMessage[] = []
+  const editor: HostMessage[] = []
+  let dropped = false
+  const register = (
+    surfaceId: string,
+    kind: WebviewSurface['kind'],
+    postMessage: WebviewSurface['postMessage'],
+  ): void => {
+    surfaces.register({
+      surfaceId,
+      kind,
+      sessionId: undefined,
+      isReady: true,
+      visible: true,
+      postMessage,
+      waitUntilReady: () => Promise.resolve(true),
+      reveal: () => Promise.resolve(),
+      dispose: () => undefined,
+    })
+  }
+  register('sidebar', 'sidebar', (raw) => {
+    const message = hostMessageSchema.parse(raw)
+    if (
+      !dropped &&
+      message.type === 'event' &&
+      message.name === 'session.projection.baseline.part' &&
+      projectionBaselinePartSchema.parse(message.payload).index === 1
+    ) {
+      dropped = true
+      return Promise.resolve(false)
+    }
+    sidebar.push(message)
+    return Promise.resolve(true)
+  })
+  register('editor', 'editor', (raw) => {
+    editor.push(hostMessageSchema.parse(raw))
+    return Promise.resolve(true)
+  })
   const backend = {} as DshBackend
   const pipeline = createHostEventPipeline({
-    post: (message: HostMessage) => {
-      posted.push(hostMessageSchema.parse(message))
-      return Promise.resolve(true)
-    },
-    postTo: () => Promise.resolve(true),
+    surfaces,
+    post: (message: HostMessage) => surfaces.post(message),
+    postTo: (surfaceId: string, message: HostMessage) => surfaces.postTo(surfaceId, message),
     backendService: { requireBackend: () => backend },
     diagnostics: { log: vi.fn() },
     transcript: { accept: () => false, dispose: () => undefined },
@@ -46,16 +86,39 @@ it('posts every large baseline part through the real Host schema before a later 
     })
     expect(await delivered).toBe(true)
     expect(await delta).toBe(true)
-    const receiver = new ProjectionBaselineReceiver()
-    let result: unknown
-    for (const message of posted.slice(0, -1)) {
-      expect(message).toMatchObject({ type: 'event', name: 'session.projection.baseline.part' })
-      if (message.type === 'event')
-        result = receiver.accept(projectionBaselinePartSchema.parse(message.payload))
-    }
-    expect(result).toEqual({ projections })
-    expect(posted.at(-1)).toMatchObject({ name: 'session.projection', payload: { value: 'updated' } })
+    expect(dropped).toBe(true)
+    const editorParts = baselineParts(editor)
+    const sidebarParts = baselineParts(sidebar)
+    expect(editorParts.length).toBeGreaterThan(1)
+    expect(new Set(editorParts.map((part) => part.batchId)).size).toBe(1)
+    expect(sidebarParts).toHaveLength(editorParts.length + 1)
+    expect(sidebarParts[0]).toEqual(editorParts[0])
+    expect(sidebarParts[1]).toMatchObject({ index: 0, total: editorParts.length })
+    expect(sidebarParts[1]?.batchId).not.toBe(sidebarParts[0]?.batchId)
+    expect(completedBaselines(sidebarParts)).toEqual([{ projections }])
+    expect(completedBaselines(editorParts)).toEqual([{ projections }])
+    for (const messages of [sidebar, editor])
+      expect(messages.at(-1)).toMatchObject({ name: 'session.projection', payload: { value: 'updated' } })
   } finally {
     pipeline.dispose()
+    surfaces.dispose()
   }
 })
+
+function baselineParts(messages: readonly HostMessage[]): readonly ProjectionBaselinePart[] {
+  return messages.flatMap((message) =>
+    message.type === 'event' && message.name === 'session.projection.baseline.part'
+      ? [projectionBaselinePartSchema.parse(message.payload)]
+      : [],
+  )
+}
+
+function completedBaselines(parts: readonly ProjectionBaselinePart[]): readonly ProjectionBaseline[] {
+  const receiver = new ProjectionBaselineReceiver()
+  const completed: ProjectionBaseline[] = []
+  for (const part of parts) {
+    const baseline = receiver.accept(part)
+    if (baseline !== undefined) completed.push(baseline)
+  }
+  return completed
+}

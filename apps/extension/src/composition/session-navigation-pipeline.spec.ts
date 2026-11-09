@@ -48,6 +48,7 @@ describe('native session navigation through the Host pipeline', () => {
     const deps: HostEventPipelineDependencies & { onEvent: (name: string, payload: unknown) => void } = {
       post,
       postTo: () => Promise.resolve(true),
+      surfaces: { get: () => undefined, list: () => [] },
       backendService,
       transcript: { accept: () => false, dispose: vi.fn() },
       diagnostics: { log: vi.fn() } as unknown as HostEventPipelineDependencies['diagnostics'],

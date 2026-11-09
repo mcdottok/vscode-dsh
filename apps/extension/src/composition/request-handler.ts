@@ -300,7 +300,14 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
         for (const event of backendService.replayEvents()) {
           signal.throwIfAborted()
           if (surfaceId === undefined) await postEvent(event.type, publicValue(event))
-          else await postEventTo(surfaceId, event.type, publicValue(event))
+          else
+            await postEventTo(
+              surfaceId,
+              event.type,
+              publicValue(event),
+              () =>
+                !signal.aborted && coordinator.getState() === current && surfaces.get(surfaceId) === surface,
+            )
         }
       if (connectionFailure !== undefined) throw connectionFailure.reason
       return { connected: current.kind === 'connected' }

@@ -259,6 +259,7 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
     transcript,
     post,
     postTo,
+    surfaces,
     onEvent: (name, payload) => nativeNavigation.current?.acceptEvent(name, payload),
     backendService,
     diagnostics,

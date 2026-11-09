@@ -44,6 +44,7 @@ function fixture(roots: readonly string[] = []): {
   )
   const pipeline = createHostEventPipeline({
     transcript,
+    surfaces: { get: () => undefined, list: () => [] },
     post: (message: Parameters<HostEventPipelineDependencies['post']>[0]) => {
       posted.push(hostMessageSchema.parse(message))
       return Promise.resolve(true)

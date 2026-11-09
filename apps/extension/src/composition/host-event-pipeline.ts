@@ -20,7 +20,8 @@ import {
 import type { ConnectionStateSource, RedactedDiagnostics } from '../backend/diagnostics.js'
 import type { TemporaryWorkspaceManager } from '../backend/temporary-workspace.js'
 import { sanitizePublicValue } from '../view/public-value.js'
-import type { WebviewDeliveryFailure } from '../view/webview-surface-registry.js'
+import type { WebviewSurface } from '../view/webview-surface.js'
+import type { WebviewDeliveryFailure, WebviewSurfaceRegistry } from '../view/webview-surface-registry.js'
 import { updateContextKeys, updateEditorContextAvailabilityKeys } from '../vscode/context-keys.js'
 import { publicState } from './public-projection.js'
 import { featureContextKinds, type FeatureContextKind } from './editor-files.js'
@@ -71,6 +72,7 @@ export interface HostEventPipelineDependencies {
   readonly transcript: Pick<TranscriptWindowService, 'accept' | 'dispose'>
   readonly post: PostHostMessage
   readonly postTo: PostHostMessageTo
+  readonly surfaces: Pick<WebviewSurfaceRegistry, 'get' | 'list'>
   /** Host consumers must not wait for delivery to a hidden or busy renderer. */
   readonly onEvent?: (name: string, payload: unknown) => void
   readonly backendService: BackendService
@@ -107,6 +109,7 @@ export function createHostEventPipeline(deps: HostEventPipelineDependencies): Ho
   const {
     post,
     postTo,
+    surfaces,
     backendService,
     diagnostics,
     editorContextUseCases,
@@ -239,33 +242,71 @@ export function createHostEventPipeline(deps: HostEventPipelineDependencies): Ho
     128,
     2 * TRANSCRIPT_MAX_CHARS + 512 * 1024,
   )
+  const postProjectionBaseline = async (
+    payload: unknown,
+    surfaceId?: string,
+    isCurrent?: () => boolean,
+  ): Promise<boolean> => {
+    const canDeliver = (surface: WebviewSurface | undefined): surface is WebviewSurface =>
+      surface !== undefined &&
+      surface.isReady &&
+      surfaces.get(surface.surfaceId) === surface &&
+      isCurrent?.() !== false
+    const candidates = surfaceId === undefined ? surfaces.list() : [surfaces.get(surfaceId)]
+    const targets = candidates.filter(canDeliver)
+    if (targets.length === 0) return false
+
+    const nextBatchId = (): string => `baseline-${String(sequence + 1).padStart(16, '0')}`
+    const parts = splitProjectionBaseline(payload, nextBatchId())
+    const postBatch = (recipients: readonly WebviewSurface[]): Promise<boolean[]> => {
+      const batchId = nextBatchId()
+      const messages = parts.map((part, index) => ({
+        type: 'event' as const,
+        name: 'session.projection.baseline.part' as const,
+        sequence: sequence + index + 1,
+        payload: { ...part, batchId },
+      }))
+      // Reserve one sequence range for this attempt across all recipient views.
+      sequence += messages.length
+      return Promise.all(
+        recipients.map(async (surface) => {
+          try {
+            for (const message of messages) {
+              if (!canDeliver(surface) || !(await postTo(surface.surfaceId, message))) return false
+            }
+            return true
+          } catch {
+            return false
+          }
+        }),
+      )
+    }
+
+    diagnostics.log('info', 'session-recovery', {
+      phase: 'projection-baseline-transfer',
+      count: parts.length,
+    })
+    const delivered = await postBatch(targets)
+    const missed = targets.filter((surface, index) => !delivered[index] && canDeliver(surface))
+    if (missed.length === 0) return delivered.some(Boolean)
+
+    // Restart from part zero for the affected views before releasing queued deltas.
+    diagnostics.log('info', 'session-recovery', { phase: 'projection-baseline-retry', count: missed.length })
+    const retried = await postBatch(missed)
+    return delivered.some(Boolean) || retried.some(Boolean)
+  }
   const enqueueEvent = (
     resolve: () => Promise<{ readonly name: string; readonly payload: unknown } | undefined>,
     chars: number,
     surfaceId?: string,
+    isCurrent?: () => boolean,
   ): Promise<boolean> => {
     return eventPostQueue.enqueue(async () => {
+      if (isCurrent?.() === false) return true
       const nextEvent = await resolve()
       if (nextEvent === undefined) return true
-      if (nextEvent.name === 'session.projection.baseline' && !protocolValueWithinBudget(nextEvent.payload)) {
-        const parts = splitProjectionBaseline(nextEvent.payload, `baseline-${sequence + 1}`)
-        diagnostics.log('info', 'session-recovery', {
-          phase: 'projection-baseline-transfer',
-          count: parts.length,
-        })
-        for (const payload of parts) {
-          const message = {
-            type: 'event' as const,
-            name: 'session.projection.baseline.part' as const,
-            sequence: sequence + 1,
-            payload,
-          }
-          const delivered = surfaceId === undefined ? await post(message) : await postTo(surfaceId, message)
-          if (!delivered) return false
-          sequence++
-        }
-        return true
-      }
+      if (nextEvent.name === 'session.projection.baseline' && !protocolValueWithinBudget(nextEvent.payload))
+        return postProjectionBaseline(nextEvent.payload, surfaceId, isCurrent)
       const nextSequence = sequence + 1
       const message = {
         type: 'event' as const,
@@ -286,9 +327,10 @@ export function createHostEventPipeline(deps: HostEventPipelineDependencies): Ho
   }
   const postEventTo: PostSurfaceEvent = (surfaceId, name, payload, isCurrent) =>
     enqueueEvent(
-      () => Promise.resolve(isCurrent?.() === false ? undefined : { name, payload }),
+      () => Promise.resolve({ name, payload }),
       eventPayloadCharacters(payload),
       surfaceId,
+      isCurrent,
     )
   const publicControlEvent = (event: BackendEvent): unknown =>
     sanitizePublicValue(event, undefined, [
@@ -302,22 +344,25 @@ export function createHostEventPipeline(deps: HostEventPipelineDependencies): Ho
     ])
   const postBackendEvent = (backend: DshBackend, event: BackendEvent): Promise<boolean> => {
     // Reject the previous backend before it can mutate the current view.
-    try {
-      if (backendService.requireBackend() !== backend) return Promise.resolve(false)
-    } catch {
-      return Promise.resolve(false)
+    const isCurrent = (): boolean => {
+      try {
+        return backendService.requireBackend() === backend
+      } catch {
+        return false
+      }
     }
+    if (!isCurrent()) return Promise.resolve(false)
     deps.onEvent?.(event.type, event)
     if (deps.transcript.accept(event)) return Promise.resolve(true)
-    return enqueueEvent(() => {
-      try {
-        if (backendService.requireBackend() !== backend) return Promise.resolve(undefined)
-      } catch {
-        return Promise.resolve(undefined)
-      }
-      const payload = publicControlEvent(event)
-      return Promise.resolve(payload === undefined ? undefined : { name: event.type, payload })
-    }, eventPayloadCharacters(event))
+    return enqueueEvent(
+      () => {
+        const payload = publicControlEvent(event)
+        return Promise.resolve(payload === undefined ? undefined : { name: event.type, payload })
+      },
+      eventPayloadCharacters(event),
+      undefined,
+      isCurrent,
+    )
   }
   runtimeUpdateProgress.current = (progress) => {
     void postEvent('runtime.update.progress', progress)
