@@ -93,7 +93,19 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
     if (legacy.success) return hostEnvelopeSchema.parse({ protocolVersion: 1, message: legacy.data })
     const feature = featureHostMessageSchema.safeParse(message)
     if (feature.success) return featureHostEnvelopeSchema.parse({ protocolVersion: 1, message: feature.data })
-    diagnostics.log('warn', 'host-message-rejected', { code: 'PROTOCOL_ERROR' })
+    diagnostics.log('warn', 'host-message-rejected', {
+      code: 'PROTOCOL_ERROR',
+      requestType: message.type,
+      method: message.type === 'event' ? message.name : undefined,
+      detail: legacy.error.issues
+        .slice(0, 3)
+        .map((issue) => ({
+          code: issue.code,
+          path: issue.path.map((key) => (typeof key === 'number' ? '*' : key)).join('.'),
+        }))
+        .map((issue) => `${issue.code}:${issue.path}`)
+        .join('; '),
+    })
     return undefined
   }
   const post = (message: HostMessage | FeatureHostMessage): Thenable<boolean> => {

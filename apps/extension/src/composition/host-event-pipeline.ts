@@ -11,6 +11,8 @@ import type {
 import type { BackendService, EditorContextUseCases } from '@dsh-vscode/application'
 import {
   TRANSCRIPT_MAX_CHARS,
+  protocolValueWithinBudget,
+  splitProjectionBaseline,
   type FeatureHostEvent,
   type FeatureHostMessage,
   type HostMessage,
@@ -245,6 +247,25 @@ export function createHostEventPipeline(deps: HostEventPipelineDependencies): Ho
     return eventPostQueue.enqueue(async () => {
       const nextEvent = await resolve()
       if (nextEvent === undefined) return true
+      if (nextEvent.name === 'session.projection.baseline' && !protocolValueWithinBudget(nextEvent.payload)) {
+        const parts = splitProjectionBaseline(nextEvent.payload, `baseline-${sequence + 1}`)
+        diagnostics.log('info', 'session-recovery', {
+          phase: 'projection-baseline-transfer',
+          count: parts.length,
+        })
+        for (const payload of parts) {
+          const message = {
+            type: 'event' as const,
+            name: 'session.projection.baseline.part' as const,
+            sequence: sequence + 1,
+            payload,
+          }
+          const delivered = surfaceId === undefined ? await post(message) : await postTo(surfaceId, message)
+          if (!delivered) return false
+          sequence++
+        }
+        return true
+      }
       const nextSequence = sequence + 1
       const message = {
         type: 'event' as const,

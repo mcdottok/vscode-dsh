@@ -22,6 +22,8 @@
 - 调整 Webview 资源策略，允许加载扩展随包提供的动态模块。
 - 兼容本机 Desktop 在返回 HTTP 401 时同时下发有效会话 Cookie 的授权流程，并为旧版 WebSocket 事件流传递同源会话 Cookie。
 - 为构建编辑器配套组件的脚本增加 pnpm 入口回退。感谢 [LittleFishStars](https://github.com/LittleFishStars) 的 [PR #3](https://github.com/mcdottok/vscode-dsh/pull/3)。
+- 修复会话状态全量基线因协议载荷超限被拒绝的问题：按有界批次传输，界面收齐后原子替换，连接切换丢弃未完成批次。
+- 本地 Output 的协议拒绝诊断记录事件名称与字段路径摘要，不输出 payload 正文。
 
 ## 0.1.85 — 连接诊断与会话体验优化
 
