@@ -307,6 +307,7 @@ export const SessionControls = memo(function SessionControls(props: SessionContr
   const modeMenu = (
     <SelectMenu
       className="dsh-session-controls__mode"
+      align="start"
       icon={modeIcon(props.configuration.preset, modeLabel)}
       displayLabel
       label={modeLabel}

@@ -204,3 +204,12 @@
   min-width: min(14rem, calc(100vw - var(--dsh-space-4)));
   max-width: min(32rem, calc(100vw - var(--dsh-space-4)));
 }
+
+.dsh-unified-composer
+  > .dsh-composer__toolbar
+  > .dsh-composer__toolbar-controls
+  .dsh-session-controls__mode
+  > .dsh-select-menu__menu {
+  width: min(11rem, calc(100vw - var(--dsh-space-4)));
+  min-width: 0;
+}
