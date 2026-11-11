@@ -544,28 +544,31 @@ export function useComposerAttachments(deps: ComposerAttachmentDependencies): Co
         false,
       )
       setOpenFilePickerOpen(false)
-    })().catch((reason: unknown) => {
-      if (Boolean(signal?.aborted) || (reason instanceof DOMException && reason.name === 'AbortError')) return
-      if (!mountedRef.current) return
-      if (awaitingVisibility) {
-        setSubmitError(t('app.error.promptTimeout'))
-        return
-      }
-      // One Session has one writer across DSH instances. Name that condition
-      // instead of forwarding the Host's generic busy text, and keep the
-      // slower hint on every other failure: the user otherwise only sees a
-      // draft that will not leave the composer.
-      if (publicProtocolErrorCode(reason) === 'SESSION_WRITER_HELD')
-        setSubmitError(t('app.error.sessionWriterHeld'))
-      else
-        setSubmitError(
-          `${publicProtocolErrorMessage(reason) ?? t('app.error.prompt')} ${t('app.error.promptOccupiedHint')}`,
-        )
-    }).finally(() => {
-      stopHandoffWatch?.()
-      if (handoff !== undefined && mountedRef.current)
-        setFirstPromptHandoff((current) => (current === handoff ? undefined : current))
-    })
+    })()
+      .catch((reason: unknown) => {
+        if (Boolean(signal?.aborted) || (reason instanceof DOMException && reason.name === 'AbortError'))
+          return
+        if (!mountedRef.current) return
+        if (awaitingVisibility) {
+          setSubmitError(t('app.error.promptTimeout'))
+          return
+        }
+        // One Session has one writer across DSH instances. Name that condition
+        // instead of forwarding the Host's generic busy text, and keep the
+        // slower hint on every other failure: the user otherwise only sees a
+        // draft that will not leave the composer.
+        if (publicProtocolErrorCode(reason) === 'SESSION_WRITER_HELD')
+          setSubmitError(t('app.error.sessionWriterHeld'))
+        else
+          setSubmitError(
+            `${publicProtocolErrorMessage(reason) ?? t('app.error.prompt')} ${t('app.error.promptOccupiedHint')}`,
+          )
+      })
+      .finally(() => {
+        stopHandoffWatch?.()
+        if (handoff !== undefined && mountedRef.current)
+          setFirstPromptHandoff((current) => (current === handoff ? undefined : current))
+      })
   }
   /**
    * Loads the open-file snapshot that both the composer menu row and the

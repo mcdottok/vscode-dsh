@@ -185,12 +185,15 @@ export const Composer = memo(function Composer(props: ComposerProps): ReactEleme
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const hintId = useId()
   const pendingCursorRef = useRef<number | undefined>(undefined)
-  const promptRecall = useRef<{
-    readonly scope: string | undefined
-    readonly prompts: readonly string[]
-    readonly original: string
-    index: number
-  } | undefined>(undefined)
+  const promptRecall = useRef<
+    | {
+        readonly scope: string | undefined
+        readonly prompts: readonly string[]
+        readonly original: string
+        index: number
+      }
+    | undefined
+  >(undefined)
   const { restoreDraft } = useDraftHistory(props.draft, props.onDraftChange)
   const { railRef: attachmentRailRef, scrollable: attachmentRailScrollable } =
     useOverflowRail<HTMLUListElement>(props.attachments.length)

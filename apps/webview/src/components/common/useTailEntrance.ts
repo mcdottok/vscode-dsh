@@ -55,7 +55,13 @@ function tailEntranceReducer(state: TailEntranceState, action: TailEntranceActio
     }
   }
   if (!state.primed)
-    return { ...state, tailId: action.tailId, primed: true, suppressed: action.suppress, enteredId: undefined }
+    return {
+      ...state,
+      tailId: action.tailId,
+      primed: true,
+      suppressed: action.suppress,
+      enteredId: undefined,
+    }
   // A terminal snapshot can replace the live tail ID. The reply is already on
   // screen, so treat that first settled snapshot as the baseline.
   if (action.tailId === undefined || action.suppress || state.suppressed)

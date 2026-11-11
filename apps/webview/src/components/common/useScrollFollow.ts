@@ -194,34 +194,36 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     return true
   }, [])
 
-  const applyScrollAdjustment = useCallback((delta: number): void => {
-    if (!Number.isFinite(delta) || Math.abs(delta) <= 0.5) return
-    const element = scrollRef.current
-    if (element === null) return
-    // The canvas resize reconciles the measured tail. Applying its adjustment
-    // here would move the pinned viewport before the animation can start.
-    if (options.smoothStreamingGrowth && stickToBottomRef.current && !userScrollActiveRef.current)
-      return
+  const applyScrollAdjustment = useCallback(
+    (delta: number): void => {
+      if (!Number.isFinite(delta) || Math.abs(delta) <= 0.5) return
+      const element = scrollRef.current
+      if (element === null) return
+      // The canvas resize reconciles the measured tail. Applying its adjustment
+      // here would move the pinned viewport before the animation can start.
+      if (options.smoothStreamingGrowth && stickToBottomRef.current && !userScrollActiveRef.current) return
 
-    // If a virtualized canvas was briefly collapsed, the DOM can report zero
-    // even though the reader was stably in the middle. Continue from the last
-    // reader position so a measurement delta cannot turn that clamp into a
-    // jump to the top. During an active gesture, the live DOM value wins.
-    const savedScrollTop = lastReaderScrollTopRef.current
-    const isCollapsedFreeReader =
-      !stickToBottomRef.current &&
-      !userScrollActiveRef.current &&
-      element.scrollTop <= 1 &&
-      savedScrollTop !== undefined &&
-      savedScrollTop > 1
-    const baseScrollTop = isCollapsedFreeReader ? (savedScrollTop ?? 0) : element.scrollTop
-    const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight)
-    if (isCollapsedFreeReader && maxScrollTop <= 1) return
-    const nextScrollTop = Math.min(maxScrollTop, Math.max(0, baseScrollTop + delta))
-    internalScrollTopRef.current = nextScrollTop
-    element.scrollTop = nextScrollTop
-    lastReaderScrollTopRef.current = nextScrollTop
-  }, [options.smoothStreamingGrowth])
+      // If a virtualized canvas was briefly collapsed, the DOM can report zero
+      // even though the reader was stably in the middle. Continue from the last
+      // reader position so a measurement delta cannot turn that clamp into a
+      // jump to the top. During an active gesture, the live DOM value wins.
+      const savedScrollTop = lastReaderScrollTopRef.current
+      const isCollapsedFreeReader =
+        !stickToBottomRef.current &&
+        !userScrollActiveRef.current &&
+        element.scrollTop <= 1 &&
+        savedScrollTop !== undefined &&
+        savedScrollTop > 1
+      const baseScrollTop = isCollapsedFreeReader ? (savedScrollTop ?? 0) : element.scrollTop
+      const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight)
+      if (isCollapsedFreeReader && maxScrollTop <= 1) return
+      const nextScrollTop = Math.min(maxScrollTop, Math.max(0, baseScrollTop + delta))
+      internalScrollTopRef.current = nextScrollTop
+      element.scrollTop = nextScrollTop
+      lastReaderScrollTopRef.current = nextScrollTop
+    },
+    [options.smoothStreamingGrowth],
+  )
 
   const scrollToLatest = useCallback((): void => {
     clearUserScrollLock()
@@ -713,7 +715,11 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     } else restoreReaderPosition(true)
     updateJumpVisibility()
     if (stickToBottomRef.current && options.itemCount > 0)
-      scheduleScrollToLatest({ preserveBottom: true, immediate: sessionChanged, animateGrowth: !sessionChanged })
+      scheduleScrollToLatest({
+        preserveBottom: true,
+        immediate: sessionChanged,
+        animateGrowth: !sessionChanged,
+      })
   }, [
     options.contentKey,
     options.itemCount,

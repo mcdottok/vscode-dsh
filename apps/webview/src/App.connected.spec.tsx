@@ -971,7 +971,7 @@ describe('App connected rendering', () => {
     })
     expect(timeline.getAttribute('data-awaiting-first-prompt')).toBe('true')
 
-    await act(async () => {
+    act(() => {
       publish({
         ...state,
         timeline: {
@@ -980,7 +980,7 @@ describe('App connected rendering', () => {
         },
       })
     })
-    expect(timeline.getAttribute('data-awaiting-first-prompt')).toBe('false')
+    await waitFor(() => expect(timeline.getAttribute('data-awaiting-first-prompt')).toBe('false'))
   })
 
   it('keeps a failed active prompt for retry without rendering an untrusted error message', async () => {

@@ -81,14 +81,17 @@ describe('focused conversation interactions', () => {
     (observesSize) => {
       let resizeProcess: (() => void) | undefined
       if (observesSize) {
-        vi.stubGlobal('ResizeObserver', class {
-          constructor(private readonly onResize: () => void) {}
-          observe(target: Element): void {
-            if (target.classList.contains('dsh-focused-turn__process')) resizeProcess = this.onResize
-          }
-          unobserve(): void {}
-          disconnect(): void {}
-        })
+        vi.stubGlobal(
+          'ResizeObserver',
+          class {
+            constructor(private readonly onResize: () => void) {}
+            observe(target: Element): void {
+              if (target.classList.contains('dsh-focused-turn__process')) resizeProcess = this.onResize
+            }
+            unobserve(): void {}
+            disconnect(): void {}
+          },
+        )
       } else {
         vi.stubGlobal('ResizeObserver', undefined)
       }
@@ -175,7 +178,7 @@ describe('focused conversation interactions', () => {
 
   it.each(['compact', 'standard', 'detailed', 'verbose'] as const)(
     'keeps a streaming reply outside the work log, including when work is collapsed: %s',
-    (mode) => {
+    async (mode) => {
       const body = 'Streaming answer about the data'
       const source = nodes
         .slice(0, -1)
@@ -207,7 +210,8 @@ describe('focused conversation interactions', () => {
       fireEvent.click(view.container.querySelector<HTMLButtonElement>('.dsh-focused-turn__summary')!)
       expect(screen.getByText(body).closest('.dsh-focused-turn__process')).toBeNull()
       view.rerender(content({ ...answer, markdown: body + ' continues' }))
-      expect(screen.getAllByText(body + ' continues')).toHaveLength(1)
+      const streamedReply = await screen.findByText(body + ' continues')
+      expect(outside.contains(streamedReply)).toBe(true)
       expect(view.container.querySelector('.dsh-focused-turn__answer')).toBe(outside)
       view.rerender(
         content({ ...answer, markdown: body + ' continues', streaming: false, turnCompleted: true }),
