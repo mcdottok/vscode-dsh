@@ -9,6 +9,7 @@ import {
   type ConnectionProgress,
   type DshBackend,
   type ManagedProcessHandle,
+  type RuntimeConnectionSource,
 } from '@dsh-vscode/domain'
 
 import type {
@@ -383,7 +384,16 @@ export class DshConnectionCoordinator {
           status: verified === undefined ? 'failed' : 'succeeded',
           ...(verified === undefined ? {} : { hostVersion: verified.capabilities.dshVersion }),
         })
-        if (verified !== undefined) return this.attach(verified, undefined, signal, generation)
+        if (verified !== undefined) {
+          const processSources = new Set(verifiedManifestCandidates.map(verifiedProcessSource))
+          const source =
+            request.desktopEndpoint === true
+              ? 'desktop'
+              : hasVerifiedRuntimeIdentity && processSources.size === 1
+                ? [...processSources][0]
+                : undefined
+          return this.attach(verified, undefined, signal, generation, source)
+        }
       } catch (error) {
         await this.dependencies.endpointPreparation?.release?.(endpoint)
         if (isCancellation(error, signal)) throw cancelled(error)
@@ -641,7 +651,13 @@ export class DshConnectionCoordinator {
         this.publish({ kind: 'failed', message: error.message, retryable: error.retryable })
         throw error
       }
-      return this.attach({ ...verified, ownership: 'managed', pid: process.pid }, process, signal, generation)
+      return this.attach(
+        { ...verified, ownership: 'managed', pid: process.pid },
+        process,
+        signal,
+        generation,
+        'cli',
+      )
     } catch (error) {
       if (this.managedProcess === process && this.backend === undefined) {
         try {
@@ -716,7 +732,8 @@ export class DshConnectionCoordinator {
           candidateSource: candidate.source,
           ...(verified === undefined ? {} : { hostVersion: verified.capabilities.dshVersion }),
         })
-        if (verified !== undefined) return this.attach(verified, undefined, signal, generation)
+        if (verified !== undefined)
+          return this.attach(verified, undefined, signal, generation, verifiedProcessSource(candidate))
         enqueue(index + 3)
       }
       return undefined
@@ -764,6 +781,7 @@ export class DshConnectionCoordinator {
     managed: ManagedProcessHandle | undefined,
     signal: AbortSignal | undefined,
     generation: number,
+    source: RuntimeConnectionSource = 'external',
   ): Promise<ConnectionResult> {
     this.throwIfAborted(signal)
     if (generation !== this.generation) throw cancelled(signal?.reason)
@@ -774,6 +792,7 @@ export class DshConnectionCoordinator {
     })
     const identifiedConnection: DshBackend['connection'] = {
       ...connected,
+      connectionSource: source,
       // This opaque identity is scoped to this coordinator lifetime. It is
       // deliberately not derived from the local endpoint or process command.
       backendInstanceId: connected.backendInstanceId ?? `backend-${generation}`,
@@ -896,6 +915,7 @@ function sameRequest(left: ConnectionRequest | undefined, right: ConnectionReque
     left?.mode === right.mode &&
     left.autoStart === right.autoStart &&
     left.runtimeVersion === right.runtimeVersion &&
+    left.desktopEndpoint === right.desktopEndpoint &&
     left.credentialRevision === right.credentialRevision &&
     left.allowedEndpoints?.map((endpoint) => endpoint.baseUrl).join('\0') ===
       right.allowedEndpoints?.map((endpoint) => endpoint.baseUrl).join('\0') &&
@@ -954,6 +974,11 @@ function isVerifiedProcessManifestCandidate(candidate: BackendCandidate): candid
     candidate.pid > 0 &&
     Boolean(candidate.commandLine?.trim() || candidate.executablePath?.trim())
   )
+}
+
+function verifiedProcessSource(candidate: BackendCandidate): 'desktop' | 'cli' | undefined {
+  if (!isVerifiedProcessManifestCandidate(candidate)) return undefined
+  return candidate.executablePath?.trim() ? 'desktop' : 'cli'
 }
 
 function shouldDisconnectForRequest(current: BackendEndpoint, request: ConnectionRequest): boolean {

@@ -25,7 +25,7 @@ function buildLifecycle(
 ): { connect: () => Promise<unknown> } {
   const backend = { connection: { endpoint: { port: 4_321 } } }
   return createConnectionLifecycle({
-    context: { workspaceState: { update: () => Promise.resolve() } } as never,
+    context: { workspaceState: { get: () => undefined, update: () => Promise.resolve() } } as never,
     configuration: {
       read: () => ({ connection: { mode: 'auto', ...connection }, runtime: { autoStart } }) as never,
     } as never,

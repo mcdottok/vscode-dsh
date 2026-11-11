@@ -96,6 +96,7 @@ export function applyHostMessage(
     const output = connectionOutputSchema.safeParse(snapshot?.output)
     if (output.success) state = { ...state, connectionOutput: output.data }
     const kind = snapshot?.kind
+    const source = snapshot?.connectionSource
     const phase = CONNECTION_PHASES.find((value) => value === snapshot?.phase)
     const nextConnectionIdentity = connectionIdentity(snapshot)
     const identityChanged =
@@ -195,6 +196,9 @@ export function applyHostMessage(
           backend: {
             kind,
             ...((kind === 'discovering' || kind === 'connecting') && phase !== undefined ? { phase } : {}),
+            ...(kind === 'connected' && (source === 'desktop' || source === 'cli' || source === 'external')
+              ? { connectionSource: source }
+              : {}),
           },
           connectionEpoch: connectionEpochChanged
             ? (state.connectionEpoch ?? 0) + 1

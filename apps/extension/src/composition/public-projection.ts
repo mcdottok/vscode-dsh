@@ -24,6 +24,9 @@ export function publicState(state: BackendState, output?: readonly ConnectionLog
     ...(state.kind === 'connected'
       ? {
           dshVersion: state.backend.capabilities.dshVersion,
+          ...(state.backend.connectionSource === undefined
+            ? {}
+            : { connectionSource: state.backend.connectionSource }),
           sessionRestore: state.backend.capabilities.sessionRestore === true,
           jobController: state.backend.capabilities.jobController === true,
           accountLifecycleAvailable: state.backend.capabilities.features.has('account-lifecycle'),

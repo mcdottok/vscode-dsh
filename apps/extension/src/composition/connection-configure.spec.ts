@@ -855,6 +855,7 @@ describe('connection.configure reconnect', () => {
       expect(f.connect).toHaveBeenLastCalledWith(
         expect.objectContaining({
           endpoint: { baseUrl: 'http://127.0.0.1:43120', host: '127.0.0.1', port: 43120 },
+          desktopEndpoint: true,
         }),
         expect.any(AbortSignal),
       )

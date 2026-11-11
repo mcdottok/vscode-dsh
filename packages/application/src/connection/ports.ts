@@ -61,6 +61,8 @@ export interface ConnectionRequest {
   readonly autoStart: boolean
   /** Required only for `custom`; the Webview never receives this value back. */
   readonly endpoint?: BackendEndpoint
+  /** The Host has an explicit Desktop selection for this exact endpoint. */
+  readonly desktopEndpoint?: true
   /** Explicit local targets. Failure must never redirect to another endpoint or start an isolated instance. */
   readonly allowedEndpoints?: readonly BackendEndpoint[]
   /**

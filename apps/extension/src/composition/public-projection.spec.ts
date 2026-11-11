@@ -3,6 +3,28 @@ import { CONNECTION_PHASES } from '@dsh-vscode/domain'
 import { publicState } from './public-projection.js'
 
 describe('public connection progress', () => {
+  it('projects the runtime source without forwarding the endpoint or process', () => {
+    expect(
+      publicState({
+        kind: 'connected',
+        backend: {
+          endpoint: { host: '127.0.0.1', port: 3939, baseUrl: 'http://127.0.0.1:3939' },
+          pid: 1234,
+          ownership: 'external',
+          connectionSource: 'desktop',
+          capabilities: { protocolVersion: 'fixture', dshVersion: 'fixture', features: new Set() },
+        },
+      }),
+    ).toEqual({
+      kind: 'connected',
+      connectionSource: 'desktop',
+      dshVersion: 'fixture',
+      sessionRestore: false,
+      jobController: false,
+      accountLifecycleAvailable: false,
+    })
+  })
+
   it.each(CONNECTION_PHASES)('projects only the safe phase for %s', (phase) => {
     expect(
       publicState({

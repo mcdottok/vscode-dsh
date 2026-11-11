@@ -22,6 +22,7 @@ import type {
   CheckpointSummary,
   ConnectionPhase,
   ConnectionLogEntry,
+  RuntimeConnectionSource,
   CustomProviderCreateResult,
   CustomProviderDraft,
   DshSettingsSchema,
@@ -127,7 +128,7 @@ export type WebviewBackendState =
   | { readonly kind: 'locating-runtime' }
   | { readonly kind: 'discovering'; readonly phase?: ConnectionPhase }
   | { readonly kind: 'connecting'; readonly phase?: ConnectionPhase }
-  | { readonly kind: 'connected' }
+  | { readonly kind: 'connected'; readonly connectionSource?: RuntimeConnectionSource }
   | { readonly kind: 'starting' }
   | { readonly kind: 'runtime-missing'; readonly searchedLocations: readonly string[] }
   | { readonly kind: 'failed'; readonly message: string; readonly retryable: boolean }

@@ -229,6 +229,31 @@ describe('AppStore startup session restoration', () => {
     }
   })
 
+  it('accepts only known connection sources and clears the previous source on reconnect', () => {
+    const client = new StartupClient(startupResponse, false)
+    const store = createAppStore(client as unknown as ProtocolClient)
+    try {
+      const snapshots = [
+        [
+          { kind: 'connected', connectionSource: 'desktop' },
+          { kind: 'connected', connectionSource: 'desktop' },
+        ],
+        [{ kind: 'connecting', connectionSource: 'desktop' }, { kind: 'connecting' }],
+        [
+          { kind: 'connected', connectionSource: 'cli' },
+          { kind: 'connected', connectionSource: 'cli' },
+        ],
+        [{ kind: 'connected', connectionSource: 'unrecognized' }, { kind: 'connected' }],
+      ]
+      snapshots.forEach(([payload, expected], sequence) => {
+        client.emit({ type: 'event', name: 'connection.snapshot', sequence: sequence + 1, payload })
+        expect(store.getState().backend).toEqual(expected)
+      })
+    } finally {
+      store.dispose()
+    }
+  })
+
   it('waits for the connected snapshot before restoring and opens once across duplicate snapshots', async () => {
     const client = new StartupClient(startupResponse, false)
     const store = createAppStore(client as unknown as ProtocolClient)

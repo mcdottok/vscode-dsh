@@ -1343,6 +1343,8 @@
   "runtime.status.starting": "Starting",
   "runtime.status.stopping": "Stopping",
   "runtime.connectionDetails": "Connection details",
+  "runtime.connectedVia": "{status} · {source}",
+  "runtime.connectionExternal": "External DSH",
   "runtime.closeDetails": "Close connection details",
   "runtime.noConnectionDetails": "No connection details are available yet.",
   "runtime.compatibilityMode": "Connected in compatibility mode. Some features depend on the DSH version.",

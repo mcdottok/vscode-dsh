@@ -85,6 +85,25 @@ function dependencies(
 }
 
 describe('DshConnectionCoordinator', () => {
+  it.each([
+    ['desktop', true],
+    ['external', false],
+  ] as const)('retains a %s label for an explicitly configured endpoint', async (source, desktop) => {
+    const connection = fakeConnectedBackend()
+    const coordinator = new DshConnectionCoordinator(
+      dependencies({ probe: { probe: async () => connection } }),
+    )
+    const request = {
+      mode: 'custom',
+      autoStart: false,
+      endpoint: connection.endpoint,
+      ...(desktop ? { desktopEndpoint: true } : {}),
+    } as const
+    expect((await coordinator.connect(request)).state.backend.connectionSource).toBe(source)
+    expect((await coordinator.connect(request)).state.backend.connectionSource).toBe(source)
+    await coordinator.disconnect()
+  })
+
   it('records native preparation failure before discovery without overwriting an active or connected operation', async () => {
     const discovery = deferred<readonly BackendCandidate[]>()
     const coordinator = new DshConnectionCoordinator(
@@ -130,6 +149,7 @@ describe('DshConnectionCoordinator', () => {
     const coordinator = new DshConnectionCoordinator(deps)
     const result = await coordinator.connect({ mode: 'auto', autoStart: true })
     expect(result.state.backend.ownership).toBe('managed')
+    expect(result.state.backend.connectionSource).toBe('cli')
     expect(onProgress).toHaveBeenCalledWith({ phase: 'discovery-cache', status: 'succeeded', count: 2 })
     expect(onProgress).toHaveBeenCalledWith({ phase: 'discovery', status: 'succeeded', count: 2 })
     expect(onProgress).toHaveBeenCalledWith({

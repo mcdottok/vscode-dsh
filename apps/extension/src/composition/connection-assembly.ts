@@ -621,14 +621,13 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
       : undefined
     let pairedVersion: string | undefined
     const desktopOrigin =
-      desktopPairing === undefined
+      customEndpoint === undefined
         ? undefined
         : context.workspaceState.get<string>('dsh.desktop.lastEndpoint')
-    if (
+    const isDesktopEndpoint =
       customEndpoint !== undefined &&
-      (desktopOrigin === customEndpoint.baseUrl || automaticOrigin === customEndpoint.baseUrl) &&
-      desktopPairing !== undefined
-    ) {
+      (desktopOrigin === customEndpoint.baseUrl || automaticOrigin === customEndpoint.baseUrl)
+    if (customEndpoint !== undefined && isDesktopEndpoint && desktopPairing !== undefined) {
       const origin = customEndpoint.baseUrl
       let launchUrl: string | undefined
       try {
@@ -720,6 +719,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
       mode: useConfiguredEndpoint ? 'custom' : mode,
       ...(useConfiguredEndpoint ? { credentialRevision: externalConnection?.revision ?? 0 } : {}),
       ...(customEndpoint === undefined ? {} : { endpoint: customEndpoint }),
+      ...(isDesktopEndpoint ? { desktopEndpoint: true as const } : {}),
       ...(allowedEndpoints === undefined ? {} : { allowedEndpoints }),
       ...(selectedRuntimeVersion === undefined || selectedRuntimeVersion === ''
         ? {}

@@ -2,6 +2,7 @@ import type { FeatureCapabilityProfile } from './feature-contracts.js'
 
 export type OperatingSystem = 'windows' | 'linux' | 'macos'
 export type ProcessOwnership = 'external' | 'managed'
+export type RuntimeConnectionSource = 'desktop' | 'cli' | 'external'
 export type ConnectionMode = 'auto' | 'custom' | 'attach-only' | 'new-isolated'
 
 export interface DshRuntime {
@@ -94,6 +95,7 @@ export interface BackendCapabilities {
 export interface ConnectedBackend {
   readonly endpoint: BackendEndpoint
   readonly ownership: ProcessOwnership
+  readonly connectionSource?: RuntimeConnectionSource
   readonly capabilities: BackendCapabilities
   /** Opaque Host identity assigned once a connection is attached. */
   readonly backendInstanceId?: string

@@ -22,6 +22,12 @@ interface RuntimeDetail {
   readonly value: string
 }
 
+const connectionSourceLabels = {
+  desktop: 'settings.connectionDesktop',
+  cli: 'settings.connectionLocal',
+  external: 'runtime.connectionExternal',
+} as const
+
 export function RuntimeStatus({
   state,
   connectedDshVersion,
@@ -35,6 +41,13 @@ export function RuntimeStatus({
   const triggerRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const label = runtimeStatusLabel(state, t)
+  const panelLabel =
+    state.kind === 'connected' && state.connectionSource !== undefined
+      ? t('runtime.connectedVia', {
+          status: label,
+          source: t(connectionSourceLabels[state.connectionSource]),
+        })
+      : label
   const loading = isRuntimeLoading(state)
   const menuPosition = useViewportMenuPosition({
     open,
@@ -99,7 +112,7 @@ export function RuntimeStatus({
             <div className="dsh-runtime-status__panel-heading">
               <strong>{t('runtime.connectionDetails')}</strong>
               <ContentFlow as="span" variant="truncate" className="dsh-runtime-status__panel-state">
-                {label}
+                {panelLabel}
               </ContentFlow>
             </div>
             <button

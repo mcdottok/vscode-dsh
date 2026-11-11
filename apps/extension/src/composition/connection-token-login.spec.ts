@@ -13,6 +13,7 @@ describe('connection credential boundary', () => {
       const connect = createConnectionLifecycle({
         context: {
           workspaceState: {
+            get: () => undefined,
             update: (key: string, value: unknown) => {
               updates.push([key, value])
               return Promise.resolve()
@@ -52,6 +53,7 @@ describe('connection credential boundary', () => {
       await connect()
       expect(requests).toHaveLength(1)
       expect(requests[0]).not.toHaveProperty('launchToken')
+      expect(requests[0]).not.toHaveProperty('desktopEndpoint')
       expect(updates).toEqual([
         ['dsh.lastEndpoint', mode !== 'new-isolated' ? undefined : { host: '127.0.0.1', port: 4321 }],
       ])

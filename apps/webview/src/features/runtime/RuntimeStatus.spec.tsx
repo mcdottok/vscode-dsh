@@ -45,6 +45,16 @@ describe('RuntimeStatus', () => {
     expect(screen.getByText('0.1.0-rc.6')).toBeDefined()
   })
 
+  it.each([
+    ['desktop', 'DSH Desktop'],
+    ['cli', 'DSH CLI'],
+    ['external', 'External DSH'],
+  ] as const)('shows the %s connection source beside the detail status', (connectionSource, label) => {
+    render(<RuntimeStatus state={{ kind: 'connected', connectionSource }} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Connected' }))
+    expect(within(screen.getByRole('dialog')).getByText(`Connected · ${label}`)).toBeDefined()
+  })
+
   it('keeps connection details user focused without exposing the adapter capability matrix', () => {
     render(
       <RuntimeStatus
