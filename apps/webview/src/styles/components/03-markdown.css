@@ -46,15 +46,15 @@
 
 .dsh-markdown > :first-child,
 .dsh-markdown > [data-dsh-markdown-frozen] > :first-child {
-  margin-top: 0;
+  margin-block-start: 0;
 }
 
-/* At the split the frozen region contains its margins, so let the next
- * block supply the gap instead of adding two paragraph margins. */
-.dsh-markdown > :last-child,
-.dsh-markdown > :is([data-dsh-markdown-frozen], [data-dsh-markdown-tail]):last-child > :last-child,
-.dsh-markdown > [data-dsh-markdown-frozen] > p:last-child {
-  margin-bottom: 0;
+/* The next block supplies the gap, including across the streaming split
+ * where the frozen region's formatting context prevents margin collapse. */
+.dsh-markdown > :not([data-dsh-markdown-frozen], [data-dsh-markdown-tail]),
+.dsh-markdown > :is([data-dsh-markdown-frozen], [data-dsh-markdown-tail]) > *,
+.dsh-markdown :is(blockquote, li) > :last-child {
+  margin-block-end: 0;
 }
 
 @media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
