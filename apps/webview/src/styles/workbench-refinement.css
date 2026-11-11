@@ -284,6 +284,9 @@
   max-height: 100dvh;
   padding-block-end: max(10px, env(safe-area-inset-bottom));
 }
+.dsh-app[data-conversation-layout]:has(.dsh-compose-area) {
+  padding-block-end: max(4px, env(safe-area-inset-bottom));
+}
 .dsh-app[data-conversation-layout] .dsh-app__body {
   min-height: 0;
   flex: 1 1 0%;
