@@ -76,6 +76,41 @@ afterEach(() => {
 })
 
 describe('focused conversation interactions', () => {
+  it('updates the virtual canvas when the live work log folds before a resize notification', () => {
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (
+      this: HTMLElement,
+    ): number {
+      if (this.classList.contains('dsh-timeline')) return 200
+      if (!this.classList.contains('dsh-timeline__row')) return 0
+      return this.querySelector('.dsh-focused-turn__process:not([hidden])') === null ? 96 : 296
+    })
+    const history: TimelineNode[] = Array.from({ length: 30 }, (_, index) => ({
+      kind: 'user-message',
+      id: `history-${index}`,
+      markdown: `Earlier prompt ${index}`,
+    }))
+    const active = nodes.map((node) =>
+      node.kind === 'assistant-message'
+        ? { ...node, streaming: node.id === 'answer', turnCompleted: false }
+        : node,
+    )
+    const content = (source: readonly TimelineNode[], streaming: boolean): ReactElement => (
+      <ConversationLayoutProvider initialLayout="focused">
+        <Timeline sessionId="fixture" nodes={[...history, ...source]} streaming={streaming} />
+      </ConversationLayoutProvider>
+    )
+    const view = render(content(active, true))
+    const canvas = view.container.querySelector<HTMLElement>('.dsh-timeline__canvas--virtualized-ready')!
+    const process = canvas.querySelector<HTMLElement>('.dsh-focused-turn__process')!
+    expect(process.hidden).toBe(false)
+    const liveHeight = Number.parseFloat(canvas.style.height)
+
+    view.rerender(content(nodes, false))
+
+    expect(process.hidden).toBe(true)
+    expect(Number.parseFloat(canvas.style.height)).toBe(liveHeight - 200)
+  })
+
   it.each([false, true])(
     'follows streaming reasoning after the reader returns to the bottom (ResizeObserver: %s)',
     (observesSize) => {

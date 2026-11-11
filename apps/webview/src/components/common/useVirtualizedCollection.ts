@@ -45,6 +45,8 @@ export interface VirtualizedCollectionResult {
   readonly totalSize: number
   readonly virtualItems: readonly VirtualItem[]
   readonly measureElement: (element: HTMLDivElement | null) => void
+  /** Refresh a mounted row before the next ResizeObserver delivery. */
+  readonly remeasureItem: (index: number) => void
   readonly containerRef: (element: HTMLDivElement | null) => void
   /** Read a target offset; explicit reader actions still write through the scroll owner. */
   readonly getItemOffset: (index: number) => number | undefined
@@ -135,6 +137,13 @@ export function useVirtualizedCollection<T>(
     directDomUpdatesMode: 'position',
   })
   const virtualItems = virtualizer.getVirtualItems()
+  const remeasureItem = useCallback(
+    (index: number): void => {
+      const element = virtualizer.elementsCache.get(getItemKey(index))
+      if (element?.isConnected) virtualizer.resizeItem(index, element.offsetHeight)
+    },
+    [getItemKey, virtualizer],
+  )
   // A Webview can commit the conversation before flex layout has produced a
   // non-zero viewport. In that frame the virtualizer intentionally exposes no
   // range; treating that as an empty conversation makes the whole chat vanish
@@ -151,9 +160,10 @@ export function useVirtualizedCollection<T>(
       totalSize: enabled ? virtualizer.getTotalSize() : 0,
       virtualItems,
       measureElement: virtualizer.measureElement,
+      remeasureItem,
       containerRef: virtualizer.containerRef,
       getItemOffset: (index: number) => virtualizer.getOffsetForIndex(index, 'center')?.[0],
     }),
-    [enabled, ready, virtualItems, virtualizer],
+    [enabled, ready, remeasureItem, virtualItems, virtualizer],
   )
 }

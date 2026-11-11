@@ -404,6 +404,38 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
     onScrollAdjustment: applyScrollAdjustment,
   })
   const virtualizedReady = virtualized.enabled && virtualized.ready
+  const { remeasureItem } = virtualized
+  const focusedTailId = latestNode?.kind === 'focused-turn' ? latestNode.id : undefined
+  const focusedTailLive = latestNode?.kind === 'focused-turn' && latestNode.live === true
+  const liveTailRef = useRef<{ readonly sessionId: string; readonly nodeId: string } | undefined>(undefined)
+  useLayoutEffect(() => {
+    const previous = liveTailRef.current
+    liveTailRef.current =
+      focusedTailLive && focusedTailId !== undefined
+        ? { sessionId: props.sessionId, nodeId: focusedTailId }
+        : undefined
+    if (
+      !virtualizedReady ||
+      focusedTailLive ||
+      previous === undefined ||
+      previous.sessionId !== props.sessionId ||
+      previous.nodeId !== focusedTailId
+    )
+      return
+
+    // Folding the live work log can shrink the last row before its size
+    // observer runs. Update the canvas before following the new bottom.
+    remeasureItem(displayNodes.length - 1)
+    scheduleScrollToLatest({ preserveBottom: true, immediate: true, animateGrowth: true })
+  }, [
+    displayNodes.length,
+    focusedTailId,
+    focusedTailLive,
+    props.sessionId,
+    remeasureItem,
+    scheduleScrollToLatest,
+    virtualizedReady,
+  ])
   const beforeLayoutChange = layoutPreference?.beforeChange
   useLayoutEffect(
     () =>
