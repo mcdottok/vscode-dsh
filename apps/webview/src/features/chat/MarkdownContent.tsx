@@ -17,6 +17,7 @@ import { useI18n } from '../../i18n.js'
 import { CopyButton } from './CopyButton.js'
 import { ContentFlow } from '../../components/common/ContentFlow.js'
 import { useStreamingReveal } from './useStreamingReveal.js'
+import { useStreamingTextFade } from './useStreamingTextFade.js'
 import {
   cachedCodeHighlight,
   codeHighlightVersion,
@@ -141,6 +142,7 @@ export const MarkdownContent = memo(function MarkdownContent({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [projectedTail, streaming, highlightVersion],
   )
+  useStreamingTextFade(contentRef, plainText ?? tailHtml ?? frozenHtml, streaming, smoothStreaming)
   // Keep the frozen prefix as its own React-owned DOM region. Combining it
   // with the changing tail in one innerHTML string replaced every completed
   // paragraph/code block on each token, despite their cached HTML.
@@ -273,7 +275,6 @@ export const MarkdownContent = memo(function MarkdownContent({
       <ContentFlow
         ref={contentRef}
         className={`dsh-markdown${streaming ? ' dsh-markdown--streaming' : ''}`}
-        data-stream-tail-fade={streaming && smoothStreaming ? true : undefined}
         data-stream-refresh-hz={reveal.refreshHz}
         onClick={handleClick}
         onKeyDown={handleKeyDown}

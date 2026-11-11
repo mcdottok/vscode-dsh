@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode } from 'react'
 import { MarkdownContent } from './MarkdownContent.js'
+import { useStreamingTextFade } from './useStreamingTextFade.js'
 import {
   cachedCodeHighlight,
   getWebviewHighlighter,
@@ -14,6 +15,7 @@ import {
 describe('MarkdownContent', () => {
   afterEach(() => {
     cleanup()
+    vi.restoreAllMocks()
     vi.unstubAllGlobals()
   })
 
@@ -58,7 +60,6 @@ describe('MarkdownContent', () => {
     const fullReply = '答👩‍💻一二三四五'
     const { container, rerender } = render(<MarkdownContent markdown="答" streaming smoothStreaming />)
     const paragraph = container.querySelector('p')
-    expect(container.querySelector('.dsh-markdown')?.hasAttribute('data-stream-tail-fade')).toBe(true)
     const beforeAppend = performance.now()
     rerender(<MarkdownContent markdown={fullReply} streaming smoothStreaming />)
     expect(container.querySelector('p')?.textContent).toBe('答')
@@ -70,8 +71,55 @@ describe('MarkdownContent', () => {
 
     rerender(<MarkdownContent markdown={fullReply} smoothStreaming />)
     expect(container.querySelector('p')?.textContent).toBe(fullReply)
-    expect(container.querySelector('.dsh-markdown')?.hasAttribute('data-stream-tail-fade')).toBe(false)
+    expect(container.querySelector('p')).toBe(paragraph)
     expect(nextFrame).toBeUndefined()
+  })
+
+  it('fades only appended prose and lets each batch finish on its original clock', () => {
+    const registry = new Map<string, Set<Range>>()
+    vi.stubGlobal('CSS', { highlights: registry })
+    vi.stubGlobal('Highlight', Set)
+    let nextFrame: FrameRequestCallback | undefined
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback): number => {
+      nextFrame = callback
+      return 1
+    })
+    vi.stubGlobal('cancelAnimationFrame', (): void => {
+      nextFrame = undefined
+    })
+    const container = document.createElement('div')
+    const contentRef = { current: container }
+    const existingText = '已显示。'.repeat(48)
+    container.innerHTML = `<p>${existingText}</p>`
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(100)
+    const { rerender } = renderHook(
+      ({ revision, streaming }) => useStreamingTextFade(contentRef, revision, streaming, true),
+      { initialProps: { revision: 'original', streaming: true } },
+    )
+    const highlightedText = (stage: string): string[] =>
+      Array.from(registry.get(`dsh-stream-fade-${stage}`) ?? [], (range) => range.toString())
+    expect(highlightedText('initial')).toEqual([existingText.slice(-160)])
+
+    clock.mockReturnValue(625)
+    container.innerHTML = `<p>${existingText} <strong>First</strong> batch.</p>`
+    rerender({ revision: 'first', streaming: true })
+    expect(highlightedText('initial')).toEqual([' ', 'First', ' batch.'])
+
+    clock.mockReturnValue(700)
+    container.innerHTML = `<p>${existingText} <strong>First</strong> batch. Second <code>skip()</code>.</p>`
+    rerender({ revision: 'second', streaming: true })
+    expect(highlightedText('early')).toEqual([' ', 'First', ' batch.'])
+    expect(highlightedText('initial')).toEqual([' Second ', '.'])
+
+    clock.mockReturnValue(720)
+    container.innerHTML = `<p>${existingText} <strong>First</strong> batch. Second <code>skip()</code>. Done.</p>`
+    rerender({ revision: 'complete', streaming: false })
+    expect(highlightedText('initial')).toEqual([' Second ', '.', ' Done.'])
+
+    nextFrame?.(1130)
+    expect(highlightedText('end')).toEqual([' Second ', '.', ' Done.'])
+    nextFrame?.(1220)
+    expect([...registry.values()].every((highlight) => highlight.size === 0)).toBe(true)
   })
 
   it('requires an explicit gesture before delegating a Markdown link', () => {
