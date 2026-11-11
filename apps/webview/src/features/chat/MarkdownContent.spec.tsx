@@ -45,6 +45,35 @@ describe('MarkdownContent', () => {
     expect(container.querySelector('pre')).toBeNull()
   })
 
+  it('reveals assistant text over frames and immediately shows the full reply on completion', () => {
+    let nextFrame: FrameRequestCallback | undefined
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback): number => {
+      nextFrame = callback
+      return 1
+    })
+    vi.stubGlobal('cancelAnimationFrame', (): void => {
+      nextFrame = undefined
+    })
+
+    const fullReply = '答👩‍💻一二三四五'
+    const { container, rerender } = render(<MarkdownContent markdown="答" streaming smoothStreaming />)
+    const paragraph = container.querySelector('p')
+    expect(container.querySelector('.dsh-markdown')?.hasAttribute('data-stream-tail-fade')).toBe(true)
+    const beforeAppend = performance.now()
+    rerender(<MarkdownContent markdown={fullReply} streaming smoothStreaming />)
+    expect(container.querySelector('p')?.textContent).toBe('答')
+
+    act(() => nextFrame?.(beforeAppend + 6))
+    expect(container.querySelector('p')).toBe(paragraph)
+    expect(container.querySelector('p')?.textContent).toMatch(/^答👩‍💻/u)
+    expect(container.querySelector('p')?.textContent).not.toBe(fullReply)
+
+    rerender(<MarkdownContent markdown={fullReply} smoothStreaming />)
+    expect(container.querySelector('p')?.textContent).toBe(fullReply)
+    expect(container.querySelector('.dsh-markdown')?.hasAttribute('data-stream-tail-fade')).toBe(false)
+    expect(nextFrame).toBeUndefined()
+  })
+
   it('requires an explicit gesture before delegating a Markdown link', () => {
     const onOpenLink = vi.fn()
     render(<MarkdownContent markdown={'[Docs](https://example.com)'} onOpenLink={onOpenLink} />)
@@ -365,7 +394,7 @@ describe('MarkdownContent', () => {
     expect(block?.querySelector('.line')?.textContent).toBe('const first = 1')
   })
 
-  it('keeps completed streaming blocks in a frozen region', () => {
+  it('keeps completed paragraph nodes through streaming and final text delivery', () => {
     const { container, rerender } = render(
       <MarkdownContent streaming markdown={'First paragraph.\n\nSecond paragraph is still growing'} />,
     )
@@ -386,6 +415,19 @@ describe('MarkdownContent', () => {
     )
     expect(container.querySelector('[data-dsh-markdown-tail="true"]')?.textContent).toContain('growing now')
     expect(container.querySelector('[data-dsh-markdown-frozen="true"] p')).toBe(frozenParagraph)
+
+    rerender(<MarkdownContent markdown={'First paragraph.\n\nSecond paragraph is complete.'} />)
+    expect(container.querySelector('p')).toBe(frozenParagraph)
+    expect(container.querySelectorAll('p')[1]?.textContent).toBe('Second paragraph is complete.')
+  })
+
+  it('uses the complete Markdown structure when a list crosses the streaming split', () => {
+    const markdown = '- First item\n\n- Second item'
+    const { container, rerender } = render(<MarkdownContent streaming markdown={markdown} />)
+
+    rerender(<MarkdownContent markdown={markdown} />)
+    expect(container.querySelectorAll('ul')).toHaveLength(1)
+    expect(container.querySelectorAll('ul > li')).toHaveLength(2)
   })
 
   it('eventually catches up long streaming Markdown after deferred renders', async () => {

@@ -36,12 +36,38 @@
  * independent paragraph or code geometry. Soft source newlines are ordinary
  * whitespace; only Markdown hard breaks and block boundaries create a line. */
 
-.dsh-markdown > :first-child {
+.dsh-markdown > [data-dsh-markdown-frozen='true'] {
+  display: flow-root;
+}
+
+.dsh-markdown--streaming > [data-dsh-markdown-frozen='true'] {
+  contain: content;
+}
+
+.dsh-markdown > :first-child,
+.dsh-markdown > [data-dsh-markdown-frozen] > :first-child {
   margin-top: 0;
 }
 
-.dsh-markdown > :last-child {
+/* At the split the frozen region contains its margins, so let the next
+ * block supply the gap instead of adding two paragraph margins. */
+.dsh-markdown > :last-child,
+.dsh-markdown > :is([data-dsh-markdown-frozen], [data-dsh-markdown-tail]):last-child > :last-child,
+.dsh-markdown > [data-dsh-markdown-frozen] > p:last-child {
   margin-bottom: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
+  /* Mask one line box at the live paragraph's tail without changing wrapping
+   * or adding per-character elements to the streaming render path. */
+  .dsh-markdown[data-stream-tail-fade] > p:last-child:not(:has(a, [data-dsh-link], .katex)),
+  .dsh-markdown[data-stream-tail-fade]
+    > [data-dsh-markdown-tail='true']
+    > p:last-child:not(:has(a, [data-dsh-link], .katex)) {
+    mask:
+      linear-gradient(#000, #000) top / 100% calc(100% - 1lh) no-repeat,
+      linear-gradient(to right, rgb(0 0 0 / 75%), rgb(0 0 0 / 16%)) bottom / 100% 1lh no-repeat;
+  }
 }
 
 .dsh-markdown h1,

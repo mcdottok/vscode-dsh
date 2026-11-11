@@ -16,6 +16,7 @@ import {
 import { useI18n } from '../../i18n.js'
 import { CopyButton } from './CopyButton.js'
 import { ContentFlow } from '../../components/common/ContentFlow.js'
+import { useStreamingReveal } from './useStreamingReveal.js'
 import {
   cachedCodeHighlight,
   codeHighlightVersion,
@@ -27,6 +28,12 @@ import {
 import 'katex/dist/katex.min.css'
 
 const EMPTY_PRODUCED_FILES: readonly string[] = []
+
+// A single unindented prose line with no Markdown delimiters can update one
+// React text node. Anything that can change the block structure goes through
+// the normal parser, including numbered lists and HTML entities.
+const PLAIN_STREAMING_LINE =
+  /^[\p{L}\p{Extended_Pictographic}][\p{L}\p{M}\p{N}\p{Extended_Pictographic}\u200D ,.!?:;，。！？、；：]*$/u
 
 /**
  * A streaming block is highlighted again once it has grown by this fraction of
@@ -92,6 +99,7 @@ export interface MarkdownContentProps {
   readonly markdown: string
   /** Streaming messages render completed blocks separately from the tail. */
   readonly streaming?: boolean
+  readonly smoothStreaming?: boolean
   readonly onOpenLink?: ((href: string) => void) | undefined
   /** Successful mutation paths from the closing assistant turn. */
   readonly producedFiles?: readonly string[]
@@ -100,6 +108,7 @@ export interface MarkdownContentProps {
 export const MarkdownContent = memo(function MarkdownContent({
   markdown,
   streaming = false,
+  smoothStreaming = false,
   onOpenLink,
   producedFiles = EMPTY_PRODUCED_FILES,
 }: MarkdownContentProps): ReactElement {
@@ -108,11 +117,12 @@ export const MarkdownContent = memo(function MarkdownContent({
   const markdownProjector = useMemo(() => createMarkdownProjector(), [])
   const highlightMemory = useRef<HighlightMemory>(new Map())
   const [copyRegions, setCopyRegions] = useState<readonly MountedCopyRegion[]>([])
-  // The Host already bounds and batches live views. Render their current tail
-  // immediately; the projector memoizes completed blocks independently.
+  const reveal = useStreamingReveal(markdown, streaming && smoothStreaming)
+  const plainText =
+    smoothStreaming && PLAIN_STREAMING_LINE.test(reveal.text) ? reveal.text.trimEnd() : undefined
   const projection = useMemo(
-    () => markdownProjector(markdown, streaming),
-    [markdown, markdownProjector, streaming],
+    () => (plainText === undefined ? markdownProjector(reveal.text, streaming) : undefined),
+    [plainText, reveal.text, markdownProjector, streaming],
   )
   // Shiki stays off the render path: a missing highlight is requested during
   // render. The highlight cache lives outside React, so the memos below read it
@@ -120,17 +130,16 @@ export const MarkdownContent = memo(function MarkdownContent({
   // argument.
   const highlightVersion = useSyncExternalStore(subscribeCodeHighlights, codeHighlightVersion)
   const frozenHtml = useMemo(
-    () => highlightRegionHtml(projection.primaryHtml, streaming, highlightMemory.current),
+    () => highlightRegionHtml(projection?.primaryHtml ?? '', streaming, highlightMemory.current),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [projection.primaryHtml, streaming, highlightVersion],
+    [projection?.primaryHtml, streaming, highlightVersion],
   )
+  const projectedTail = projection?.tailHtml ?? null
   const tailHtml = useMemo(
     () =>
-      projection.tailHtml === null
-        ? null
-        : highlightRegionHtml(projection.tailHtml, true, highlightMemory.current),
+      projectedTail === null ? null : highlightRegionHtml(projectedTail, streaming, highlightMemory.current),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [projection.tailHtml, highlightVersion],
+    [projectedTail, streaming, highlightVersion],
   )
   // Keep the frozen prefix as its own React-owned DOM region. Combining it
   // with the changing tail in one innerHTML string replaced every completed
@@ -197,7 +206,7 @@ export const MarkdownContent = memo(function MarkdownContent({
     }
     // Portals belong to the existing React tree. Separate roots per block made
     // parent cleanup synchronously unmount roots during React's own commit.
-    setCopyRegions(mounted)
+    setCopyRegions((current) => (current.length === 0 && mounted.length === 0 ? current : mounted))
 
     const mentions: MountedFileMention[] = []
     if (onOpenLink !== undefined && producedFiles.length > 0) {
@@ -264,11 +273,15 @@ export const MarkdownContent = memo(function MarkdownContent({
       <ContentFlow
         ref={contentRef}
         className={`dsh-markdown${streaming ? ' dsh-markdown--streaming' : ''}`}
+        data-stream-tail-fade={streaming && smoothStreaming ? true : undefined}
+        data-stream-refresh-hz={reveal.refreshHz}
         onClick={handleClick}
         onKeyDown={handleKeyDown}
-        dangerouslySetInnerHTML={tailHtml === null ? primaryMarkup : undefined}
+        dangerouslySetInnerHTML={plainText === undefined && tailHtml === null ? primaryMarkup : undefined}
       >
-        {tailHtml === null ? null : (
+        {plainText !== undefined ? (
+          <p>{plainText}</p>
+        ) : tailHtml === null ? null : (
           <>
             <div data-dsh-markdown-frozen="true" dangerouslySetInnerHTML={primaryMarkup} />
             {tailHtml === '' ? null : (
@@ -299,7 +312,7 @@ export const MarkdownContent = memo(function MarkdownContent({
 interface MarkdownProjection {
   /** Whole message, or the frozen prefix while a streaming message is split. */
   readonly primaryHtml: string
-  /** Streaming tail region, or `null` when the message renders as one region. */
+  /** Tail region, or `null` when the message renders as one region. */
   readonly tailHtml: string | null
 }
 
@@ -326,13 +339,37 @@ function createMarkdownProjector(): (markdown: string, streaming: boolean) => Ma
   let previousFrozenHtml: string | undefined
   let previousStreamingMarkdown: string | undefined
   let previousStreamingBlocks: readonly string[] | undefined
+  let previousProjection: MarkdownProjection | undefined
+  let terminal: { readonly markdown: string; readonly projection: MarkdownProjection } | undefined
 
   return (markdown, streaming) => {
     if (!streaming) {
+      if (terminal?.markdown === markdown) return terminal.projection
+      const fullHtml = markdownRenderer.render(markdown)
+      let split = previousProjection
+      if (previousStreamingMarkdown !== markdown) {
+        const prefix = previousFrozenSource === undefined ? undefined : `${previousFrozenSource}\n\n`
+        split =
+          split !== undefined && prefix !== undefined && markdown.startsWith(prefix)
+            ? {
+                primaryHtml: split.primaryHtml,
+                tailHtml: markdownRenderer.render(markdown.slice(prefix.length)),
+              }
+            : undefined
+      }
+      // Preserve the DOM regions when the complete parse agrees with the split.
+      // References and lists can cross the boundary, so the full parse still wins.
+      const projection =
+        split !== undefined && split.tailHtml !== null && split.primaryHtml + split.tailHtml === fullHtml
+          ? split
+          : { primaryHtml: fullHtml, tailHtml: null }
       previousStreamingMarkdown = undefined
       previousStreamingBlocks = undefined
-      return { primaryHtml: markdownRenderer.render(markdown), tailHtml: null }
+      previousProjection = undefined
+      terminal = { markdown, projection }
+      return projection
     }
+    terminal = undefined
     const blocks =
       previousStreamingMarkdown === undefined || previousStreamingBlocks === undefined
         ? splitMarkdownBlocks(markdown)
@@ -340,7 +377,10 @@ function createMarkdownProjector(): (markdown: string, streaming: boolean) => Ma
           splitMarkdownBlocks(markdown))
     previousStreamingMarkdown = markdown
     previousStreamingBlocks = blocks
-    if (blocks.length <= 1) return { primaryHtml: markdownRenderer.render(markdown), tailHtml: null }
+    if (blocks.length <= 1) {
+      previousProjection = undefined
+      return { primaryHtml: markdownRenderer.render(markdown), tailHtml: null }
+    }
 
     // The last non-blank block is the only block that can still change as a
     // delta arrives. Closed fenced blocks are stable even without a following
@@ -352,10 +392,11 @@ function createMarkdownProjector(): (markdown: string, streaming: boolean) => Ma
       previousFrozenSource = frozen
       previousFrozenHtml = markdownRenderer.render(frozen)
     }
-    return {
+    previousProjection = {
       primaryHtml: previousFrozenHtml ?? '',
       tailHtml: tail === '' ? '' : markdownRenderer.render(tail),
     }
+    return previousProjection
   }
 }
 

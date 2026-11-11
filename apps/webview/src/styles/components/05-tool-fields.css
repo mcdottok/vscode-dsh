@@ -152,10 +152,6 @@
   margin-block-start: 0;
 }
 
-.dsh-markdown--streaming [data-dsh-markdown-frozen='true'] {
-  contain: content;
-}
-
 /* Completed tables keep a scrollport from their first paint. The scrollbar itself
  * stays transparent until interaction, so revealing the affordance cannot
  * change the table's block size and move the conversation below it. The

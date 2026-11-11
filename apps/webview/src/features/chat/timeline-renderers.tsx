@@ -740,7 +740,12 @@ function renderAssistantMessage(
           translate={t}
         />
         {node.markdown.trim() === '' ? null : (
-          <MarkdownContent markdown={node.markdown} streaming={node.streaming} onOpenLink={onOpenLink} />
+          <MarkdownContent
+            markdown={node.markdown}
+            streaming={node.streaming}
+            smoothStreaming
+            onOpenLink={onOpenLink}
+          />
         )}
       </article>
       {turnUsage === undefined ? null : <TurnUsageDisclosure usage={turnUsage} translate={t} />}
@@ -820,6 +825,7 @@ function renderAssistantBlocks(
             <MarkdownContent
               markdown={block.markdown}
               streaming={block.streaming}
+              smoothStreaming
               onOpenLink={onOpenLink}
               {...(index === lastMessageIndex ? { producedFiles } : {})}
             />
