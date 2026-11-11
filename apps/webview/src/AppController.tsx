@@ -406,6 +406,7 @@ const useAppControllerImpl = () => {
     composerOnSelectOpenFile,
     composerOnRemoveAttachment,
     composerOnSubmit,
+    awaitingFirstPrompt,
   } = useComposerAttachments({
     store,
     t,
@@ -948,6 +949,7 @@ const useAppControllerImpl = () => {
     composerOnToggleOpenFilePicker,
     composerStatus,
     composerSubmitError,
+    awaitingFirstPrompt,
     contextPressure,
     contextWindowTokens,
     conversationActionItems,

@@ -64,6 +64,7 @@ export interface ComposerAttachments {
   readonly attachingOpenFileId: string | undefined
   readonly visibleReferenceCandidates: readonly ReferenceCandidate[]
   readonly visibleReferenceLoading: boolean
+  readonly awaitingFirstPrompt: boolean
   readonly discardAttachmentDrafts: () => void
   readonly removeAttachmentDrafts: (uris: readonly string[], release: boolean) => void
   readonly composerOnReferenceQueryChange: (query: string | undefined, quoted: boolean) => void
@@ -97,6 +98,7 @@ export function useComposerAttachments(deps: ComposerAttachmentDependencies): Co
   const mountedRef = deps.mountedRef
   const setDraft = deps.setDraft
   const [attachments, setAttachments] = useState<PromptAttachment[]>([])
+  const [firstPromptHandoff, setFirstPromptHandoff] = useState<{ readonly sessionId: string }>()
   const [attachmentPreviews, setAttachmentPreviews] = useState<Record<string, string>>({})
   const [attachmentPreviewFailures, setAttachmentPreviewFailures] = useState<readonly string[]>([])
   const [openFileCandidates, setOpenFileCandidates] = useState<readonly OpenFileCandidate[]>([])
@@ -371,6 +373,29 @@ export function useComposerAttachments(deps: ComposerAttachmentDependencies): Co
     const text = deps.readDraft()
     const attachmentSnapshot = attachments
     const before = store.getState()
+    const pending = active === undefined ? before.pendingSession : undefined
+    let handoff: { readonly sessionId: string } | undefined
+    let stopHandoffWatch: (() => void) | undefined
+    const rememberFirstPromptSession = (): void => {
+      const current = store.getState().pendingSession
+      if (
+        handoff !== undefined ||
+        !mountedRef.current ||
+        current?.revision !== pending?.revision ||
+        current?.createdSessionId === undefined
+      )
+        return
+      handoff = { sessionId: current.createdSessionId }
+      setFirstPromptHandoff(handoff)
+      stopHandoffWatch?.()
+      stopHandoffWatch = undefined
+    }
+    // Opening the real session clears pendingSession. Observe its assigned ID
+    // before then, and keep the handoff through the existing delivery wait.
+    if (pending !== undefined) {
+      stopHandoffWatch = store.subscribe(rememberFirstPromptSession)
+      rememberFirstPromptSession()
+    }
     const beforeIds = new Set(before.timeline.nodes.map((node) => node.id))
     const beforeRequests = new Set(before.directPromptRequestIds)
     let awaitingVisibility = false
@@ -536,6 +561,10 @@ export function useComposerAttachments(deps: ComposerAttachmentDependencies): Co
         setSubmitError(
           `${publicProtocolErrorMessage(reason) ?? t('app.error.prompt')} ${t('app.error.promptOccupiedHint')}`,
         )
+    }).finally(() => {
+      stopHandoffWatch?.()
+      if (handoff !== undefined && mountedRef.current)
+        setFirstPromptHandoff((current) => (current === handoff ? undefined : current))
     })
   }
   /**
@@ -661,6 +690,7 @@ export function useComposerAttachments(deps: ComposerAttachmentDependencies): Co
     attachingOpenFileId,
     visibleReferenceCandidates,
     visibleReferenceLoading,
+    awaitingFirstPrompt: firstPromptHandoff !== undefined && firstPromptHandoff.sessionId === activeSessionId,
     discardAttachmentDrafts,
     removeAttachmentDrafts,
     composerOnReferenceQueryChange,

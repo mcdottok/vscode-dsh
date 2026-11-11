@@ -18,12 +18,14 @@ vi.mock('./features/chat/Timeline.js', () => ({
     readonly transcriptView?: string
     readonly performanceUsage?: string
     readonly codingToolsEnabled?: boolean
+    readonly awaitingFirstPrompt?: boolean
   }) => (
     <div
       data-testid="timeline"
       data-transcript-view={props.transcriptView}
       data-performance-usage={props.performanceUsage}
       data-coding-tools-enabled={props.codingToolsEnabled}
+      data-awaiting-first-prompt={props.awaitingFirstPrompt}
     >
       Timeline
     </div>
@@ -916,18 +918,27 @@ describe('App connected rendering', () => {
   })
 
   it('renders a local draft and routes its first message through deferred creation', async () => {
-    const state = connectedState(false)
-    const sendPendingPrompt = vi.fn().mockResolvedValue(undefined)
+    const opened = connectedState(true)
+    const pending = { revision: 1, workspaceId: 'w1', configuration: opened.configuration! }
+    let state: AppState = { ...connectedState(false), pendingSession: pending }
+    const listeners = new Set<() => void>()
+    const publish = (next: AppState): void => {
+      state = next
+      for (const listener of listeners) listener()
+    }
+    let acknowledge!: () => void
+    const receipt = new Promise<void>((resolve) => {
+      acknowledge = resolve
+    })
+    const sendPendingPrompt = vi.fn(() => receipt)
     const createSession = vi.fn().mockResolvedValue(undefined)
     currentStore = {
-      ...storeFor({
-        ...state,
-        pendingSession: {
-          revision: 1,
-          workspaceId: 'w1',
-          configuration: connectedState(true).configuration!,
-        },
-      }),
+      ...storeFor(state),
+      getState: () => state,
+      subscribe: (listener) => {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      },
       sendPendingPrompt,
       createSession,
     }
@@ -945,6 +956,31 @@ describe('App connected rendering', () => {
       expect(sendPendingPrompt).toHaveBeenCalledWith('Hello', [], 'queue', expect.any(AbortSignal)),
     )
     expect(createSession).not.toHaveBeenCalled()
+
+    act(() => {
+      publish({ ...state, pendingSession: { ...pending, createdSessionId: 's1' } })
+      publish(opened)
+    })
+    const timeline = screen.getByTestId('timeline')
+    expect(timeline.getAttribute('data-awaiting-first-prompt')).toBe('true')
+
+    await act(async () => {
+      publish({ ...state, directPromptRequestIds: ['first-prompt'] })
+      acknowledge()
+      await receipt
+    })
+    expect(timeline.getAttribute('data-awaiting-first-prompt')).toBe('true')
+
+    await act(async () => {
+      publish({
+        ...state,
+        timeline: {
+          ...state.timeline,
+          nodes: [{ kind: 'user-message', id: 'first-message', markdown: 'Hello', rpcId: 'first-prompt' }],
+        },
+      })
+    })
+    expect(timeline.getAttribute('data-awaiting-first-prompt')).toBe('false')
   })
 
   it('keeps a failed active prompt for retry without rendering an untrusted error message', async () => {

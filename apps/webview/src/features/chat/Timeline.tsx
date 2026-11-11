@@ -59,6 +59,7 @@ export interface TimelineProps {
   /** Guards the reducer hint when React skips an intermediate snapshot. */
   readonly nodeChangeBase?: readonly TimelineNode[]
   readonly streaming: boolean
+  readonly awaitingFirstPrompt?: boolean
   /** Conversation chrome owns this preference when the Timeline is embedded in App. */
   readonly showDshEvents?: boolean
   readonly transcriptView?: TranscriptViewMode
@@ -705,7 +706,7 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
             </button>
           </div>
         ) : null}
-        {displayNodes.length === 0 ? (
+        {displayNodes.length === 0 && !running && !props.awaitingFirstPrompt ? (
           <div className="dsh-timeline__empty" role="status">
             <span className="dsh-timeline__empty-icon" aria-hidden="true">
               <Icon name="sparkles" />

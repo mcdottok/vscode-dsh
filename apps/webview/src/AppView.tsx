@@ -70,6 +70,7 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
     composerOnToggleOpenFilePicker,
     composerStatus,
     composerSubmitError,
+    awaitingFirstPrompt,
     contextPressure,
     contextWindowTokens,
     conversationFontSize,
@@ -551,6 +552,7 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
                         ? {}
                         : { nodeChangeBase: state.timeline.nodeChangeBase })}
                       streaming={streaming}
+                      awaitingFirstPrompt={awaitingFirstPrompt}
                       showDshEvents={showDshEvents}
                       transcriptView={transcriptView}
                       performanceUsage={performanceUsage}
