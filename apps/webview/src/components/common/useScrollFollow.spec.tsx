@@ -60,6 +60,44 @@ describe('useScrollFollow user jump', () => {
     expect(viewport.scrollTop).toBe(800)
   })
 
+  it('eases to the growing tail across frames and yields to an upward wheel', async () => {
+    let nextFrame: FrameRequestCallback | undefined
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback): number => {
+      nextFrame = callback
+      return 1
+    })
+    vi.stubGlobal('cancelAnimationFrame', (): void => {
+      nextFrame = undefined
+    })
+    function Stream({ revision }: { revision: number }): ReactElement {
+      const follow = useScrollFollow({
+        contentKey: revision,
+        itemCount: 1,
+        smoothStreamingGrowth: true,
+        observeContentSize: false,
+      })
+      return <div ref={follow.scrollRef} data-testid="stream-viewport" onScroll={follow.handleScroll} />
+    }
+    const view = render(<Stream revision={0} />)
+    const viewport = screen.getByTestId<HTMLDivElement>('stream-viewport')
+    setScrollMetrics(viewport, 600, 1000, 400)
+    await act(async () => Promise.resolve())
+
+    setScrollMetrics(viewport, 600, 1036, 400)
+    view.rerender(<Stream revision={1} />)
+    await act(async () => Promise.resolve())
+    expect(viewport.scrollTop).toBe(600)
+    const now = performance.now()
+    act(() => nextFrame?.(now + 16))
+    expect(viewport.scrollTop).toBeGreaterThan(600)
+    expect(viewport.scrollTop).toBeLessThan(636)
+    fireEvent.scroll(viewport)
+    expect(nextFrame).toBeDefined()
+
+    fireEvent.wheel(viewport, { deltaY: -40 })
+    expect(nextFrame).toBeUndefined()
+  })
+
   it('lets a captured reader gesture cancel same-turn append following', async () => {
     vi.useFakeTimers()
     const { viewport } = renderHarness()

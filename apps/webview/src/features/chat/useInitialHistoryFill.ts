@@ -19,6 +19,7 @@ export function useInitialHistoryFill(props: {
     () => props.nodes.filter((node) => node.kind === 'user-message').length,
     [props.nodes],
   )
+  const hasNodes = props.nodes.length > 0
   const key = `${props.beforeSequence ?? ''}:${props.nodes.length}:${props.nodes[0]?.id ?? ''}`
 
   useLayoutEffect(() => {
@@ -47,14 +48,20 @@ export function useInitialHistoryFill(props: {
       current.stopped = true
       return
     }
+    if (current.stopped) return
     let frame = 0
     const check = (): void => {
       if (current.stopped || current.busy || props.loading === true || current.attempts >= 12) return
-      if (document.visibilityState === 'hidden' || viewport.clientHeight <= 0 || props.nodes.length === 0)
-        return
+      if (!hasNodes || document.visibilityState === 'hidden') return
+      const viewportHeight = viewport.clientHeight
+      if (viewportHeight <= 0) return
       // Two recent user turns are the minimum; short turns also need enough
       // measured content to fill the viewport after tool groups are collapsed.
-      if (users >= 2 && viewport.scrollHeight > viewport.clientHeight + 8) return
+      if (users >= 2 && viewport.scrollHeight > viewportHeight + 8) {
+        current.stopped = true
+        observer?.disconnect()
+        return
+      }
       if (current.key === key) {
         current.stopped = true
         return
@@ -74,6 +81,7 @@ export function useInitialHistoryFill(props: {
       })()
     }
     const schedule = (): void => {
+      if (current.stopped) return
       window.cancelAnimationFrame(frame)
       frame = window.requestAnimationFrame(check)
     }
@@ -93,7 +101,7 @@ export function useInitialHistoryFill(props: {
     props.load,
     props.hasMore,
     props.loading,
-    props.nodes,
+    hasNodes,
     props.reveal,
     users,
     key,

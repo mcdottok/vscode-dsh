@@ -96,7 +96,11 @@ export function FocusedTurn(props: {
     if (following && maxTop - top > 1) element.scrollTop = maxTop
     processScroll.current = { top: element.scrollTop, maxTop, following }
   }, [followLiveWork])
-  useLayoutEffect(syncProcessScroll, [syncProcessScroll, hasWork, node.nodes])
+  // In the Webview, observe the actual work log size. A reply-only commit can
+  // change node identities without resizing the log, and a geometry read
+  // here would force layout for the just-mutated reply.
+  const unobservedNodes = typeof ResizeObserver === 'undefined' ? node.nodes : undefined
+  useLayoutEffect(syncProcessScroll, [syncProcessScroll, hasWork, unobservedNodes])
   useLayoutEffect(() => {
     const element = processRef.current
     const content = element?.firstElementChild

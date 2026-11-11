@@ -94,6 +94,10 @@ describe('initial history fill', () => {
     )
     await frame()
     expect(load).toHaveBeenCalledOnce()
+    contentHeight = 400
+    resized()
+    await frame()
+    expect(load).toHaveBeenCalledOnce()
   })
 
   it('keeps filling short conversations after two turns until measured content fills the viewport', async () => {

@@ -312,8 +312,13 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
     if (control !== null) openLinkTriggerRef.current = control
   }
   const latestNode = displayNodes[displayNodes.length - 1]
-  const latestSignature =
-    latestNode?.kind === 'focused-turn'
+  // The scroll owner already observes content height. A growing reply in
+  // the same row can follow that measurement instead of reading scrollHeight
+  // after every text patch, before the browser has laid it out.
+  const observeStreamingTail = props.streaming && typeof ResizeObserver !== 'undefined'
+  const latestSignature = observeStreamingTail
+    ? `stream:${conversationLayout}:${transcriptView}:${latestNode?.id ?? ''}`
+    : latestNode?.kind === 'focused-turn'
       ? `${latestNode.id}:${latestNode.foldable}:${latestNode.nodes.map(nodeSignatureProjector).join('|')}`
       : nodeSignatureProjector(latestNode)
   const virtualizeTimeline = virtualizationProjector(displayProjection.nodes, displayNodeTextSizeProjector)
@@ -335,6 +340,7 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
     sessionId: props.sessionId,
     layoutMeasurementsActive: virtualizeTimeline,
     snapToTailOnWheel: running,
+    smoothStreamingGrowth: props.streaming,
   })
   const getFocusedTimelineIndex = useCallback((): number | undefined => {
     const timeline = scrollRef.current
@@ -490,13 +496,19 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
   // reader of a reopened long session is looking at the newest rows.
   const unmeasuredRowStart = Math.max(0, displayNodes.length - DEFAULT_UNMEASURED_ROW_WINDOW)
   const enteredId = useTailEntrance(latestNode?.id, props.sessionId, props.streaming || running)
+  const measuredSessionRef = useRef<string | undefined>(undefined)
   useLayoutEffect(() => {
-    if (!virtualizedReady || virtualized.totalSize <= 0) return
+    if (!virtualizedReady || virtualized.totalSize <= 0) {
+      measuredSessionRef.current = undefined
+      return
+    }
+    const animateGrowth = measuredSessionRef.current === props.sessionId
+    measuredSessionRef.current = props.sessionId
     // Virtual rows refine the canvas height as they enter the measurement
     // cache. Reconcile that estimate only through the shared scroll owner;
     // native reader input cancels it before it can move the viewport.
-    scheduleScrollToLatest({ preserveBottom: true, immediate: true })
-  }, [scheduleScrollToLatest, virtualizedReady, virtualized.totalSize])
+    scheduleScrollToLatest({ preserveBottom: true, immediate: true, animateGrowth })
+  }, [props.sessionId, scheduleScrollToLatest, virtualizedReady, virtualized.totalSize])
   const loadOlderHistory = useCallback((): void => {
     if (
       hasMoreHistory !== true ||
