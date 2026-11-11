@@ -596,18 +596,6 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
                       streaming={streaming}
                     />
                   )}
-                  <QueuePanel
-                    key={state.activeSessionId}
-                    items={state.queue}
-                    directRequestIds={state.directPromptRequestIds}
-                    transcript={state.transcript}
-                    connected={backend.kind === 'connected'}
-                    running={activeRunning}
-                    onEdit={queueOnEdit}
-                    onRemove={queueOnRemove}
-                    onModeChange={queueOnModeChange}
-                    onLoadImage={timelineOnLoadImage}
-                  />
                   {pendingPermissions.length > 0 || pendingQuestions.length > 0 ? (
                     // No live region here: the cards in this slot carry their
                     // own semantics, and a timed question re-renders its
@@ -664,6 +652,18 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
                         featureRequest={store.featureRequest}
                       />
                     ) : null}
+                    <QueuePanel
+                      key={state.activeSessionId}
+                      items={state.queue}
+                      directRequestIds={state.directPromptRequestIds}
+                      transcript={state.transcript}
+                      connected={backend.kind === 'connected'}
+                      running={activeRunning}
+                      onEdit={queueOnEdit}
+                      onRemove={queueOnRemove}
+                      onModeChange={queueOnModeChange}
+                      onLoadImage={timelineOnLoadImage}
+                    />
                     {subagentReadOnlyReason === undefined || activeRunning ? (
                       <>
                         <ConnectedComposer

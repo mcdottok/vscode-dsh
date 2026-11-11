@@ -837,17 +837,20 @@ button.dsh-timeline__produced-chip:hover {
  * compact control row; the backlog itself is bounded and collapsible. */
 .dsh-queue {
   display: block;
-  padding: var(--dsh-space-1) 0;
+  flex: 0 0 auto;
+  margin-inline: auto;
   overflow: hidden;
+  border-radius: 16px 16px 0 0;
+  background: transparent;
 }
 
 .dsh-queue__header {
   width: 100%;
   min-height: var(--dsh-control-height-compact);
-  padding: var(--dsh-space-1) var(--dsh-space-3);
+  padding: var(--dsh-space-1) var(--dsh-space-2);
   border-color: transparent;
   border-radius: var(--dsh-radius-sm);
-  color: var(--dsh-text);
+  color: var(--dsh-muted);
   background: transparent;
   text-align: start;
 }
@@ -870,7 +873,7 @@ button.dsh-timeline__produced-chip:hover {
   min-width: 0;
   overflow: hidden;
   color: inherit;
-  font-size: var(--dsh-font-size-sm);
+  font-size: var(--dsh-font-size-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

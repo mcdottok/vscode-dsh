@@ -3,7 +3,6 @@ import type { MessageImageReference, QueuedInput, RunningInputMode } from '@dsh-
 import type { TranscriptWindow } from '@dsh-vscode/webview-protocol'
 import { useI18n } from '../../i18n.js'
 import { Icon } from '../../ui/Icon.js'
-import { SelectMenu } from '../../components/common/SelectMenu.js'
 import { MessageImages } from '../chat/MessageImages.js'
 import { useQueueHandoff } from './useQueueHandoff.js'
 
@@ -71,9 +70,11 @@ export const QueuePanel = memo(function QueuePanel(props: QueuePanelProps): Reac
           ? items.map((item, index) => (
               <li key={item.id}>
                 <div className="dsh-queue__item-main">
-                  <span className="dsh-queue__index" aria-hidden="true">
-                    {index + 1}
-                  </span>
+                  {pendingIds.has(item.id) ? null : (
+                    <span className="dsh-queue__status" data-mode={item.mode} aria-live="polite">
+                      {t(item.mode === 'steer' ? 'queue.status.steering' : 'queue.status.queued')}
+                    </span>
+                  )}
                   {item.images !== undefined && item.images.length > 0 ? (
                     <MessageImages
                       images={item.images}
@@ -102,37 +103,20 @@ export const QueuePanel = memo(function QueuePanel(props: QueuePanelProps): Reac
                 </div>
                 <div className="dsh-queue__item-actions">
                   {pendingIds.has(item.id) ? null : (
-                    <SelectMenu
-                      className="dsh-queue__mode"
-                      icon="arrow-down"
-                      density="compact"
-                      displayLabel
-                      label={item.mode === 'queue' ? t('queue.mode.queue') : t('queue.mode.steer')}
-                      ariaLabel={t('queue.mode', { position: index + 1 })}
-                      title={
-                        item.mode === 'queue'
-                          ? t('queue.mode', { position: index + 1 })
-                          : t('queue.mode.fixed', { position: index + 1 })
-                      }
-                      value={item.mode}
-                      // The pinned Host only turns a queued prompt into a steer
-                      // request; nothing moves it back. A steering row therefore
-                      // reports its mode instead of offering a switch that would
-                      // silently do nothing.
-                      options={
-                        item.mode === 'queue'
-                          ? [
-                              { value: 'queue', label: t('queue.mode.queue') },
-                              { value: 'steer', label: t('queue.mode.steer') },
-                            ]
-                          : [{ value: 'steer', label: t('queue.mode.steer') }]
-                      }
-                      disabled={item.mode !== 'queue' || !props.running}
-                      placement="below"
-                      onChange={(mode) => {
-                        if (mode === 'steer' && props.running) props.onModeChange(item.id, mode)
+                    <button
+                      className="dsh-icon-button"
+                      type="button"
+                      aria-label={t('queue.edit', { position: index + 1 })}
+                      title={item.textOnly ? t('queue.editHint') : t('queue.editWithAttachments')}
+                      disabled={!item.textOnly}
+                      onClick={(event) => {
+                        const editor = event.currentTarget.closest('li')?.querySelector('textarea')
+                        editor?.focus()
+                        editor?.select()
                       }}
-                    />
+                    >
+                      <Icon name="edit" />
+                    </button>
                   )}
                   <button
                     className="dsh-icon-button"
@@ -142,8 +126,21 @@ export const QueuePanel = memo(function QueuePanel(props: QueuePanelProps): Reac
                     })}
                     onClick={() => (pendingIds.has(item.id) ? handoff.dismiss(item.id) : remove(item.id))}
                   >
-                    <Icon name="close" />
+                    <Icon name={pendingIds.has(item.id) ? 'close' : 'trash'} />
                   </button>
+                  {pendingIds.has(item.id) || item.mode !== 'queue' ? null : (
+                    <button
+                      className="dsh-icon-button dsh-queue__steer"
+                      type="button"
+                      aria-label={`${t('queue.mode', { position: index + 1 })}: ${t('queue.mode.steer')}`}
+                      title={t('queue.mode.steer')}
+                      disabled={!props.running}
+                      onClick={() => props.onModeChange(item.id, 'steer')}
+                    >
+                      <Icon name="arrow-up" />
+                      <span>{t('queue.mode.steer')}</span>
+                    </button>
+                  )}
                 </div>
               </li>
             ))

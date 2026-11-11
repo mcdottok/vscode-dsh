@@ -387,6 +387,8 @@
   "queue.mode": "第 {position} 条排队提示的模式",
   "queue.mode.queue": "排队",
   "queue.mode.steer": "引导",
+  "queue.status.queued": "排队中",
+  "queue.status.steering": "引导中",
   "queue.mode.fixed": "第 {position} 条排队提示已在引导中，无法再改回排队",
   "queue.remove": "移除第 {position} 条排队提示",
   "queue.editWithAttachments": "含图片或文件的排队提示无法编辑，请移除后重新发送。",

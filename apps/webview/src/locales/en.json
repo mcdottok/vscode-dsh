@@ -387,6 +387,8 @@
   "queue.mode": "Mode for queued prompt {position}",
   "queue.mode.queue": "Queue",
   "queue.mode.steer": "Steer",
+  "queue.status.queued": "Queued",
+  "queue.status.steering": "Steering",
   "queue.mode.fixed": "Queued prompt {position} is already steering and cannot become a queued prompt again",
   "queue.remove": "Remove queued prompt {position}",
   "queue.editWithAttachments": "Queued prompts carrying images or files cannot be edited; remove and resend.",

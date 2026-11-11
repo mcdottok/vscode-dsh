@@ -313,8 +313,8 @@ describe('QueuePanel', () => {
     const onModeChange = vi.fn()
     renderQueue([queuedInput('q1', 'first')], true, onModeChange)
 
+    expect(screen.getByText('Queued')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /Mode for queued prompt 1/u }))
-    fireEvent.click(screen.getByRole('option', { name: 'Steer' }))
 
     expect(onModeChange).toHaveBeenCalledWith('q1', 'steer')
   })
@@ -330,12 +330,8 @@ describe('QueuePanel', () => {
     const onModeChange = vi.fn()
     renderQueue([{ ...queuedInput('q-steer', 'first'), mode: 'steer' }], true, onModeChange)
 
-    // The pinned Host only accepts `action: { kind: 'steer' }`; no request
-    // moves a steering prompt back into the queue, so the mode is reported
-    // instead of offered as a choice that silently does nothing.
-    const trigger = screen.getByRole('button', { name: /Mode for queued prompt 1/u })
-    expect(trigger.textContent).toContain('Steer')
-    expect(trigger.hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText('Steering')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Mode for queued prompt 1/u })).toBeNull()
     expect(onModeChange).not.toHaveBeenCalled()
   })
 

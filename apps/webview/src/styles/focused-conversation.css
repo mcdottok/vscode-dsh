@@ -202,6 +202,22 @@
   padding-inline: var(--dsh-space-2);
 }
 
+.dsh-compose-area > .dsh-queue {
+  width: min(
+    calc(100% - 2 * var(--dsh-space-3)),
+    calc(var(--dsh-timeline-content-max-width) - 2 * var(--dsh-space-3))
+  );
+}
+
+.dsh-compose-area > .dsh-queue:has(+ .dsh-unified-composer) {
+  margin-block-end: calc(-1 * var(--dsh-space-2) - 1px);
+  padding-block-end: var(--dsh-space-1);
+}
+
+.dsh-compose-area > .dsh-queue + .dsh-unified-composer {
+  position: relative;
+}
+
 .dsh-app[data-conversation-layout='focused'] .dsh-unified-composer {
   padding: var(--dsh-space-3);
   border-radius: var(--dsh-radius-xl, var(--dsh-radius-lg));
