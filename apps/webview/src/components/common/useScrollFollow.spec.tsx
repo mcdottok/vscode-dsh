@@ -62,6 +62,11 @@ describe('useScrollFollow user jump', () => {
 
   it('eases to the growing tail across frames and yields to an upward wheel', async () => {
     let nextFrame: FrameRequestCallback | undefined
+    const advanceFrame = (timestamp: number): void => {
+      const callback = nextFrame
+      nextFrame = undefined
+      act(() => callback?.(timestamp))
+    }
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback): number => {
       nextFrame = callback
       return 1
@@ -88,10 +93,32 @@ describe('useScrollFollow user jump', () => {
     await act(async () => Promise.resolve())
     expect(viewport.scrollTop).toBe(600)
     const now = performance.now()
-    act(() => nextFrame?.(now + 16))
+    advanceFrame(now + 16)
     expect(viewport.scrollTop).toBeGreaterThan(600)
-    expect(viewport.scrollTop).toBeLessThan(636)
+    expect(viewport.scrollTop).toBeLessThan(606)
+    const firstPosition = viewport.scrollTop
+
+    setScrollMetrics(viewport, firstPosition, 1060, 400)
+    view.rerender(<Stream revision={2} />)
+    await act(async () => Promise.resolve())
     fireEvent.scroll(viewport)
+    expect(viewport.scrollTop).toBe(firstPosition)
+    advanceFrame(now + 32)
+    expect(viewport.scrollTop - firstPosition).toBeGreaterThan(firstPosition - 600)
+    for (let frame = 3; frame <= 24 && nextFrame !== undefined; frame++) {
+      const before = viewport.scrollTop
+      advanceFrame(now + frame * 16)
+      expect(viewport.scrollTop).toBeGreaterThanOrEqual(before)
+      expect(viewport.scrollTop).toBeLessThanOrEqual(660)
+    }
+    expect(viewport.scrollTop).toBe(660)
+    expect(nextFrame).toBeUndefined()
+
+    // A native event for the last animated write can arrive after the next
+    // line grows the tail. It should start another eased follow.
+    setScrollMetrics(viewport, 660, 1084, 400)
+    fireEvent.scroll(viewport)
+    expect(viewport.scrollTop).toBe(660)
     expect(nextFrame).toBeDefined()
 
     fireEvent.wheel(viewport, { deltaY: -40 })
@@ -420,6 +447,76 @@ describe('useScrollFollow user jump', () => {
     expect(viewport.scrollTop).toBe(350)
     expect(screen.getByTestId('jump-state').getAttribute('data-visible')).toBe('true')
   })
+
+  it.each(['no input', 'before completion', 'during completion'])(
+    'settles a streaming reply through a content clamp and late footer resize (%s)',
+    async (readerInput) => {
+      vi.useFakeTimers()
+      stubReducedMotion(true)
+      const resize = stubViewportResize()
+      function Stream({
+        streaming,
+        replyInProgress,
+      }: {
+        streaming: boolean
+        replyInProgress: boolean
+      }): ReactElement {
+        const follow = useScrollFollow({
+          contentKey: 'same-reply',
+          itemCount: 1,
+          smoothStreamingGrowth: streaming,
+          replyInProgress,
+        })
+        return (
+          <div ref={follow.scrollRef} data-testid="settling-viewport">
+            <div ref={follow.contentRef} data-testid="settling-content" />
+            <output data-testid="settling-jump" data-visible={follow.showJumpToLatest} />
+          </div>
+        )
+      }
+      const view = render(<Stream streaming replyInProgress />)
+      const viewport = screen.getByTestId<HTMLDivElement>('settling-viewport')
+      const content = screen.getByTestId('settling-content')
+      setScrollMetrics(viewport, 600, 1000, 400)
+      act(() => resize(content, 1000))
+      await act(async () => Promise.resolve())
+
+      // The live layout briefly shrinks and clamps the viewport before the
+      // final layout grows to fit the reply and its footer.
+      const scrolledBefore = readerInput === 'before completion'
+      if (scrolledBefore) fireEvent.wheel(viewport, { deltaY: -40 })
+      const position = scrolledBefore ? 540 : 560
+      setScrollMetrics(viewport, position, 960, 400)
+      fireEvent.scroll(viewport)
+      setScrollMetrics(viewport, position, 1040, 400)
+      view.rerender(<Stream streaming={false} replyInProgress />)
+      expect(viewport.scrollTop).toBe(scrolledBefore ? 540 : 640)
+
+      setScrollMetrics(viewport, viewport.scrollTop, 1100, 400)
+      act(() => resize(content, 1100))
+      expect(viewport.scrollTop).toBe(scrolledBefore ? 540 : 700)
+      act(() => {
+        vi.advanceTimersByTime(500)
+      })
+      setScrollMetrics(viewport, scrolledBefore ? 540 : 680, 1112, 400)
+      fireEvent.scroll(viewport)
+      expect(viewport.scrollTop).toBe(scrolledBefore ? 540 : 712)
+
+      // The durable turn end can arrive after text streaming has stopped.
+      // Chromium delivers the earlier clamp's scroll event after the footer
+      // has already grown again, so the offset is below the current maximum.
+      view.rerender(<Stream streaming={false} replyInProgress={false} />)
+      const scrolledDuring = readerInput === 'during completion'
+      if (scrolledDuring) fireEvent.wheel(viewport, { deltaY: -30 })
+      setScrollMetrics(viewport, scrolledBefore ? 540 : 670, 1124, 400)
+      fireEvent.scroll(viewport)
+      act(() => resize(content, 1124))
+      expect(viewport.scrollTop).toBe(scrolledBefore ? 540 : scrolledDuring ? 670 : 724)
+      expect(screen.getByTestId('settling-jump').getAttribute('data-visible')).toBe(
+        String(scrolledBefore || scrolledDuring),
+      )
+    },
+  )
 
   it('preserves a free reader across notification resizing', () => {
     vi.useFakeTimers()
