@@ -192,7 +192,7 @@ export interface MessageImageReference {
 
 /** Terminal boundary reported by the durable DSH turn lifecycle. */
 export type TurnEndReasonKind =
-  'completed' | 'aborted' | 'blocked' | 'error' | 'max-tokens' | 'interrupted' | 'unknown'
+  'completed' | 'forked' | 'aborted' | 'blocked' | 'error' | 'max-tokens' | 'interrupted' | 'unknown'
 
 /**
  * Display-safe failure facts carried by an error turn/end reason.

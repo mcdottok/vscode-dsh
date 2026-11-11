@@ -58,8 +58,10 @@ export type TimelineNode =
       readonly id: string
       readonly markdown: string
       readonly streaming: boolean
-      /** Durable event sequence used as the rc.6 session.fork anchor. */
+      /** Durable event sequence of the assistant message. */
       readonly sequence?: number
+      /** Durable turn/end sequence used to fork through the completed turn. */
+      readonly turnEndSequence?: number | undefined
       /** DSH coordinates keep step and turn completion separate. */
       readonly turn?: number
       readonly step?: number

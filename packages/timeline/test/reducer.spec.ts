@@ -1113,7 +1113,9 @@ describe('reduceTimeline', () => {
     })
     expect(ended.activeTurn).toBeUndefined()
     expect(ended.nodes).toContainEqual(expect.objectContaining({ id: 'assistant:1:0', turnCompleted: false }))
-    expect(ended.nodes).toContainEqual(expect.objectContaining({ id: 'assistant:1:1', turnCompleted: true }))
+    expect(ended.nodes).toContainEqual(
+      expect.objectContaining({ id: 'assistant:1:1', sequence: 7, turnEndSequence: 8, turnCompleted: true }),
+    )
   })
 
   it('closes an interrupted streamed step at step/end without closing its turn', () => {

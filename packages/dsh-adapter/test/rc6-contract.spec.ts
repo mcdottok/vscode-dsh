@@ -333,6 +333,12 @@ describe('DeepSeek Harness 0.1.0-rc.6 contract', () => {
     expect(
       rc6Mapper.event('turn/end', {
         sessionId: 's1',
+        data: { turn: 1, reason: { kind: 'forked' } },
+      }),
+    ).toEqual({ type: 'turn.ended', sessionId: 's1', turn: 1, reason: 'forked' })
+    expect(
+      rc6Mapper.event('turn/end', {
+        sessionId: 's1',
         data: { turn: 1, reason: { kind: 'future-plugin-reason' } },
       }),
     ).toEqual({ type: 'turn.ended', sessionId: 's1', turn: 1, reason: 'unknown' })

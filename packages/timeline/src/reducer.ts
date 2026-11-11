@@ -163,7 +163,9 @@ export function reduceTimeline(
         event.reason,
         event.failure,
         input.sequence,
-        event.reason === 'completed' ? completeTurnUsage(readTurnUsage(event.turn)) : undefined,
+        event.reason === 'completed' || event.reason === 'forked'
+          ? completeTurnUsage(readTurnUsage(event.turn))
+          : undefined,
       )
       forgetTurnUsage(event.turn)
       if (turnTracking.activeTurn === event.turn) turnTracking.activeTurn = undefined

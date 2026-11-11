@@ -41,7 +41,8 @@ export function closeTurn(
     }
   }
 
-  if (reason !== 'completed') {
+  // The Host can close an inherited turn while building a fork seed.
+  if (reason !== 'completed' && reason !== 'forked') {
     upsert(nodes, {
       kind: 'turn-terminal',
       id: `turn-terminal:${turn}`,
@@ -85,10 +86,12 @@ export function closeTurn(
   for (let index = 0; index < nodes.length; index += 1) {
     const node = nodes[index]
     if (node?.kind !== 'assistant-message' || node.turn !== turn) continue
+    const turnCompleted = index === closingIndex && !blockedByTerminalReason && !blockedByLaterTranscript
     nodes[index] = {
       ...node,
-      turnCompleted: index === closingIndex && !blockedByTerminalReason && !blockedByLaterTranscript,
-      turnUsage: index === closingIndex && reason === 'completed' ? turnUsage : undefined,
+      turnCompleted,
+      turnEndSequence: turnCompleted ? sequence : undefined,
+      turnUsage: index === closingIndex ? turnUsage : undefined,
     }
   }
 }
@@ -111,7 +114,7 @@ export function invalidateTurnTail(nodes: TimelineNode[], turn: number): void {
   for (let index = 0; index < nodes.length; index += 1) {
     const node = nodes[index]
     if (node?.kind === 'assistant-message' && node.turn === turn)
-      nodes[index] = { ...node, turnCompleted: false, turnUsage: undefined }
+      nodes[index] = { ...node, turnCompleted: false, turnEndSequence: undefined, turnUsage: undefined }
   }
 }
 

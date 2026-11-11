@@ -399,6 +399,7 @@ interface PendingAssistantWork {
   turn?: number
   step?: number
   turnCompleted?: boolean
+  turnEndSequence?: number | undefined
   interrupted?: true
 }
 
@@ -428,6 +429,7 @@ function collapseAssistantTurns(
       ...(pending.turn === undefined ? {} : { turn: pending.turn }),
       ...(pending.step === undefined ? {} : { step: pending.step }),
       ...(pending.turnCompleted === undefined ? {} : { turnCompleted: pending.turnCompleted }),
+      ...(pending.turnEndSequence === undefined ? {} : { turnEndSequence: pending.turnEndSequence }),
       ...(pending.interrupted === undefined ? {} : { interrupted: pending.interrupted }),
     })
     pending = undefined
@@ -476,6 +478,7 @@ function collapseAssistantTurns(
             ...(previous.turn === undefined ? {} : { turn: previous.turn }),
             ...(previous.step === undefined ? {} : { step: previous.step }),
             ...(previous.turnCompleted === undefined ? {} : { turnCompleted: previous.turnCompleted }),
+            ...(previous.turnEndSequence === undefined ? {} : { turnEndSequence: previous.turnEndSequence }),
             ...(previous.interrupted === undefined ? {} : { interrupted: previous.interrupted }),
           }
         } else pending = { id: node.id, tools: [], blocks: [], markdown: '', streaming: false }
@@ -495,6 +498,7 @@ function collapseAssistantTurns(
         if (node.turn !== undefined) pending.turn = node.turn
         if (node.step !== undefined) pending.step = node.step
         if (node.turnCompleted !== undefined) pending.turnCompleted = node.turnCompleted
+        pending.turnEndSequence = node.turnEndSequence
         pending.turnUsage = node.turnUsage
         if (node.interrupted !== undefined) pending.interrupted = node.interrupted
         pending.reasoning = appendReasoning(pending.reasoning, node.reasoning)
@@ -589,6 +593,7 @@ function pendingFromAssistantMessage(
     ...(node.turn === undefined ? {} : { turn: node.turn }),
     ...(node.step === undefined ? {} : { step: node.step }),
     ...(node.turnCompleted === undefined ? {} : { turnCompleted: node.turnCompleted }),
+    ...(node.turnEndSequence === undefined ? {} : { turnEndSequence: node.turnEndSequence }),
     ...(node.interrupted === undefined ? {} : { interrupted: node.interrupted }),
   }
 }
@@ -610,6 +615,7 @@ function pendingFromAssistantTurn(node: AssistantTurnNode): PendingAssistantWork
     ...(node.turn === undefined ? {} : { turn: node.turn }),
     ...(node.step === undefined ? {} : { step: node.step }),
     ...(node.turnCompleted === undefined ? {} : { turnCompleted: node.turnCompleted }),
+    ...(node.turnEndSequence === undefined ? {} : { turnEndSequence: node.turnEndSequence }),
     ...(node.interrupted === undefined ? {} : { interrupted: node.interrupted }),
   }
 }
@@ -691,6 +697,7 @@ function toAssistantTurn(pending: PendingAssistantWork, id: string): AssistantTu
     ...(pending.turn === undefined ? {} : { turn: pending.turn }),
     ...(pending.step === undefined ? {} : { step: pending.step }),
     ...(pending.turnCompleted === undefined ? {} : { turnCompleted: pending.turnCompleted }),
+    ...(pending.turnEndSequence === undefined ? {} : { turnEndSequence: pending.turnEndSequence }),
     ...(pending.interrupted === undefined ? {} : { interrupted: pending.interrupted }),
   }
 }

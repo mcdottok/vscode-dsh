@@ -355,6 +355,48 @@ describe('focused conversation interactions', () => {
     expect(screen.getByRole('button', { name: /Tool calls: 1/ })).toBeDefined()
   })
 
+  it('keeps inherited replies visible through successive forks with incomplete turn metadata', () => {
+    const inherited = nodes.map((node) =>
+      node.kind === 'assistant-message' ? { ...node, turnCompleted: false } : node,
+    )
+    const notice: TimelineNode = {
+      kind: 'notice',
+      id: 'branch-notice',
+      level: 'info',
+      text: 'Branch connected',
+    }
+    const branchHistory: readonly TimelineNode[] = [
+      ...inherited,
+      { kind: 'assistant-message', id: 'empty-step', turn: 1, step: 3, markdown: '', streaming: false },
+      { kind: 'turn-terminal', id: 'branch-terminal', turn: 1, sequence: 43, reason: 'unknown' },
+      notice,
+    ]
+    const view = render(session('standard', branchHistory))
+    const reply = screen.getByText('The complete result')
+    expect(reply.closest('.dsh-focused-turn__answer')).not.toBeNull()
+    expect(screen.queryByText('I am examining the implementation')).toBeNull()
+
+    view.rerender(
+      session('standard', [
+        ...branchHistory,
+        { kind: 'user-message', id: 'branch-prompt', markdown: 'Continue in the branch' },
+        {
+          kind: 'assistant-message',
+          id: 'branch-reply',
+          turn: 2,
+          step: 1,
+          markdown: 'A reply in the branch',
+          streaming: false,
+          turnCompleted: false,
+        },
+        { ...notice, id: 'second-branch-notice' },
+      ]),
+    )
+    expect(screen.getByText('The complete result').closest('.dsh-focused-turn__answer')).not.toBeNull()
+    expect(screen.getByText('A reply in the branch').closest('.dsh-focused-turn__answer')).not.toBeNull()
+    expect(screen.queryByText('I am examining the implementation')).toBeNull()
+  })
+
   it('keeps the turn actions below produced files in one always-mounted row', () => {
     const source = nodes.map((node) =>
       node.kind === 'tool'
@@ -373,6 +415,20 @@ describe('focused conversation interactions', () => {
     // Controls are mounted for a folded Turn too; the row never appears only on
     // hover, so no empty strip is reserved above the files.
     expect(within(footer).getByRole('button', { name: 'Copy' })).toBeDefined()
+  })
+
+  it('uses the turn end as the fork point for a focused reply', () => {
+    const branch = vi.fn()
+    const source = nodes.map((node) =>
+      node.id === 'answer' && node.kind === 'assistant-message' ? { ...node, turnEndSequence: 44 } : node,
+    )
+    render(
+      <ConversationLayoutProvider initialLayout="focused">
+        <Timeline sessionId="fixture" nodes={source} streaming={false} onBranch={branch} />
+      </ConversationLayoutProvider>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Branch into a new conversation' }))
+    expect(branch).toHaveBeenCalledWith(44)
   })
 
   it('preserves classic rendering and persists the switch across remounts', () => {

@@ -244,6 +244,7 @@ export const transcriptNodeSchema = z.discriminatedUnion('kind', [
       markdown: text,
       streaming: z.boolean(),
       sequence: count.optional(),
+      turnEndSequence: count.optional(),
       turn: count.optional(),
       step: count.optional(),
       turnCompleted: z.boolean().optional(),

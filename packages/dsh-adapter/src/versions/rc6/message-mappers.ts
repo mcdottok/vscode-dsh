@@ -27,6 +27,7 @@ import { recordOrUndefined as objectOrUndefined } from '../../repositories/share
 export function turnEndReason(value: unknown): TurnEndReasonKind {
   const kind = objectOrUndefined(value)?.kind ?? value
   return kind === 'completed' ||
+    kind === 'forked' ||
     kind === 'aborted' ||
     kind === 'blocked' ||
     kind === 'error' ||

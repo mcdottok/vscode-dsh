@@ -92,13 +92,13 @@ function turnEnded(
 }
 
 describe('completed Turn usage evidence', () => {
-  it('publishes exact usage only after a complete lifecycle window', () => {
+  it.each(['completed', 'forked'] as const)('publishes exact usage for a closed %s turn', (reason) => {
     const state = replay([
       turnStarted(),
       stepStarted(1),
       messageCompleted(1, usage(10, 5)),
       stepEnded(1),
-      turnEnded(),
+      turnEnded(reason),
     ])
 
     expect(assistantNodes(state)).toContainEqual(
@@ -108,6 +108,7 @@ describe('completed Turn usage evidence', () => {
         turnUsage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
       }),
     )
+    expect(state.nodes.some((node) => node.kind === 'turn-terminal')).toBe(false)
   })
 
   it('sums tool-only steps and failed attempts retried at the same step', () => {

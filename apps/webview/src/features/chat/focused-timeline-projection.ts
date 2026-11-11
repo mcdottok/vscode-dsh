@@ -252,23 +252,26 @@ export function createFocusedTimelineProjector(): (
             const step = answeredStep(member)
             return step !== undefined && step < replyStep
           }))
-      // Completion decides whether work may fold, not whether the reader can
-      // see the current reply. Keep the active tail's body outside the bounded
-      // process while it streams (and during the gap before turn completion).
-      const finalReply =
-        groupable(runLast) && hasBody(runLast) && runLast.turnCompleted === true && proven
-          ? runLast
-          : undefined
+      // The last visible assistant message belongs in the chat even when fork
+      // history omits its sequence or turn end, or follows it with an empty
+      // assistant step. A later tool still makes an earlier reply intermediate.
+      let tailReply: FocusedAnswerNode | undefined
+      for (let memberIndex = runMembers.length - 1; memberIndex >= 0; memberIndex--) {
+        const member = runMembers[memberIndex]!
+        if (member.kind === 'tool') break
+        if (hasBody(member)) {
+          tailReply = member
+          break
+        }
+      }
       const foldable =
         state.closed &&
         !state.aborted &&
         uninterrupted &&
-        (finalReply !== undefined || runLast.kind === 'tool')
+        ((tailReply?.turnCompleted === true && tailReply === runLast && proven) || runLast.kind === 'tool')
       const live = !state.closed && runEnd === nodes.length
-      const visibleReply =
-        finalReply ?? (live && groupable(runLast) && hasBody(runLast) ? runLast : undefined)
       const processId = `focused-turn:${nodes[runStart]!.id}`
-      const processCount = runEnd - runStart - (visibleReply !== undefined ? 1 : 0)
+      const processCount = runEnd - runStart - (tailReply !== undefined ? 1 : 0)
       const processSummary = summarizeFocusedWork(runMembers)
       // One Turn is one disclosure: the whole run scrolls inside a single
       // bounded, compact log instead of stacking virtual segments on the page.
@@ -281,7 +284,7 @@ export function createFocusedTimelineProjector(): (
         nodes: runMembers,
         sourceIds: runMembers.flatMap(timelineSourceNodeIds),
         foldable,
-        answer: visibleReply,
+        answer: tailReply,
         processId,
         processCount,
         processSummary,

@@ -138,6 +138,6 @@ export function branchUnavailableForNode(node: DisplayTimelineNode, branching: b
     branching ||
     assistantNodeInProgress(node) ||
     (node.turn !== undefined && node.turnCompleted !== true) ||
-    node.sequence === undefined
+    (node.turnEndSequence ?? node.sequence) === undefined
   )
 }

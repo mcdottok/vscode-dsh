@@ -72,6 +72,7 @@ export interface AssistantTurnNode {
   readonly markdown: string
   readonly streaming: boolean
   readonly sequence?: number
+  readonly turnEndSequence?: number | undefined
   readonly turn?: number
   readonly step?: number
   readonly turnCompleted?: boolean

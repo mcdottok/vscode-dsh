@@ -1300,7 +1300,7 @@ describe('Timeline', () => {
     expect(writeText).toHaveBeenCalledWith('Latest')
   })
 
-  it('keeps a tool call inside one assistant turn and anchors branching to the final answer', () => {
+  it('keeps a tool call inside one assistant turn and branches through the turn end', () => {
     const branch = vi.fn()
     render(
       <Timeline
@@ -1338,6 +1338,7 @@ describe('Timeline', () => {
             markdown: 'After the tool.',
             streaming: false,
             sequence: 7,
+            turnEndSequence: 8,
             turn: 1,
             step: 1,
             turnCompleted: true,
@@ -1360,7 +1361,7 @@ describe('Timeline', () => {
       Node.DOCUMENT_POSITION_FOLLOWING,
     )
     fireEvent.click(screen.getByRole('button', { name: 'Branch into a new conversation' }))
-    expect(branch).toHaveBeenCalledWith(7)
+    expect(branch).toHaveBeenCalledWith(8)
   })
 
   it('renders reasoning first while preserving the tool position inside one assistant answer', () => {

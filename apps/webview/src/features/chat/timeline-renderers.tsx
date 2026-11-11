@@ -561,6 +561,7 @@ function renderAssistantTurn(
 ): ReactElement {
   const inProgress = assistantNodeInProgress(node)
   const actionsUnavailable = running || inProgress || (node.turn !== undefined && node.turnCompleted !== true)
+  const branchSequence = node.turnEndSequence ?? node.sequence
   const producedFiles = producedFilePaths(node.tools)
   const metricsLabel =
     performanceUsage === 'detailed' ? assistantMetricsLabel(node.timing, node.usage, t) : undefined
@@ -617,7 +618,7 @@ function renderAssistantTurn(
           )}
           {...(onBranch === undefined
             ? {}
-            : { onBranch: node.sequence === undefined ? () => undefined : () => onBranch(node.sequence!) })}
+            : { onBranch: branchSequence === undefined ? () => undefined : () => onBranch(branchSequence) })}
           branchUnavailable={branchUnavailable}
           translate={t}
         />
@@ -641,6 +642,7 @@ export function renderAnswerActions(
     context.running || inProgress || (node.turn !== undefined && node.turnCompleted !== true)
   if (node.markdown.trim() === '' || actionsUnavailable) return null
   const messageId = node.kind === 'assistant-turn' ? assistantMessageId(node) : node.id
+  const branchSequence = node.turnEndSequence ?? node.sequence
   return (
     <MessageActions
       text={node.markdown}
@@ -656,7 +658,7 @@ export function renderAnswerActions(
         ? {}
         : {
             onBranch:
-              node.sequence === undefined ? () => undefined : () => context.onBranch?.(node.sequence!),
+              branchSequence === undefined ? () => undefined : () => context.onBranch?.(branchSequence),
           })}
       branchUnavailable={branchUnavailableForNode(node, context.branching)}
       translate={context.t}
@@ -687,6 +689,7 @@ function renderAssistantMessage(
 ): ReactElement {
   const inProgress = assistantNodeInProgress(node)
   const actionsUnavailable = running || inProgress || (node.turn !== undefined && node.turnCompleted !== true)
+  const branchSequence = node.turnEndSequence ?? node.sequence
   const metricsLabel =
     performanceUsage === 'detailed' ? assistantMetricsLabel(node.timing, node.usage, t) : undefined
   const turnUsage =
@@ -754,7 +757,7 @@ function renderAssistantMessage(
           )}
           {...(onBranch === undefined
             ? {}
-            : { onBranch: node.sequence === undefined ? () => undefined : () => onBranch(node.sequence!) })}
+            : { onBranch: branchSequence === undefined ? () => undefined : () => onBranch(branchSequence) })}
           branchUnavailable={branchUnavailable}
           translate={t}
         />
