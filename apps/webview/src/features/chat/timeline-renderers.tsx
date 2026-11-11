@@ -915,6 +915,15 @@ function feedbackActionProps(
   }
 }
 
+export function renderAnswerUsage(
+  node: FocusedAnswerNode | undefined,
+  context: TimelineNodeRenderContext,
+): ReactElement | null {
+  if (context.performanceUsage !== 'detailed' || node?.turnCompleted !== true || node.turnUsage === undefined)
+    return null
+  return <TurnUsageDisclosure usage={node.turnUsage} translate={context.t} />
+}
+
 function TurnUsageDisclosure(props: {
   readonly usage: TurnTokenUsage
   readonly translate: Translate

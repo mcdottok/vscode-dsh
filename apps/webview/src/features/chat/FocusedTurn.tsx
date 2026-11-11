@@ -1,6 +1,6 @@
 import { useCallback, useId, useLayoutEffect, useRef, useState, type ReactElement } from 'react'
 import { Icon } from '../../ui/Icon.js'
-import { renderAnswerActions, renderTimelineNode } from './timeline-renderers.js'
+import { renderAnswerActions, renderAnswerUsage, renderTimelineNode } from './timeline-renderers.js'
 import { assistantBlocksFromAggregates, type TimelineNodeRenderContext } from './timeline-shared.js'
 import {
   hasFocusedWork,
@@ -34,7 +34,8 @@ export function FocusedTurn(props: {
   let answer: FocusedAnswerNode | undefined = node.answer
   if (answer !== undefined) {
     if (answer.kind === 'assistant-turn') {
-      const { reasoning, turnUsage, ...plain } = answer
+      const { reasoning, ...body } = answer
+      const plain = { ...body, turnUsage: undefined }
       const blocks = answer.blocks.length === 0 ? assistantBlocksFromAggregates(answer) : answer.blocks
       const thinking = blocks.filter(
         (block) =>
@@ -56,17 +57,18 @@ export function FocusedTurn(props: {
         kind: 'assistant-turn',
         blocks: blocks.filter((block) => block.kind === 'message'),
         tools: [],
-        turnUsage,
       }
-    } else if (answer.reasoning !== undefined) {
-      const { reasoning, turnUsage, ...plain } = answer
-      if (reasoning.streaming || reasoning.markdown.trim() !== '')
+    } else {
+      const { reasoning, ...body } = answer
+      const plain = { ...body, turnUsage: undefined }
+      if (reasoning !== undefined && (reasoning.streaming || reasoning.markdown.trim() !== ''))
         work.push({ ...plain, markdown: '', images: [], reasoning })
-      answer = { ...plain, turnUsage }
+      answer = plain
     }
   }
   // The footer controls describe the original closing reply, not the split cards.
   const answerActions = renderAnswerActions(node.answer, context)
+  const answerUsage = renderAnswerUsage(node.answer, context)
   const revealDismissedId = `${processId}:reveal-dismissed:${context.revealRequestId ?? context.revealSourceNodeId}`
   const revealed =
     context.revealSourceNodeId !== undefined &&
@@ -290,13 +292,18 @@ export function FocusedTurn(props: {
       {answer === undefined ? null : (
         <div className="dsh-focused-turn__answer">{renderTimelineNode(answer, context)}</div>
       )}
+      <div className="dsh-focused-turn__usage" data-visible={answerUsage !== null || undefined}>
+        <div>{answerUsage}</div>
+      </div>
       {renderProducedFiles(
         producedFilePaths(node.nodes.flatMap((member) => (member.kind === 'tool' ? [member] : []))),
         context.onOpenLink === undefined ? undefined : context.requestOpenLink,
         context.t,
       )}
       {/* Copy, feedback and branch close the Turn, below every produced file. */}
-      {answerActions === null ? null : <div className="dsh-focused-turn__actions">{answerActions}</div>}
+      <div className="dsh-focused-turn__actions" data-visible={answerActions !== null || undefined}>
+        <div>{answerActions}</div>
+      </div>
     </section>
   )
 }

@@ -423,6 +423,34 @@ describe('focused conversation interactions', () => {
     expect(screen.queryByText('I am examining the implementation')).toBeNull()
   })
 
+  it('opens the existing footer slots when the live reply settles', () => {
+    const answer = (streaming: boolean): TimelineNode => ({
+      kind: 'assistant-message',
+      id: 'answer',
+      markdown: 'The complete result',
+      streaming,
+      turn: 1,
+      step: 1,
+      turnCompleted: !streaming,
+      ...(streaming ? {} : { turnUsage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } }),
+    })
+    const viewFor = (streaming: boolean): ReactElement => (
+      <ConversationLayoutProvider initialLayout="focused">
+        <Timeline sessionId="fixture" nodes={[nodes[0]!, answer(streaming)]} streaming={streaming} />
+      </ConversationLayoutProvider>
+    )
+    const view = render(viewFor(true))
+    const usage = view.container.querySelector('.dsh-focused-turn__usage')
+    const actions = view.container.querySelector('.dsh-focused-turn__actions')
+    expect(usage?.hasAttribute('data-visible')).toBe(false)
+    expect(actions?.hasAttribute('data-visible')).toBe(false)
+
+    view.rerender(viewFor(false))
+    expect(view.container.querySelector('.dsh-focused-turn__usage[data-visible]')).toBe(usage)
+    expect(view.container.querySelector('.dsh-focused-turn__actions[data-visible]')).toBe(actions)
+    expect(screen.getAllByText('Token usage')).toHaveLength(1)
+  })
+
   it('keeps the turn actions below produced files in one always-mounted row', () => {
     const source = nodes.map((node) =>
       node.kind === 'tool'

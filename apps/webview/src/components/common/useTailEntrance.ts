@@ -4,6 +4,7 @@ interface TailEntranceState {
   readonly resetKey: string | number | undefined
   readonly tailId: string | undefined
   readonly primed: boolean
+  readonly suppressed: boolean
   readonly enteredId: string | undefined
 }
 
@@ -28,6 +29,7 @@ export function useTailEntrance(
     resetKey,
     tailId,
     primed: false,
+    suppressed: suppress,
     enteredId: undefined,
   })
 
@@ -48,18 +50,20 @@ function tailEntranceReducer(state: TailEntranceState, action: TailEntranceActio
       resetKey: action.resetKey,
       tailId: action.tailId,
       primed: true,
+      suppressed: action.suppress,
       enteredId: undefined,
     }
   }
-  if (!state.primed) return { ...state, tailId: action.tailId, primed: true, enteredId: undefined }
-  if (action.tailId === undefined)
-    return state.enteredId === undefined && state.tailId === undefined
+  if (!state.primed)
+    return { ...state, tailId: action.tailId, primed: true, suppressed: action.suppress, enteredId: undefined }
+  // A terminal snapshot can replace the live tail ID. The reply is already on
+  // screen, so treat that first settled snapshot as the baseline.
+  if (action.tailId === undefined || action.suppress || state.suppressed)
+    return state.tailId === action.tailId &&
+      state.suppressed === action.suppress &&
+      state.enteredId === undefined
       ? state
-      : { ...state, tailId: undefined, enteredId: undefined }
-  if (action.suppress)
-    return state.tailId === action.tailId && state.enteredId === undefined
-      ? state
-      : { ...state, tailId: action.tailId, enteredId: undefined }
+      : { ...state, tailId: action.tailId, suppressed: action.suppress, enteredId: undefined }
   if (state.tailId === action.tailId) return state
   // Keep the class mounted until another tail arrives. Removing it on the
   // next animation frame cancels the CSS animation and is observable as a

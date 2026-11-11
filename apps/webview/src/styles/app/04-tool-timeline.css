@@ -382,17 +382,31 @@ button.dsh-timeline__presented-file-reveal:hover {
   background: currentColor;
 }
 
+.dsh-timeline__activity-slot {
+  flex: 0 0 auto;
+  block-size: 0;
+  overflow: clip;
+}
+
+.dsh-timeline__activity-slot[data-active] {
+  block-size: var(--dsh-timeline-status-height);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Give the viewport the space back gradually when the reply finishes. */
+  .dsh-timeline__activity-slot:not([data-active]) {
+    transition: block-size var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard);
+  }
+}
+
 .dsh-timeline__streaming-status {
-  /* The canvas owns the centered conversation rail; the tail status sits
-   * outside it in `.dsh-timeline__content`, so it constrains itself to the
-   * same width instead of pinning to the panel edge on wide screens. */
   display: flex;
+  min-block-size: var(--dsh-timeline-status-height);
   align-items: center;
   gap: var(--dsh-space-2);
-  width: min(100%, var(--dsh-timeline-content-max-width));
+  width: min(calc(100% - 2 * var(--dsh-space-1)), var(--dsh-timeline-content-max-width));
   margin-inline: auto;
-  min-height: 30px;
-  padding: 5px var(--dsh-space-1) 14px;
+  padding-inline: var(--dsh-space-1);
   color: var(--dsh-accent-line);
   font-size: var(--dsh-font-size-xs);
   font-weight: 400;
@@ -401,7 +415,9 @@ button.dsh-timeline__presented-file-reveal:hover {
 
 .dsh-timeline__activity-copy {
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dsh-timeline__activity-elapsed {

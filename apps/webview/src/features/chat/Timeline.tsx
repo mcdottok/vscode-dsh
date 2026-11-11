@@ -751,14 +751,6 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
                   </div>
                 ))}
           </div>
-          {running ? (
-            <StreamingActivity
-              key={`${props.sessionId}:turn:${props.activeTurn ?? 'active'}`}
-              usingTool={usingTool}
-              {...(props.activeTurnStartedAt === undefined ? {} : { startedAt: props.activeTurnStartedAt })}
-              translate={t}
-            />
-          ) : null}
         </div>
         {props.streaming ? (
           <span className="dsh-sr-only" aria-live="polite">
@@ -775,6 +767,16 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
       {showJumpToLatest ? (
         <ScrollToLatestButton label={t('timeline.jump')} onClick={userScrollToLatest} />
       ) : null}
+      <div className="dsh-timeline__activity-slot" data-active={running || undefined}>
+        {running ? (
+          <StreamingActivity
+            key={`${props.sessionId}:turn:${props.activeTurn ?? 'active'}`}
+            usingTool={usingTool}
+            {...(props.activeTurnStartedAt === undefined ? {} : { startedAt: props.activeTurnStartedAt })}
+            translate={t}
+          />
+        ) : null}
+      </div>
       {openLinkError === undefined ? null : (
         <ToolLinkErrorDialog
           href={openLinkError.href}

@@ -14,6 +14,19 @@ describe('Timeline', () => {
     vi.unstubAllGlobals()
   })
 
+  it('keeps the generation status outside the scrolling transcript', () => {
+    const nodes: TimelineNode[] = [
+      { kind: 'assistant-message', id: 'answer', markdown: 'First line', streaming: true },
+    ]
+    const { container, rerender } = render(<Timeline sessionId="session-1" nodes={nodes} streaming />)
+    const slot = container.querySelector('.dsh-timeline-shell > .dsh-timeline__activity-slot')
+    expect(slot?.querySelector('.dsh-timeline__streaming-status')).not.toBeNull()
+
+    rerender(<Timeline sessionId="session-1" nodes={nodes} streaming={false} />)
+    expect(container.querySelector('.dsh-timeline__streaming-status')).toBeNull()
+    expect(container.querySelector('.dsh-timeline__activity-slot')).toBe(slot)
+  })
+
   it('opens sent selection references at their captured file and exact range without a code panel', () => {
     const openLink = vi.fn()
     const { container } = render(

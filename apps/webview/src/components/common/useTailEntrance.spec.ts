@@ -35,7 +35,7 @@ describe('useTailEntrance', () => {
     expect(result.current).toBe('three')
   })
 
-  it('does not animate tail changes while the stream is active', () => {
+  it('does not animate tail changes while streaming or when the terminal snapshot replaces the tail', () => {
     const { result, rerender } = renderHook(
       ({ tailId, resetKey, suppress }: { tailId: string | undefined; resetKey: string; suppress: boolean }) =>
         useTailEntrance(tailId, resetKey, suppress),
@@ -45,7 +45,7 @@ describe('useTailEntrance', () => {
     rerender({ tailId: 'two', resetKey: 'session-1', suppress: true })
     expect(result.current).toBeUndefined()
 
-    rerender({ tailId: 'two', resetKey: 'session-1', suppress: false })
+    rerender({ tailId: 'finished', resetKey: 'session-1', suppress: false })
     expect(result.current).toBeUndefined()
 
     rerender({ tailId: 'three', resetKey: 'session-1', suppress: false })
