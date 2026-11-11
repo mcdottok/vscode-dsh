@@ -135,8 +135,7 @@ export function FocusedTurn(props: {
       processScroll.current = { top: element.scrollTop, maxTop, following }
     }
     element.addEventListener('wheel', handleWheel, { passive: false })
-    const observer =
-      typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(syncProcessScroll)
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(syncProcessScroll)
     observer?.observe(content)
     observer?.observe(element)
     return () => {
