@@ -1,6 +1,7 @@
 import {
   AppError,
   type WorkspaceCreateInput,
+  type WorkspaceDirectorySnapshot,
   type WorkspaceRepository,
   type WorkspaceSummary,
 } from '@dsh-vscode/domain'
@@ -9,11 +10,6 @@ import type { DshTransport } from '../contracts.js'
 import { callRpc, unavailable } from '../versions/rc6/rpc.js'
 import { rc6Mapper } from '../versions/rc6/mapper.js'
 import { recordOrUndefined } from './shared/guards.js'
-
-export interface Rc6WorkspaceSnapshot {
-  readonly items: readonly WorkspaceSummary[]
-  readonly archivedSessionIds: ReadonlySet<string>
-}
 
 export interface Rc6WorkspaceRepositoryOptions {
   readonly supportsSessionRestore?: boolean
@@ -26,7 +22,7 @@ export class Rc6WorkspaceRepository implements WorkspaceRepository {
   private mutationRevision = 0
   private readSequence = 0
   private appliedReadSequence = 0
-  private lastSnapshot: Rc6WorkspaceSnapshot | undefined
+  private lastSnapshot: WorkspaceDirectorySnapshot | undefined
   private readonly localArchiveChanges = new Map<string, { revision: number; archived: boolean }>()
   private readonly pendingArchives = new Set<string>()
   private readonly supportsSessionRestore: boolean
@@ -47,7 +43,7 @@ export class Rc6WorkspaceRepository implements WorkspaceRepository {
     return [...snapshot.archivedSessionIds]
   }
 
-  public async listWithArchiveState(signal?: AbortSignal): Promise<Rc6WorkspaceSnapshot> {
+  public async listWithArchiveState(signal?: AbortSignal): Promise<WorkspaceDirectorySnapshot> {
     const revision = this.mutationRevision
     const readSequence = ++this.readSequence
     const value = recordOrUndefined(await callRpc<unknown>(this.transport, 'workspace.list', {}, signal))

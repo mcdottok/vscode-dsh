@@ -54,6 +54,7 @@ export interface RequestGatewayDependencies {
   readonly extensionVersion: string
   readonly configuration: VsCodeConfigurationSource
   readonly backendService: BackendService
+  readonly readCurrentWorkspaceDirectory?: SessionScope['readCurrentWorkspaceDirectory']
   readonly listCurrentWorkspaces: SessionScope['listCurrentWorkspaces']
   readonly listCurrentArchivedSessionIds: SessionScope['listCurrentArchivedSessionIds']
   readonly ensureCurrentWorkspace: SessionScope['ensureCurrentWorkspace']

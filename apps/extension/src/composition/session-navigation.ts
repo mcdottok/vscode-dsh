@@ -100,8 +100,9 @@ export function createSessionNavigation(
     read: async (signal: AbortSignal): Promise<SessionDirectoryView> => {
       signal.throwIfAborted()
       requireConnected()
-      const workspaces = await deps.listCurrentWorkspaces(signal)
-      const page = await listScopedSessions(deps, {}, signal, workspaces)
+      const directory = await deps.readCurrentWorkspaceDirectory?.(signal)
+      const workspaces = directory?.workspaces ?? (await deps.listCurrentWorkspaces(signal))
+      const page = await listScopedSessions(deps, {}, signal, directory ?? { workspaces })
       return {
         workspaces: workspaces.map(({ id, name }) => ({ id, name })),
         sessions: page.items

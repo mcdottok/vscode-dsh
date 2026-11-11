@@ -36,8 +36,13 @@ export async function workspaceBrowser(
       return {}
   }
   const backend = deps.backendService.requireBackend()
-  const workspaces = await deps.workspaceUseCases.list(signal)
-  const current = await deps.listCurrentWorkspaces(signal)
+  const directory = await deps.readCurrentWorkspaceDirectory?.(signal)
+  const workspaces = directory?.registry.items ?? (await deps.workspaceUseCases.list(signal))
+  const current = directory?.workspaces ?? (await deps.listCurrentWorkspaces(signal))
+  const listWorkspaceSessions = (workspaceId: string): ReturnType<typeof backend.sessions.list> =>
+    directory === undefined
+      ? backend.sessions.list({ workspaceId }, signal)
+      : backend.sessions.list({ workspaceId }, signal, { workspaceSnapshot: directory.registry })
   const local = hasLocalWorkspaceAuthority(backend.connection)
   if (request.action === 'resume') {
     const pending = deps.context.globalState.get<{ path: string; sessionId: string; time: number }>(
@@ -57,7 +62,7 @@ export async function workspaceBrowser(
       (item) => item.path !== undefined && sameWorkspacePath(item.path, pending.path),
     )
     if (!workspace) return {}
-    const page = await backend.sessions.list({ workspaceId: workspace.id }, signal)
+    const page = await listWorkspaceSessions(workspace.id)
     if (!page.items.some((item) => item.id === pending.sessionId)) return {}
     await deps.context.globalState.update(WORKSPACE_HANDOFF, undefined)
     return { sessionId: pending.sessionId }
@@ -74,8 +79,9 @@ export async function workspaceBrowser(
     }
   const workspace = workspaces.find((item) => item.id === request.workspaceId)
   if (!workspace) throw denied()
-  const page = await backend.sessions.list({ workspaceId: workspace.id }, signal)
-  const archived = new Set(await backend.workspaces.listArchivedSessionIds(signal))
+  const page = await listWorkspaceSessions(workspace.id)
+  const archived =
+    directory?.registry.archivedSessionIds ?? new Set(await backend.workspaces.listArchivedSessionIds(signal))
   if (request.action === 'sessions')
     return {
       items: page.items

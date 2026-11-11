@@ -14,3 +14,8 @@ export interface WorkspaceCreateInput {
   readonly name: string
   readonly path: string
 }
+
+export interface WorkspaceDirectorySnapshot {
+  readonly items: readonly WorkspaceSummary[]
+  readonly archivedSessionIds: ReadonlySet<string>
+}

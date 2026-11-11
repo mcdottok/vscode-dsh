@@ -11,6 +11,7 @@ import {
   type SessionDetail,
   type SessionHistoryPage,
   type SessionHistoryQueryOptions,
+  type SessionListOptions,
   type SessionListQuery,
   type SessionPage,
   type SessionProjectionValues,
@@ -168,10 +169,18 @@ export class Rc6SessionRepository implements SessionRepository {
     return Promise.resolve()
   }
 
-  public async list(query?: SessionListQuery, signal?: AbortSignal): Promise<SessionPage> {
+  public async list(
+    query?: SessionListQuery,
+    signal?: AbortSignal,
+    options?: SessionListOptions,
+  ): Promise<SessionPage> {
     if (query?.cursor !== undefined && query.cursor.trim() !== '')
       throw unavailable('session list pagination')
-    if (query?.archived !== undefined && this.workspaceRepository === undefined)
+    if (
+      query?.archived !== undefined &&
+      this.workspaceRepository === undefined &&
+      options?.workspaceSnapshot === undefined
+    )
       throw unavailable('archived session listing without workspace state')
     const read = this.sessionSummaries.beginList()
     const [value, workspaceSnapshot] = await Promise.all([
@@ -183,7 +192,7 @@ export class Rc6SessionRepository implements SessionRepository {
         },
         signal,
       ),
-      this.workspaceRepository?.listWithArchiveState(signal),
+      options?.workspaceSnapshot ?? this.workspaceRepository?.listWithArchiveState(signal),
     ])
     const list = requiredRecord(value, 'session list')
     if (
@@ -192,13 +201,7 @@ export class Rc6SessionRepository implements SessionRepository {
       (list.nextCursor !== undefined && typeof list.nextCursor !== 'string')
     )
       throw malformedSessionResponse('session list')
-    let items = list.items.map((item) => {
-      const mapped = this.mapSessionSummary(item)
-      // session.list carries a partial, possibly stale hint. Only a history
-      // baseline or session.subscribed projection may clear omitted cells.
-      this.rememberProjectionValues(mapped.id, mapped.projection?.values)
-      return mapped
-    })
+    let items = list.items.map((item) => this.mapSessionSummary(item))
     let archivedSessionIds: ReadonlySet<string> | undefined
     if (workspaceSnapshot !== undefined) {
       const workspaces = workspaceSnapshot.items
@@ -216,6 +219,10 @@ export class Rc6SessionRepository implements SessionRepository {
         return { ...item, ...(workspaceId === undefined ? {} : { workspaceId }) }
       })
     }
+    if (options?.includeSession !== undefined) items = items.filter(options.includeSession)
+    // session.list carries a partial, possibly stale hint. Only a history
+    // baseline or session.subscribed projection may clear omitted cells.
+    for (const item of items) this.rememberProjectionValues(item.id, item.projection?.values)
     if (query?.workspaceId !== undefined)
       items = items.filter((item) => item.workspaceId === query.workspaceId)
     if (query?.archived !== undefined && archivedSessionIds !== undefined)

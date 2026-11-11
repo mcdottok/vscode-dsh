@@ -8,6 +8,7 @@ import type {
   SessionDetail,
   SessionHistoryPage,
   SessionHistoryQueryOptions,
+  SessionListOptions,
   SessionListQuery,
   SessionPage,
 } from '@dsh-vscode/domain'
@@ -28,8 +29,13 @@ export class SessionUseCases {
     return sessions.initializeDefaultModel(signal)
   }
 
-  public list(query?: SessionListQuery, signal?: AbortSignal): Promise<SessionPage> {
-    return this.backendService.requireBackend().sessions.list(query, signal)
+  public list(
+    query?: SessionListQuery,
+    signal?: AbortSignal,
+    options?: SessionListOptions,
+  ): Promise<SessionPage> {
+    const sessions = this.backendService.requireBackend().sessions
+    return options === undefined ? sessions.list(query, signal) : sessions.list(query, signal, options)
   }
 
   public create(input: SessionCreateInput, signal?: AbortSignal): Promise<SessionDetail> {

@@ -23,6 +23,7 @@ type SessionDependencies = Pick<
   | 'currentFeatureSessionBinding'
   | 'workspaceFolderIdForSession'
   | 'currentWorkspaceFolders'
+  | 'readCurrentWorkspaceDirectory'
   | 'listCurrentWorkspaces'
   | 'listCurrentArchivedSessionIds'
   | 'ensureCurrentWorkspace'

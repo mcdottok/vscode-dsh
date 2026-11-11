@@ -1,6 +1,12 @@
 import * as vscode from 'vscode'
 import path from 'node:path'
-import { AppError, type DshBackend, type SessionDetail, type WorkspaceSummary } from '@dsh-vscode/domain'
+import {
+  AppError,
+  type DshBackend,
+  type SessionDetail,
+  type WorkspaceDirectorySnapshot,
+  type WorkspaceSummary,
+} from '@dsh-vscode/domain'
 import type { BackendService, WorkspaceUseCases } from '@dsh-vscode/application'
 import type { TemporaryWorkspaceManager } from '../backend/temporary-workspace.js'
 import { registerWorkspaceFolders } from '../backend/register-workspace-folders.js'
@@ -23,11 +29,16 @@ export interface SessionScopeDependencies {
   readonly currentWorkspaceFolder: () => vscode.WorkspaceFolder | undefined
 }
 
-interface SharedSessionLoad {
-  readonly promise: Promise<SessionDetail>
+interface SharedLoad<T> {
+  readonly promise: Promise<T>
   readonly controller: AbortController
   callers: number
   settled: boolean
+}
+
+export interface CurrentWorkspaceDirectory {
+  readonly workspaces: readonly WorkspaceSummary[]
+  readonly registry: WorkspaceDirectorySnapshot
 }
 
 /** Fork ownership must never open history: opening an old Session may migrate it. */
@@ -62,6 +73,7 @@ export async function requireCatalogOwnedSession(
 }
 
 export interface SessionScope {
+  readCurrentWorkspaceDirectory(this: void, signal: AbortSignal): Promise<CurrentWorkspaceDirectory>
   listCurrentWorkspaces(this: void, signal?: AbortSignal): Promise<readonly WorkspaceSummary[]>
   listCurrentArchivedSessionIds(
     this: void,
@@ -93,20 +105,103 @@ export function createSessionScope(deps: SessionScopeDependencies): SessionScope
   const currentWorkspaceFolder = deps.currentWorkspaceFolder
 
   let temporaryRequested = false
-  const listCurrentWorkspaces = async (signal?: AbortSignal): Promise<readonly WorkspaceSummary[]> => {
-    const folders = currentWorkspaceFolders()
-    const workspaces = await workspaceUseCases.list(signal)
+  const scopeWorkspaces = async (
+    workspaces: readonly WorkspaceSummary[],
+    folders: readonly vscode.WorkspaceFolder[],
+    includeTemporary: boolean,
+    trusted: boolean,
+    signal?: AbortSignal,
+  ): Promise<readonly WorkspaceSummary[]> => {
     if (folders.length === 0) {
-      return temporaryRequested ? [await temporaryWorkspaceManager.resolve(workspaces, signal)] : []
+      return includeTemporary ? [await temporaryWorkspaceManager.resolve(workspaces, signal)] : []
     }
     return registerWorkspaceFolders(
       folders.map((folder) => folder.uri.fsPath),
       workspaces,
       (input, requestSignal) => workspaceUseCases.create(input, requestSignal),
       sameWorkspacePath,
-      vscode.workspace.isTrusted,
+      trusted,
       signal,
     )
+  }
+  const listCurrentWorkspaces = async (signal?: AbortSignal): Promise<readonly WorkspaceSummary[]> => {
+    const folders = currentWorkspaceFolders()
+    const workspaces = await workspaceUseCases.list(signal)
+    return scopeWorkspaces(workspaces, folders, temporaryRequested, vscode.workspace.isTrusted, signal)
+  }
+  let pendingDirectory:
+    | {
+        readonly backend: DshBackend
+        readonly scope: string
+        readonly load: SharedLoad<CurrentWorkspaceDirectory>
+      }
+    | undefined
+  const readCurrentWorkspaceDirectory = async (signal: AbortSignal): Promise<CurrentWorkspaceDirectory> => {
+    signal.throwIfAborted()
+    const backend = backendService.requireBackend()
+    const folders = currentWorkspaceFolders()
+    const includeTemporary = temporaryRequested
+    const trusted = vscode.workspace.isTrusted
+    const scope = JSON.stringify([includeTemporary, trusted, folders.map((folder) => folder.uri.fsPath)])
+    if (
+      pendingDirectory?.backend === backend &&
+      pendingDirectory.scope === scope &&
+      !pendingDirectory.load.controller.signal.aborted
+    ) {
+      return joinLoad(pendingDirectory.load, signal, 'workspace directory')
+    }
+
+    const controller = new AbortController()
+    const verifyConnection = (): void => {
+      controller.signal.throwIfAborted()
+      if (backendService.requireBackend() !== backend)
+        throw new AppError({
+          code: 'BACKEND_UNREACHABLE',
+          message: 'The DSH connection changed while reading the workspace directory.',
+          retryable: true,
+        })
+    }
+    const read = async (): Promise<CurrentWorkspaceDirectory> => {
+      const repository = backend.workspaces
+      let registry: WorkspaceDirectorySnapshot
+      if (repository.listWithArchiveState === undefined) {
+        const [items, archivedIds] = await Promise.all([
+          repository.list(controller.signal),
+          repository.listArchivedSessionIds(controller.signal),
+        ])
+        registry = { items, archivedSessionIds: new Set(archivedIds) }
+      } else {
+        registry = await repository.listWithArchiveState(controller.signal)
+      }
+      verifyConnection()
+      const workspaces = await scopeWorkspaces(
+        registry.items,
+        folders,
+        includeTemporary,
+        trusted,
+        controller.signal,
+      )
+      verifyConnection()
+      const registeredIds = new Set(registry.items.map(({ id }) => id))
+      const added = workspaces.filter(({ id }) => !registeredIds.has(id))
+      return {
+        workspaces,
+        registry: added.length === 0 ? registry : { ...registry, items: [...registry.items, ...added] },
+      }
+    }
+    const load: SharedLoad<CurrentWorkspaceDirectory> = {
+      promise: read(),
+      controller,
+      callers: 0,
+      settled: false,
+    }
+    pendingDirectory = { backend, scope, load }
+    const finish = (): void => {
+      load.settled = true
+      if (pendingDirectory?.load === load) pendingDirectory = undefined
+    }
+    void load.promise.then(finish, finish)
+    return joinLoad(load, signal, 'workspace directory')
   }
   // Opening one session fans out into several advisory reads (queue, goals,
   // jobs, feedback, subagents, commands, and model settings). They all need
@@ -118,12 +213,13 @@ export function createSessionScope(deps: SessionScopeDependencies): SessionScope
     string,
     { readonly generation: number; readonly detail: SessionDetail }
   >()
-  const currentWorkspaceSessionLoads = new Map<string, SharedSessionLoad>()
+  const currentWorkspaceSessionLoads = new Map<string, SharedLoad<SessionDetail>>()
   let currentWorkspaceSessionGeneration = 0
   const invalidateCurrentWorkspaceSessionDetails = (): void => {
     currentWorkspaceSessionGeneration += 1
     currentWorkspaceSessionDetails.clear()
     currentWorkspaceSessionLoads.clear()
+    pendingDirectory = undefined
   }
   const listCurrentArchivedSessionIds = async (
     workspaces: readonly WorkspaceSummary[],
@@ -220,28 +316,31 @@ export function createSessionScope(deps: SessionScopeDependencies): SessionScope
       options.fresh !== true &&
       options.allowArchived !== true
     )
-      return joinSessionLoad(pending, signal)
+      return joinLoad(pending, signal, 'session ownership')
 
     const generation = currentWorkspaceSessionGeneration
     const controller = new AbortController()
     const loadSignal = controller.signal
     const load = (async (): Promise<SessionDetail> => {
       let workspaces: readonly WorkspaceSummary[]
+      let directory: CurrentWorkspaceDirectory | undefined
       try {
-        workspaces = await listCurrentWorkspaces(loadSignal)
+        if (backendService.requireBackend().workspaces.listWithArchiveState !== undefined)
+          directory = await readCurrentWorkspaceDirectory(loadSignal)
+        workspaces = directory?.workspaces ?? (await listCurrentWorkspaces(loadSignal))
       } catch (error) {
         throw sessionOpenFailure('workspace discovery', error)
       }
 
-      let archivedSessionIds: readonly string[]
+      let archivedSessionIds: ReadonlySet<string>
       try {
-        archivedSessionIds = await backendService
-          .requireBackend()
-          .workspaces.listArchivedSessionIds(loadSignal)
+        archivedSessionIds =
+          directory?.registry.archivedSessionIds ??
+          new Set(await backendService.requireBackend().workspaces.listArchivedSessionIds(loadSignal))
       } catch (error) {
         throw sessionOpenFailure('archive state lookup', error)
       }
-      if (archivedSessionIds.includes(sessionId) && options.allowArchived !== true)
+      if (archivedSessionIds.has(sessionId) && options.allowArchived !== true)
         throw sessionOpenFailure(
           'archive state lookup',
           new AppError({
@@ -287,7 +386,7 @@ export function createSessionScope(deps: SessionScopeDependencies): SessionScope
     // policy documented above: an ordinary route must never adopt one, and two
     // overlapping recovery reads are rare, idempotent, and cheaper to reason
     // about than a variant-aware dedup key.
-    const shared: SharedSessionLoad = { promise: load, controller, callers: 0, settled: false }
+    const shared: SharedLoad<SessionDetail> = { promise: load, controller, callers: 0, settled: false }
     if (options.allowArchived !== true) currentWorkspaceSessionLoads.set(sessionId, shared)
     const finish = (): void => {
       shared.settled = true
@@ -295,7 +394,7 @@ export function createSessionScope(deps: SessionScopeDependencies): SessionScope
         currentWorkspaceSessionLoads.delete(sessionId)
     }
     void load.then(finish, finish)
-    return joinSessionLoad(shared, signal)
+    return joinLoad(shared, signal, 'session ownership')
   }
   const requireCurrentWorkspaceId = async (workspaceId: string, signal: AbortSignal): Promise<void> => {
     const workspaces = await listCurrentWorkspaces(signal)
@@ -352,6 +451,7 @@ export function createSessionScope(deps: SessionScopeDependencies): SessionScope
   }
 
   return {
+    readCurrentWorkspaceDirectory,
     listCurrentWorkspaces,
     listCurrentArchivedSessionIds,
     ensureCurrentWorkspace,
@@ -365,7 +465,7 @@ export function createSessionScope(deps: SessionScopeDependencies): SessionScope
   }
 }
 
-function joinSessionLoad(load: SharedSessionLoad, signal: AbortSignal): Promise<SessionDetail> {
+function joinLoad<T>(load: SharedLoad<T>, signal: AbortSignal, description: string): Promise<T> {
   load.callers += 1
   return new Promise((resolve, reject) => {
     let settled = false
@@ -381,7 +481,7 @@ function joinSessionLoad(load: SharedSessionLoad, signal: AbortSignal): Promise<
         reject(
           new AppError({
             code: 'REQUEST_CANCELLED',
-            message: 'The session ownership read was cancelled.',
+            message: `The ${description} read was cancelled.`,
             retryable: false,
           }),
         ),
@@ -396,7 +496,9 @@ function joinSessionLoad(load: SharedSessionLoad, signal: AbortSignal): Promise<
       (detail) => finish(() => resolve(detail)),
       (error: unknown) =>
         finish(() =>
-          reject(error instanceof Error ? error : new Error('The session read failed.', { cause: error })),
+          reject(
+            error instanceof Error ? error : new Error(`The ${description} read failed.`, { cause: error }),
+          ),
         ),
     )
   })

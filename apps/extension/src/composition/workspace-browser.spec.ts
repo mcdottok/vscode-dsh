@@ -21,7 +21,11 @@ vi.mock('node:fs/promises', () => ({ stat: native.stat }))
 interface BrowserFixture {
   readonly workspace: { path: string }
   readonly session: { cwd: string }
-  readonly backend: { connection: { endpoint: { host: string }; pid?: number }; sessions: { open: Mock } }
+  readonly backend: {
+    connection: { endpoint: { host: string }; pid?: number }
+    sessions: { open: Mock; list: Mock }
+    workspaces: { listArchivedSessionIds: Mock }
+  }
   readonly history: Mock
   readonly get: Mock
   readonly update: Mock
@@ -32,7 +36,7 @@ interface BrowserFixture {
   ) => Promise<unknown>
 }
 
-function fixture(): BrowserFixture {
+function fixture(withSnapshot = false): BrowserFixture {
   const workspace = { id: 'w1', name: 'Project', path: '/fixture/project', sessionCount: 1 }
   const session = { id: 's1', title: 'Task', workspaceId: 'w1', cwd: workspace.path, blank: false }
   const history = vi.fn().mockResolvedValue({
@@ -56,10 +60,19 @@ function fixture(): BrowserFixture {
     workspaces: { listArchivedSessionIds: vi.fn().mockResolvedValue([]) },
   }
   const ensure = vi.fn().mockResolvedValue({ id: 'temporary' })
+  const other = { id: 'w2', name: 'Other', path: '/fixture/other', sessionCount: 1 }
   const deps = {
     backendService: { requireBackend: () => backend },
     workspaceUseCases: { list: vi.fn().mockResolvedValue([workspace]) },
     listCurrentWorkspaces: vi.fn().mockResolvedValue([workspace]),
+    ...(withSnapshot
+      ? {
+          readCurrentWorkspaceDirectory: vi.fn().mockResolvedValue({
+            workspaces: [workspace],
+            registry: { items: [workspace, other], archivedSessionIds: new Set(['s2']) },
+          }),
+        }
+      : {}),
     currentWorkspaceFolders: () => [{ uri: { fsPath: workspace.path } }],
     context: { globalState: { get, update } },
     ensureCurrentWorkspace: ensure,
@@ -78,6 +91,33 @@ beforeEach(() => {
 })
 
 describe('workspace browser Host boundary', () => {
+  it('loads another workspace session list only on demand and reuses its archive snapshot', async () => {
+    const f = fixture(true)
+    expect(await f.request({ action: 'list' })).toMatchObject({
+      items: [
+        { id: 'w1', current: true },
+        { id: 'w2', current: false },
+      ],
+    })
+    expect(f.backend.sessions.list).not.toHaveBeenCalled()
+    f.backend.sessions.list.mockResolvedValueOnce({
+      items: [{ id: 's2', title: 'Other task', blank: false }],
+    })
+    expect(await f.request({ action: 'sessions', workspaceId: 'w2' })).toMatchObject({
+      items: [{ id: 's2', title: 'Other task', archived: true }],
+    })
+    const snapshotOptions: unknown = f.backend.sessions.list.mock.calls[0]?.[2]
+    expect(f.backend.sessions.list).toHaveBeenCalledWith(
+      { workspaceId: 'w2' },
+      expect.any(AbortSignal),
+      snapshotOptions,
+    )
+    expect(snapshotOptions).toMatchObject({
+      workspaceSnapshot: { archivedSessionIds: new Set(['s2']) },
+    })
+    expect(f.backend.workspaces.listArchivedSessionIds).not.toHaveBeenCalled()
+  })
+
   it('returns directory metadata without paths and previews without activating a session', async () => {
     const f = fixture()
     expect(await f.request({ action: 'list' })).toEqual({

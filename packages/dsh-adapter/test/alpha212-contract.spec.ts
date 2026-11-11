@@ -344,6 +344,35 @@ describe('alpha212 exact V4 delta', () => {
 })
 
 describe('alpha212 Session migration boundary', () => {
+  it('reuses the workspace snapshot and hydrates titles only inside the requested scope', async () => {
+    const request = vi.fn(() => ({
+      items: [
+        { sessionId: 'member', workspaceId: 'current', updatedAt: 1, running: false, blank: false },
+        { sessionId: 'archived', workspaceId: 'current', updatedAt: 2, running: false, blank: false },
+        { sessionId: 'other', workspaceId: 'foreign', updatedAt: 3, running: false, blank: false },
+      ],
+    }))
+    const remote = vi.fn(() => ({
+      ok: true,
+      value: { kind: 'sequenced', asOfSeq: 4, values: { title: 'Current session' } },
+    }))
+    const source = transport(request, remote)
+    const repository = new Alpha212SessionRepository(
+      source,
+      new Rc6WorkspaceRepository(source),
+      undefined,
+      {},
+    )
+    const page = await repository.list({ archived: false }, undefined, {
+      workspaceSnapshot: { items: [], archivedSessionIds: new Set(['archived']) },
+      includeSession: (session) => session.workspaceId === 'current',
+    })
+
+    expect(request.mock.calls).toEqual([['session.list', {}]])
+    expect(remote.mock.calls).toEqual([['session/projections', { request: { sessionId: 'member' } }]])
+    expect(page.items).toMatchObject([{ id: 'member', title: 'Current session' }])
+  })
+
   class SessionFixture extends Alpha212SessionRepository {
     public summary(value: unknown): SessionSummary {
       return this.mapSessionSummary(value)

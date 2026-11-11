@@ -44,7 +44,7 @@ import type {
 } from './sessions.js'
 import type { PermissionOption, QuestionAnswer } from './tools.js'
 import type { UserQuestionRepository } from './user-questions.js'
-import type { WorkspaceCreateInput, WorkspaceSummary } from './workspaces.js'
+import type { WorkspaceCreateInput, WorkspaceDirectorySnapshot, WorkspaceSummary } from './workspaces.js'
 import type { EditorBridgeRepository } from './editor-bridge.js'
 
 export interface AsyncEventSource<T> {
@@ -54,6 +54,12 @@ export interface AsyncEventSource<T> {
   publish?(event: T): void
 }
 
+export interface SessionListOptions {
+  readonly workspaceSnapshot?: WorkspaceDirectorySnapshot
+  /** Apply the Host's scope before enriching directory rows. */
+  readonly includeSession?: (session: SessionSummary) => boolean
+}
+
 export interface SessionRepository {
   /** Runtime-owned permission choices, available before a session exists. */
   listPermissionPresets?(signal?: AbortSignal): Promise<readonly string[]>
@@ -61,7 +67,7 @@ export interface SessionRepository {
   readonly supportsFileUploads?: boolean
   /** Initialize the backend's default model after a supported account login. */
   readonly initializeDefaultModel?: (signal?: AbortSignal) => Promise<void>
-  list(query?: SessionListQuery, signal?: AbortSignal): Promise<SessionPage>
+  list(query?: SessionListQuery, signal?: AbortSignal, options?: SessionListOptions): Promise<SessionPage>
   get(sessionId: string, signal?: AbortSignal): Promise<SessionDetail>
   /** Metadata for task/navigation projections, without reopening a live transcript. */
   getSummary?(sessionId: string, signal?: AbortSignal): Promise<SessionSummary>
@@ -102,6 +108,7 @@ export interface SessionRepository {
 
 export interface WorkspaceRepository {
   list(signal?: AbortSignal): Promise<readonly WorkspaceSummary[]>
+  listWithArchiveState?(signal?: AbortSignal): Promise<WorkspaceDirectorySnapshot>
   /** Return the host's authoritative archive set for the current DSH registry. */
   listArchivedSessionIds(signal?: AbortSignal): Promise<readonly string[]>
   create(input: WorkspaceCreateInput, signal?: AbortSignal): Promise<WorkspaceSummary>

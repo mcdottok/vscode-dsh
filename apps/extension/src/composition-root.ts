@@ -175,6 +175,7 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
     navigationUseCases,
   } = createUseCasesAssembly({ backendService, context })
   const {
+    readCurrentWorkspaceDirectory,
     listCurrentWorkspaces,
     listCurrentArchivedSessionIds,
     ensureCurrentWorkspace,
@@ -551,6 +552,7 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
     extensionVersion,
     configuration,
     backendService,
+    readCurrentWorkspaceDirectory,
     listCurrentWorkspaces,
     listCurrentArchivedSessionIds,
     ensureCurrentWorkspace,

@@ -179,6 +179,11 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
   }
   const sessionRequestFor = (surfaceId: string | undefined): ReturnType<typeof createSessionRequestHandler> =>
     createSessionRequestHandler({
+      ...(deps.readCurrentWorkspaceDirectory === undefined
+        ? {}
+        : {
+            readCurrentWorkspaceDirectory: deps.readCurrentWorkspaceDirectory,
+          }),
       ...(deps.prepareEditorSession === undefined ? {} : { prepareEditorSession: deps.prepareEditorSession }),
       transcript: deps.transcript.forSurface(surfaceId ?? SIDEBAR_SURFACE_ID),
       ...(deps.resyncView === undefined ? {} : { resyncView: deps.resyncView }),
@@ -440,6 +445,14 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
       return publicValue(await workspaceBrowser(deps, request.payload, signal))
 
     if (request.type === 'workspace.list') {
+      if (deps.readCurrentWorkspaceDirectory !== undefined) {
+        const { workspaces, registry } = await deps.readCurrentWorkspaceDirectory(signal)
+        const archivedSessionIds =
+          workspaces.length === 0 && currentWorkspaceFolders().length === 0
+            ? []
+            : [...registry.archivedSessionIds]
+        return publicValue({ items: workspaces.map(publicWorkspaceSummary), archivedSessionIds })
+      }
       const workspaces = await listCurrentWorkspaces(signal)
       const archivedSessionIds = await listCurrentArchivedSessionIds(workspaces, signal)
       return publicValue({ items: workspaces.map(publicWorkspaceSummary), archivedSessionIds })

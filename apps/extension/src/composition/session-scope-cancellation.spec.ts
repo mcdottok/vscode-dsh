@@ -10,7 +10,10 @@ vi.mock('vscode', () => ({ workspace: { isTrusted: true } }))
 import { createSessionScope } from './session-scope.js'
 import { WebviewMessageRouter } from '../view/message-router.js'
 
-function fixture(owned = true): {
+function fixture(
+  owned = true,
+  snapshotSupported = false,
+): {
   readonly scope: ReturnType<typeof createSessionScope>
   readonly reads: readonly { readonly signal: AbortSignal; readonly release: () => void }[]
   readonly get: ReturnType<typeof vi.fn>
@@ -64,7 +67,18 @@ function fixture(owned = true): {
   service.attach(
     {
       events: { subscribe: () => () => undefined },
-      workspaces: { list, listArchivedSessionIds: () => Promise.resolve([]) },
+      workspaces: {
+        list,
+        listArchivedSessionIds: () => Promise.resolve([]),
+        ...(snapshotSupported
+          ? {
+              listWithArchiveState: async (signal?: AbortSignal) => ({
+                items: await list(signal),
+                archivedSessionIds: new Set(['archived']),
+              }),
+            }
+          : {}),
+      },
       sessions: { get, open: get },
       subagents: {},
     } as unknown as DshBackend,
@@ -85,6 +99,28 @@ function fixture(owned = true): {
 }
 
 describe('session scope cancellation through real ownership guards', () => {
+  it('shares one workspace and archive snapshot across directory requests without sharing cancellation', async () => {
+    const { scope, reads } = fixture(true, true)
+    const first = new AbortController()
+    const a = scope.readCurrentWorkspaceDirectory(first.signal)
+    const b = scope.readCurrentWorkspaceDirectory(new AbortController().signal)
+    expect(reads).toHaveLength(1)
+
+    first.abort()
+    await expect(a).rejects.toMatchObject({ code: 'REQUEST_CANCELLED' })
+    expect(reads[0]?.signal.aborted).toBe(false)
+    reads[0]?.release()
+    await expect(b).resolves.toMatchObject({
+      workspaces: [{ id: 'w' }],
+      registry: { archivedSessionIds: new Set(['archived']) },
+    })
+
+    const next = scope.readCurrentWorkspaceDirectory(new AbortController().signal)
+    expect(reads).toHaveLength(2)
+    reads[1]?.release()
+    await next
+  })
+
   it('still rejects foreign sessions when an active sibling adopts a shared read', async () => {
     const { scope, reads } = fixture(false)
     const a = scope.requireCurrentWorkspaceSession('foreign', new AbortController().signal)
