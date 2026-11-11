@@ -669,6 +669,7 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
                         <ConnectedComposer
                           store={store}
                           modelScope="session"
+                          promptHistoryScope={`${state.connectionEpoch}:${active.id}`}
                           disabled={backend.kind !== 'connected'}
                           inputDisabled={
                             subagentReadOnlyReason !== undefined ||

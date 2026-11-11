@@ -138,6 +138,9 @@ export interface ComposerProps {
   readonly onCommandQueryChange?: (query: string | undefined) => void
   readonly onReferenceQueryChange?: (query: string | undefined, quoted: boolean) => void
   readonly onDraftChange: (value: string | ((current: string) => string)) => void
+  /** Most recent sent prompt first. */
+  readonly readPromptHistory?: () => readonly string[]
+  readonly promptHistoryScope?: string
   readonly onPickAttachment: () => void
   readonly onIngestFiles: (files: readonly File[]) => void
   readonly openFileCandidates: readonly OpenFileCandidate[]
@@ -182,6 +185,12 @@ export const Composer = memo(function Composer(props: ComposerProps): ReactEleme
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const hintId = useId()
   const pendingCursorRef = useRef<number | undefined>(undefined)
+  const promptRecall = useRef<{
+    readonly scope: string | undefined
+    readonly prompts: readonly string[]
+    readonly original: string
+    index: number
+  } | undefined>(undefined)
   const { restoreDraft } = useDraftHistory(props.draft, props.onDraftChange)
   const { railRef: attachmentRailRef, scrollable: attachmentRailScrollable } =
     useOverflowRail<HTMLUListElement>(props.attachments.length)
@@ -391,6 +400,50 @@ export const Composer = memo(function Composer(props: ComposerProps): ReactEleme
   const isComposingKey = (event: KeyboardEvent<HTMLTextAreaElement>): boolean =>
     composing.current || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229
 
+  const recallPrompt = (event: KeyboardEvent<HTMLTextAreaElement>): boolean => {
+    if (
+      (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') ||
+      event.shiftKey ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      isComposingKey(event)
+    )
+      return false
+    const textarea = event.currentTarget
+    // Away from the start, leave arrows to the native textarea, including wrapped lines.
+    if (textarea.selectionStart !== 0 || textarea.selectionEnd !== 0) return false
+    const older = event.key === 'ArrowUp'
+    let recall = promptRecall.current
+    if (
+      recall !== undefined &&
+      (recall.scope !== props.promptHistoryScope || recall.prompts[recall.index] !== props.draft)
+    ) {
+      promptRecall.current = undefined
+      recall = undefined
+    }
+    if (recall === undefined) {
+      if (!older || menuOpen || referenceMenuOpen) return false
+      const prompts = props.readPromptHistory?.()
+      if (prompts === undefined || prompts.length === 0) return false
+      recall = { scope: props.promptHistoryScope, prompts, original: props.draft, index: -1 }
+    }
+    const index = older ? Math.min(recall.index + 1, recall.prompts.length - 1) : recall.index - 1
+    const value = index < 0 ? recall.original : recall.prompts[index]
+    if (value === undefined) return false
+    event.preventDefault()
+    recall.index = index
+    promptRecall.current = index < 0 ? undefined : recall
+    if (value !== props.draft) {
+      pendingCursorRef.current = 0
+      setReferenceCursor(0)
+      props.onDraftChange(value)
+      props.onCommandQueryChange?.(slashCommandQuery(value))
+      props.onReferenceQueryChange?.(undefined, false)
+    }
+    return true
+  }
+
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (sending && event.key === 'Enter' && !event.shiftKey && !isComposingKey(event)) {
       event.preventDefault()
@@ -407,6 +460,7 @@ export const Composer = memo(function Composer(props: ComposerProps): ReactEleme
       return
     }
     if (deleteEmbeddedReference(event)) return
+    if (recallPrompt(event)) return
     if (referenceMenuOpen && !isComposingKey(event)) {
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
         const candidates = props.references ?? []
@@ -635,6 +689,7 @@ export const Composer = memo(function Composer(props: ComposerProps): ReactEleme
               ? { 'aria-activedescendant': commandMenuOptionId(highlight) }
               : {})}
           onChange={(event) => {
+            promptRecall.current = undefined
             const value = event.target.value
             fitComposerTextarea(event.currentTarget, focused ? { minimum: 42, maximum: 240 } : undefined)
             const cursor =
