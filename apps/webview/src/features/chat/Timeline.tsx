@@ -334,6 +334,7 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
     itemCount: displayNodes.length,
     sessionId: props.sessionId,
     layoutMeasurementsActive: virtualizeTimeline,
+    snapToTailOnWheel: running,
   })
   const getFocusedTimelineIndex = useCallback((): number | undefined => {
     const timeline = scrollRef.current

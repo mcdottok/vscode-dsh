@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 
 const DEFAULT_BOTTOM_THRESHOLD = 64
+const WHEEL_TAIL_DISTANCE = 32
 const USER_SCROLL_IDLE_MS = 220
 const SCROLL_KEYS = new Set(['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', ' '])
 
@@ -25,6 +26,8 @@ export interface ScrollFollowOptions {
   readonly observeContentSize?: boolean
   /** A virtual canvas may clamp a pinned offset while its estimates settle. */
   readonly layoutMeasurementsActive?: boolean
+  /** Reattach to an actively growing conversation when a downward wheel reaches its tail. */
+  readonly snapToTailOnWheel?: boolean
 }
 
 /** A reader position captured before an older history page is inserted. */
@@ -512,21 +515,64 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
   useLayoutEffect(() => {
     const element = scrollRef.current
     if (element === null) return
-    const onWheel = (event: WheelEvent): void => handleWheel(event)
+    const isNestedScrollGesture = (event: Event): boolean => {
+      if (!(event.target instanceof Element)) return false
+      const boundary = event.target.closest('[data-scroll-follow-boundary]')
+      return (
+        boundary !== null &&
+        boundary !== element &&
+        element.contains(boundary) &&
+        boundary.scrollHeight - boundary.clientHeight > 1
+      )
+    }
+    const onWheel = (event: WheelEvent): void => {
+      if (isNestedScrollGesture(event) || event.defaultPrevented || event.ctrlKey || event.shiftKey) return
+      const { deltaMode, deltaX, deltaY } = event
+      if (Math.abs(deltaY) <= Math.abs(deltaX)) return
+      if (options.snapToTailOnWheel && event.cancelable && deltaY > 0) {
+        let distance = deltaY
+        if (deltaMode === 1) distance *= Number.parseFloat(getComputedStyle(element).lineHeight) || 16
+        if (deltaMode === 2) distance *= element.clientHeight
+        const maxTop = element.scrollHeight - element.clientHeight
+        if (maxTop > 1 && maxTop - element.scrollTop <= distance + WHEEL_TAIL_DISTANCE) {
+          for (
+            let target = event.target instanceof Element ? event.target : null;
+            target !== null && target !== element;
+            target = target.parentElement
+          ) {
+            const remaining = target.scrollHeight - target.clientHeight
+            if (remaining <= 1) continue
+            const style = getComputedStyle(target)
+            if (
+              /^(auto|scroll)$/u.test(style.overflowY) &&
+              (remaining - target.scrollTop > 1 || /^(contain|none)$/u.test(style.overscrollBehaviorY))
+            )
+              return
+          }
+          // Reattach against the current layout before another chunk can move
+          // the tail or the native wheel animation can leave a stale offset.
+          event.preventDefault()
+          scrollToLatest()
+          return
+        }
+      }
+      handleWheel(event)
+    }
     const onPointerDown = (event: PointerEvent): void => {
-      if (event.button !== 0) return
+      if (event.button !== 0 || isNestedScrollGesture(event)) return
       smoothScrollActiveRef.current = false
       cancelScheduledFollow()
       armUserScrollLock()
     }
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (!SCROLL_KEYS.has(event.key)) return
+      if (!SCROLL_KEYS.has(event.key) || isNestedScrollGesture(event)) return
       if (event.target instanceof HTMLButtonElement || event.target instanceof HTMLInputElement) return
       smoothScrollActiveRef.current = false
       cancelScheduledFollow()
       armUserScrollLock()
     }
-    const onScrollEnd = (): void => {
+    const onScrollEnd = (event: Event): void => {
+      if (event.target !== element) return
       smoothScrollActiveRef.current = false
       if (!userScrollActiveRef.current) return
       clearUserScrollLock()
@@ -535,8 +581,10 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     // Capture the gesture on the scroll owner itself, before React's delegated
     // listener and before the browser applies the native scroll offset. The
     // pointer path also covers scrollbar dragging, which has no wheel event.
-    const onScroll = (): void => scrollHandlerRef.current()
-    element.addEventListener('wheel', onWheel, { capture: true, passive: true })
+    const onScroll = (event: Event): void => {
+      if (event.target === element) scrollHandlerRef.current()
+    }
+    element.addEventListener('wheel', onWheel, { capture: true, passive: !options.snapToTailOnWheel })
     element.addEventListener('pointerdown', onPointerDown, { capture: true, passive: true })
     element.addEventListener('keydown', onKeyDown, { capture: true })
     element.addEventListener('scroll', onScroll, { capture: true, passive: true })
@@ -548,7 +596,15 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       element.removeEventListener('scroll', onScroll, true)
       element.removeEventListener('scrollend', onScrollEnd, true)
     }
-  }, [armUserScrollLock, cancelScheduledFollow, clearUserScrollLock, handleWheel, scheduleScrollToLatest])
+  }, [
+    armUserScrollLock,
+    cancelScheduledFollow,
+    clearUserScrollLock,
+    handleWheel,
+    options.snapToTailOnWheel,
+    scheduleScrollToLatest,
+    scrollToLatest,
+  ])
 
   useLayoutEffect(
     () => () => {

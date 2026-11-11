@@ -75,6 +75,78 @@ afterEach(() => {
 })
 
 describe('focused conversation interactions', () => {
+  it('follows a single streaming reasoning step after the reader returns to the bottom', () => {
+    const content = (markdown: string): ReactElement => (
+      <ConversationLayoutProvider initialLayout="focused">
+        <Timeline
+          sessionId="fixture"
+          nodes={[
+            nodes[0]!,
+            {
+              kind: 'assistant-message',
+              id: 'thinking',
+              markdown: '',
+              reasoning: { markdown, streaming: true },
+              streaming: true,
+              turn: 1,
+              step: 1,
+            },
+          ]}
+          streaming
+        />
+      </ConversationLayoutProvider>
+    )
+    const view = render(content('Thinking'))
+    const process = view.container.querySelector<HTMLDivElement>('.dsh-focused-turn__process')!
+    let height = 500
+    let top = 300
+    Object.defineProperties(process, {
+      clientHeight: { value: 200 },
+      scrollHeight: { get: () => height },
+      scrollTop: {
+        get: () => top,
+        set: (value: number) => {
+          top = Math.min(value, height - 200)
+        },
+      },
+    })
+
+    height = 600
+    view.rerender(content('Thinking about the first step'))
+    expect(process.scrollTop).toBe(400)
+
+    // A native gesture can change the offset before its scroll event arrives.
+    process.scrollTop = 390
+    height = 700
+    view.rerender(content('Thinking about the second step'))
+    expect(process.scrollTop).toBe(390)
+    fireEvent.scroll(process)
+
+    // The reader reaches the previous bottom just as another chunk arrives.
+    process.scrollTop = 500
+    height = 800
+    view.rerender(content('Thinking about the third step'))
+    fireEvent.scroll(process)
+    expect(process.scrollTop).toBe(600)
+
+    process.scrollTop = 500
+    fireEvent.scroll(process)
+    expect(fireEvent.wheel(process, { deltaY: 24 })).toBe(false)
+    expect(process.scrollTop).toBe(524)
+
+    // The wheel would stop short of the end even before the next chunk arrives.
+    process.scrollTop = 550
+    fireEvent.scroll(process)
+    fireEvent.wheel(process, { deltaY: -24 })
+    expect(process.scrollTop).toBe(526)
+    fireEvent.wheel(process, { deltaY: 48 })
+    expect(process.scrollTop).toBe(600)
+
+    height = 900
+    view.rerender(content('Thinking about the fourth step'))
+    expect(process.scrollTop).toBe(700)
+  })
+
   it.each(['compact', 'standard', 'detailed', 'verbose'] as const)(
     'keeps a streaming reply outside the work log, including when work is collapsed: %s',
     (mode) => {

@@ -81,6 +81,20 @@ describe('useScrollFollow user jump', () => {
     expect(viewport.scrollTop).toBe(520)
   })
 
+  it('keeps the outer viewport pinned when a nested work log scrolls', () => {
+    const { viewport } = renderHarness()
+    setScrollMetrics(viewport, 600, 1_000, 400)
+    const workLog = document.createElement('div')
+    workLog.setAttribute('data-scroll-follow-boundary', '')
+    setScrollMetrics(workLog, 100, 500, 200)
+    viewport.append(workLog)
+
+    fireEvent.wheel(workLog, { deltaY: -80 })
+    fireEvent.scroll(workLog)
+
+    expect(screen.getByTestId('jump-state').getAttribute('data-pinned')).toBe('true')
+  })
+
   afterEach(() => {
     cleanup()
     vi.unstubAllGlobals()

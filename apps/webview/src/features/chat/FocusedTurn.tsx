@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useId, useLayoutEffect, useRef, useState, type ReactElement } from 'react'
 import { Icon } from '../../ui/Icon.js'
 import { renderAnswerActions, renderTimelineNode } from './timeline-renderers.js'
 import { assistantBlocksFromAggregates, type TimelineNodeRenderContext } from './timeline-shared.js'
@@ -12,6 +12,8 @@ import { FocusedToolActivity } from './FocusedToolActivity.js'
 import type { ToolTimelineNode } from './ToolCallCollection.js'
 import { producedFilePaths, renderProducedFiles } from './timeline-produced-files.js'
 
+const WHEEL_FOLLOW_DISTANCE = 32
+
 export function FocusedTurn(props: {
   readonly node: FocusedTurnNode
   readonly context: TimelineNodeRenderContext
@@ -20,21 +22,10 @@ export function FocusedTurn(props: {
   const processId = node.processId ?? node.id
   const bodyId = useId()
   const processRef = useRef<HTMLDivElement>(null)
-  const followProcess = useRef(true)
+  const processScroll = useRef({ top: 0, maxTop: 0, following: true })
   const [visibleWork, setVisibleWork] = useState(60)
-  const compactLive = context.running && node.live === true && (node.processCount ?? node.nodes.length) >= 4
-  useLayoutEffect(() => {
-    const element = processRef.current
-    if (!compactLive || element === null || typeof ResizeObserver === 'undefined') return
-    if (context.revealSourceNodeId !== undefined) return
-    const observer = new ResizeObserver(() => {
-      if (followProcess.current) element.scrollTop = element.scrollHeight
-    })
-    const content = element.firstElementChild
-    if (content !== null) observer.observe(content)
-    if (followProcess.current) element.scrollTop = element.scrollHeight
-    return () => observer.disconnect()
-  }, [compactLive, node.nodes, visibleWork, context.revealSourceNodeId])
+  const windowLiveWork =
+    context.running && node.live === true && (node.processCount ?? node.nodes.length) >= 4
   const summary = node.processSummary ?? summarizeFocusedWork(node.nodes)
   const finished = node.foldable
   const live = node.live === true
@@ -88,14 +79,78 @@ export function FocusedTurn(props: {
   const open =
     revealed ||
     (!context.expandedDetails.has(collapsedId) && (live || context.expandedDetails.has(processId)))
+  const followLiveWork = open && live && context.running && !revealed
+  const hasWork = work.length > 0
+  const syncProcessScroll = useCallback((): void => {
+    const element = processRef.current
+    if (!followLiveWork || element === null) return
+    const previous = processScroll.current
+    const top = element.scrollTop
+    const maxTop = Math.max(0, element.scrollHeight - element.clientHeight)
+    let following = previous.following
+    if (Math.abs(top - previous.top) > 1) {
+      // A streamed update can grow the log before the browser delivers the
+      // reader's scroll event. A downward scroll to the old end still resumes follow.
+      following = maxTop - top <= 1 || (top > previous.top && previous.maxTop - top <= 1)
+    }
+    if (following && maxTop - top > 1) element.scrollTop = maxTop
+    processScroll.current = { top: element.scrollTop, maxTop, following }
+  }, [followLiveWork])
+  useLayoutEffect(syncProcessScroll, [syncProcessScroll, hasWork, node.nodes])
+  useLayoutEffect(() => {
+    const element = processRef.current
+    const content = element?.firstElementChild
+    if (!followLiveWork || !hasWork || element === null || content == null) return
+    const handleWheel = (event: WheelEvent): void => {
+      const { deltaMode, deltaX, deltaY } = event
+      if (event.defaultPrevented || !event.cancelable || event.ctrlKey || event.shiftKey) return
+      if (Math.abs(deltaY) <= Math.abs(deltaX)) return
+      const maxTop = Math.max(0, element.scrollHeight - element.clientHeight)
+      if (maxTop <= 1) return
+
+      // A tool output with its own scrollbar gets first use of the wheel.
+      for (
+        let target = event.target instanceof Element ? event.target : null;
+        target !== null && target !== element;
+        target = target.parentElement
+      ) {
+        const remaining = target.scrollHeight - target.clientHeight
+        if (remaining <= 1) continue
+        const style = getComputedStyle(target)
+        if (!/^(auto|scroll)$/u.test(style.overflowY)) continue
+        const available = deltaY > 0 ? remaining - target.scrollTop : target.scrollTop
+        if (available > 1 || /^(contain|none)$/u.test(style.overscrollBehaviorY)) return
+      }
+
+      let distance = deltaY
+      if (deltaMode === 1) distance *= Number.parseFloat(getComputedStyle(element).lineHeight) || 16
+      if (deltaMode === 2) distance *= element.clientHeight
+      const nextTop = Math.max(0, Math.min(maxTop, element.scrollTop + distance))
+      const following = deltaY > 0 && maxTop - nextTop <= WHEEL_FOLLOW_DISTANCE
+
+      // Commit the offset and follow state together. A native wheel scroll can
+      // otherwise apply an older offset after a streamed update has moved the tail.
+      event.preventDefault()
+      element.scrollTop = following ? maxTop : nextTop
+      processScroll.current = { top: element.scrollTop, maxTop, following }
+    }
+    element.addEventListener('wheel', handleWheel, { passive: false })
+    const observer =
+      typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(syncProcessScroll)
+    observer?.observe(content)
+    observer?.observe(element)
+    return () => {
+      element.removeEventListener('wheel', handleWheel)
+      observer?.disconnect()
+    }
+  }, [followLiveWork, hasWork, syncProcessScroll])
   // Every open process reads as the same bounded, compact work log, so no
   // transcript view ever pours a whole Turn into the page at once.
   const compactProcess = open
   const process: ReactElement[] = []
   // A live run mounts only its latest window; a reopened settled turn keeps the
   // whole log scrollable inside the same bounded box.
-  const workStart =
-    compactLive && context.revealSourceNodeId === undefined ? Math.max(0, work.length - visibleWork) : 0
+  const workStart = windowLiveWork && !revealed ? Math.max(0, work.length - visibleWork) : 0
   if (open)
     for (let index = workStart; index < work.length; index++) {
       const member = work[index]!
@@ -165,7 +220,7 @@ export function FocusedTurn(props: {
       data-process-live={live}
       data-compact-process={compactProcess}
     >
-      {work.length === 0 ? null : (
+      {!hasWork ? null : (
         <>
           <button
             type="button"
@@ -195,10 +250,8 @@ export function FocusedTurn(props: {
             id={bodyId}
             hidden={!open}
             className="dsh-focused-turn__process"
-            onScroll={(event) => {
-              const element = event.currentTarget
-              followProcess.current = element.scrollHeight - element.scrollTop - element.clientHeight < 24
-            }}
+            data-scroll-follow-boundary
+            onScroll={syncProcessScroll}
           >
             <div className="dsh-focused-turn__process-content">
               {workStart > 0 ? (
@@ -206,14 +259,20 @@ export function FocusedTurn(props: {
                   type="button"
                   className="dsh-button dsh-button--secondary dsh-button--compact"
                   onClick={() => {
-                    followProcess.current = false
+                    processScroll.current.following = false
                     const element = processRef.current
                     const previousHeight = element?.scrollHeight ?? 0
                     const previousTop = element?.scrollTop ?? 0
                     setVisibleWork((count) => count + 60)
                     requestAnimationFrame(() => {
-                      if (element !== null)
+                      if (element !== null) {
                         element.scrollTop = previousTop + element.scrollHeight - previousHeight
+                        processScroll.current = {
+                          top: element.scrollTop,
+                          maxTop: Math.max(0, element.scrollHeight - element.clientHeight),
+                          following: false,
+                        }
+                      }
                     })
                   }}
                 >

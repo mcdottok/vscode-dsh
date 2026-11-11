@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import type { ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { TimelineNode } from '@dsh-vscode/timeline'
 import { ConversationEventToggle } from '../shell/ConversationEventToggle.js'
@@ -148,6 +149,38 @@ describe('Timeline', () => {
 
     expect(timeline.scrollTop).toBe(1_300)
     expect(screen.queryByRole('button', { name: 'Jump to latest' })).toBeNull()
+  })
+
+  it('resumes following the streaming reply when a downward wheel reaches the current tail', async () => {
+    const content = (markdown: string): ReactElement => (
+      <Timeline
+        sessionId="session-1"
+        nodes={[{ kind: 'assistant-message', id: 'reply', markdown, streaming: true }]}
+        streaming
+      />
+    )
+    const view = render(content('Streaming reply'))
+    const timeline = view.container.querySelector<HTMLDivElement>('.dsh-timeline')!
+    let height = 900
+    Object.defineProperties(timeline, {
+      scrollHeight: { get: () => height },
+      clientHeight: { value: 300 },
+    })
+    timeline.scrollTop = 550
+    fireEvent.wheel(timeline, { deltaY: -24 })
+    fireEvent.scroll(timeline)
+    expect(timeline.scrollTop).toBe(550)
+
+    expect(fireEvent.wheel(timeline, { deltaY: 24 })).toBe(false)
+    expect(timeline.scrollTop).toBe(600)
+
+    height = 1_100
+    view.rerender(content('Streaming reply with more content'))
+    fireEvent.scroll(timeline)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(timeline.scrollTop).toBe(800)
   })
 
   it('shows tool activity when a live tool is present in the transcript tail', () => {
