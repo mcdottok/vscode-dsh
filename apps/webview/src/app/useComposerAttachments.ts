@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type {
   ImageAttachmentLimits,
   EditorContextItem,
@@ -7,6 +7,7 @@ import type {
   SubagentCatalog,
 } from '@dsh-vscode/domain'
 import type { AppStore, OpenFileCandidate, ReferenceCandidate } from './store.js'
+import { readDraft, selectDraftKey, sessionDraftKey, setDraft } from './draft-store.js'
 import { publicProtocolErrorCode, publicProtocolErrorMessage } from './protocol-client.js'
 import { useStableCallback } from './useStableCallback.js'
 import { readFileAsBase64, formatByteSize } from './attachment-reader.js'
@@ -44,13 +45,6 @@ export interface ComposerAttachmentDependencies {
   readonly subagentEntries: SubagentCatalog['entries']
   readonly editorContext: readonly EditorContextItem[]
   readonly mountedRef: { readonly current: boolean }
-  /**
-   * The shared composer draft lives in the draft provider above App, so typing
-   * re-renders only the composer binding. The hook never reads the draft at
-   * render time; submit reads it once at event time through `readDraft`.
-   */
-  readonly setDraft: Dispatch<SetStateAction<string>>
-  readonly readDraft: () => string
 }
 
 export interface ComposerAttachments {
@@ -96,7 +90,6 @@ export function useComposerAttachments(deps: ComposerAttachmentDependencies): Co
     subagentEntries,
   } = deps
   const mountedRef = deps.mountedRef
-  const setDraft = deps.setDraft
   const [attachments, setAttachments] = useState<PromptAttachment[]>([])
   const [firstPromptHandoff, setFirstPromptHandoff] = useState<{ readonly sessionId: string }>()
   const [attachmentPreviews, setAttachmentPreviews] = useState<Record<string, string>>({})
@@ -370,11 +363,18 @@ export function useComposerAttachments(deps: ComposerAttachmentDependencies): Co
     if (active === undefined && !hasPendingSession) return Promise.resolve()
     // A retry starts from a clean slate; the previous rejection is stale now.
     setSubmitError(undefined)
-    const text = deps.readDraft()
-    const attachmentSnapshot = attachments
     const before = store.getState()
+    const draftKey = selectDraftKey(before)
+    const text = readDraft(draftKey)
+    const attachmentSnapshot = attachments
     const pending = active === undefined ? before.pendingSession : undefined
     let handoff: { readonly sessionId: string } | undefined
+    const submittedDraftKey = (): string | undefined =>
+      handoff === undefined || store.getState().pendingSession?.revision === pending?.revision
+        ? draftKey
+        : sessionDraftKey(handoff.sessionId)
+    const clearSubmittedDraft = (): void =>
+      setDraft(submittedDraftKey(), (current) => (current === text ? '' : current))
     let stopHandoffWatch: (() => void) | undefined
     const rememberFirstPromptSession = (): void => {
       const current = store.getState().pendingSession
@@ -468,7 +468,7 @@ export function useComposerAttachments(deps: ComposerAttachmentDependencies): Co
       } finally {
         stopEarlyWatch()
       }
-      if (outcome === 'cancelled') return
+      if (outcome === 'cancelled') outcome = await receipt
       if (outcome === 'visible') {
         if (
           !mountedRef.current ||
@@ -476,7 +476,7 @@ export function useComposerAttachments(deps: ComposerAttachmentDependencies): Co
           store.getState().activeSessionId !== active?.id
         )
           return
-        setDraft((current) => (current === text ? '' : current))
+        clearSubmittedDraft()
         // Delivery already consumed the snapshot. Release its handles even if
         // the late RPC response fails; the Host release is idempotent.
         removeAttachmentDrafts(
@@ -490,7 +490,10 @@ export function useComposerAttachments(deps: ComposerAttachmentDependencies): Co
       }
       if (!mountedRef.current || Boolean(signal?.aborted)) return
       const admitted = store.getState()
-      if (active !== undefined && admitted.activeSessionId !== active.id) return
+      if (selectDraftKey(admitted) !== submittedDraftKey()) {
+        clearSubmittedDraft()
+        return
+      }
       const directRequests = admitted.directPromptRequestIds?.filter((id) => !beforeRequests.has(id)) ?? []
       if (directRequests.length > 0 && !signal?.aborted) {
         awaitingVisibility = true
@@ -513,8 +516,14 @@ export function useComposerAttachments(deps: ComposerAttachmentDependencies): Co
           const cancelled = (): void => finish(new DOMException('Cancelled', 'AbortError'))
           const check = (): void => {
             const current = store.getState()
-            if (current.activeSessionId !== sessionId || current.backend.kind !== 'connected') {
+            if (current.backend.kind !== 'connected') {
               cancelled()
+              return
+            }
+            // The receipt already succeeded. If the reader leaves, there is
+            // no longer a visible composer to hold until the transcript arrives.
+            if (current.activeSessionId !== sessionId) {
+              finish()
               return
             }
             if (
@@ -536,7 +545,8 @@ export function useComposerAttachments(deps: ComposerAttachmentDependencies): Co
         })
       }
       if (!mountedRef.current || Boolean(signal?.aborted)) return
-      setDraft((current) => (current === text ? '' : current))
+      clearSubmittedDraft()
+      if (selectDraftKey(store.getState()) !== submittedDraftKey()) return
       // The Extension Host consumes only the handles admitted by this send;
       // keep any draft attachments the user added while it was in flight.
       removeAttachmentDrafts(
@@ -548,7 +558,7 @@ export function useComposerAttachments(deps: ComposerAttachmentDependencies): Co
       .catch((reason: unknown) => {
         if (Boolean(signal?.aborted) || (reason instanceof DOMException && reason.name === 'AbortError'))
           return
-        if (!mountedRef.current) return
+        if (!mountedRef.current || selectDraftKey(store.getState()) !== submittedDraftKey()) return
         if (awaitingVisibility) {
           setSubmitError(t('app.error.promptTimeout'))
           return

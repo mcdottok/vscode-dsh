@@ -1,8 +1,8 @@
 import { Composer, type ComposerProps } from './Composer.js'
-import { useDraftValue, setDraft } from '../../app/draft-store.js'
+import { selectDraftKey, setDraft, useDraftValue } from '../../app/draft-store.js'
 import { useCallback, type ReactElement } from 'react'
 import { isInjectedUserTimelineNode } from '../chat/timeline-user-text-facts.js'
-import type { AppStore } from '../../app/store.js'
+import type { AppState, AppStore } from '../../app/store.js'
 import {
   sameShallowSelection,
   useAppStoreSelector,
@@ -22,17 +22,29 @@ type ConnectedComposerProps = Omit<
   readonly modelScope: 'global' | 'session'
 }
 
+const selectGlobalComposer = (
+  state: AppState,
+): ComposerModelDirectory & { draftKey: string | undefined } => ({
+  ...selectGlobalComposerModels(state),
+  draftKey: selectDraftKey(state),
+})
+
+const selectSessionComposer = (state: AppState): ReturnType<typeof selectGlobalComposer> => ({
+  ...selectSessionComposerModels(state),
+  draftKey: selectDraftKey(state),
+})
+
 /**
  * Draft edits and model directory reads subscribe here, keeping their render
  * lifecycle inside the composer rather than the page shell.
  */
 export function ConnectedComposer({ store, modelScope, ...props }: ConnectedComposerProps): ReactElement {
-  const draft = useDraftValue()
-  const directory = useAppStoreSelector(
+  const { draftKey, ...directory } = useAppStoreSelector(
     store,
-    modelScope === 'session' ? selectSessionComposerModels : selectGlobalComposerModels,
+    modelScope === 'session' ? selectSessionComposer : selectGlobalComposer,
     sameShallowSelection,
   )
+  const draft = useDraftValue(draftKey)
   const retryModels = useCallback((): void => {
     // The picker already states the failure; a second page banner would repeat it.
     void store.refreshSessionModels().catch(() => undefined)
@@ -58,10 +70,11 @@ export function ConnectedComposer({ store, modelScope, ...props }: ConnectedComp
   }, [modelScope, store])
   return (
     <Composer
+      key={draftKey}
       {...props}
       {...directory}
       draft={draft}
-      onDraftChange={setDraft}
+      onDraftChange={(action) => setDraft(draftKey, action)}
       readPromptHistory={readPromptHistory}
       {...(modelScope === 'session' ? { onModelRetry: retryModels } : {})}
     />

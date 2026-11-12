@@ -963,6 +963,7 @@ describe('App connected rendering', () => {
     })
     const timeline = screen.getByTestId('timeline')
     expect(timeline.getAttribute('data-awaiting-first-prompt')).toBe('true')
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Prompt' }).value).toBe('Hello')
 
     await act(async () => {
       publish({ ...state, directPromptRequestIds: ['first-prompt'] })
@@ -981,6 +982,7 @@ describe('App connected rendering', () => {
       })
     })
     await waitFor(() => expect(timeline.getAttribute('data-awaiting-first-prompt')).toBe('false'))
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Prompt' }).value).toBe('')
   })
 
   it('keeps a failed active prompt for retry without rendering an untrusted error message', async () => {
@@ -2406,7 +2408,62 @@ describe('App connected rendering', () => {
     expect(releaseAttachments).not.toHaveBeenCalled()
   })
 
-  it('keeps the draft and a still-valid attachment when a superseded pending send reports cancelled', async () => {
+  it('restores only the selected conversation draft and scopes late send receipts', async () => {
+    const first = connectedState(true)
+    const second = {
+      ...first,
+      activeSessionId: 's2',
+      sessions: [...first.sessions, { ...first.sessions[0]!, id: 's2', title: 'Another' }],
+      timeline: { ...first.timeline, sessionId: 's2' },
+    }
+    const { updateState } = renderWithMutableState(first)
+    let acknowledge!: () => void
+    const receipt = new Promise<void>((resolve) => {
+      acknowledge = resolve
+    })
+    const sendPrompt = vi.fn(() => receipt)
+    Object.assign(currentStore, { sendPrompt })
+    const input = (): HTMLTextAreaElement =>
+      screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Prompt' })
+
+    fireEvent.change(input(), { target: { value: 'First draft\nSecond line' } })
+    updateState(second)
+    expect(input().value).toBe('')
+    fireEvent.keyDown(input(), { key: 'z', ctrlKey: true })
+    expect(input().value).toBe('')
+    fireEvent.change(input(), { target: { value: 'Another draft' } })
+    updateState(first)
+    expect(input().value).toBe('First draft\nSecond line')
+    updateState({
+      ...connectedState(false),
+      pendingSession: { revision: 1, workspaceId: 'w1', configuration: first.configuration! },
+    })
+    expect(document.querySelector<HTMLTextAreaElement>('.dsh-composer textarea')?.value).toBe('')
+    updateState(second)
+    expect(input().value).toBe('Another draft')
+
+    updateState(first)
+    expect(input().value).toBe('First draft\nSecond line')
+    fireEvent.submit(input().closest('form')!)
+    expect(sendPrompt).toHaveBeenCalledWith(
+      's1',
+      'First draft\nSecond line',
+      [],
+      'queue',
+      expect.any(AbortSignal),
+    )
+    updateState(second)
+    fireEvent.change(input(), { target: { value: 'First draft\nSecond line' } })
+    await act(async () => {
+      acknowledge()
+      await receipt
+    })
+    expect(input().value).toBe('First draft\nSecond line')
+    updateState(first)
+    expect(input().value).toBe('')
+  })
+
+  it('isolates the current draft and attachment from a cancelled pending send', async () => {
     const state = connectedState(false)
     let rejectSend: (reason: unknown) => void = () => undefined
     const send = new Promise<void>((_resolve, reject) => {
@@ -2443,9 +2500,7 @@ describe('App connected rendering', () => {
       ),
     )
 
-    // The user navigates to an existing session while the send is still
-    // working: the switch discards the pending composition's own attachment,
-    // and the draft text survives the navigation by design.
+    // Navigate before creation finishes, then start composing in the new session.
     updateState({
       ...state,
       activeSessionId: 's2',
@@ -2465,20 +2520,20 @@ describe('App connected rendering', () => {
     })
     await waitFor(() => expect(releaseAttachments).toHaveBeenCalledWith([uri]))
     const sessionPrompt = await screen.findByRole<HTMLTextAreaElement>('textbox', { name: 'Prompt' })
+    expect(sessionPrompt.value).toBe('')
+    fireEvent.change(sessionPrompt, { target: { value: 'The current conversation draft' } })
     fireEvent.paste(sessionPrompt, {
       clipboardData: { files: [new File(['later'], 'later.txt', { type: 'text/plain' })] },
     })
     await screen.findByRole('button', { name: 'Remove later.txt' })
 
-    // The send reports cancelled — nothing was delivered — so the composer
-    // must keep both the visible draft and the attachment added afterwards.
     await act(async () => {
       rejectSend(Object.assign(new Error('cancelled'), { code: 'REQUEST_CANCELLED' }))
       await send.catch(() => undefined)
     })
-    expect(await screen.findByText(/^Prompt failed\./)).toBeDefined()
+    expect(screen.queryByText(/^Prompt failed\./)).toBeNull()
     expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Prompt' }).value).toBe(
-      'a prompt I do not want to retype',
+      'The current conversation draft',
     )
     expect(screen.getByRole('button', { name: 'Remove later.txt' })).toBeDefined()
   })

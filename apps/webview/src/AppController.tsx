@@ -32,7 +32,7 @@ import { createAppStore, type AppState, type AppStore } from './app/store.js'
 import { sameShallowSelection, useAppStoreSelector } from './app/useAppStoreSelector.js'
 import { selectAppViewState } from './app/store/view-state.js'
 import { selectSessionModels } from './app/store/model-directory-state.js'
-import { readDraft, resetDraft, setDraft } from './app/draft-store.js'
+import { pendingDraftKey, readDraft, resetDraft, sessionDraftKey, setDraft } from './app/draft-store.js'
 import { publicProtocolErrorCode, publicProtocolErrorMessage } from './app/protocol-client.js'
 import { useDshSettings } from './app/useDshSettings.js'
 import { useComposerAttachments } from './app/useComposerAttachments.js'
@@ -419,19 +419,27 @@ const useAppControllerImpl = () => {
     subagentEntries: state.subagents.entries,
     editorContext: state.editorContext,
     mountedRef,
-    setDraft,
-    readDraft,
   })
   const composerOwner =
     state.pendingSession === undefined ? activeSessionId : `pending:${state.pendingSession.revision}`
   const previousComposerOwner = useRef(composerOwner)
   const pendingComposerDraft = useRef(state.pendingSession)
-  useEffect(() => {
+  useLayoutEffect(() => {
     // Observe creation synchronously: React may batch the created-session
     // receipt and the following open into a single render.
+    let previous = store.getState().pendingSession
     const rememberPending = (): void => {
-      const pending = store.getState().pendingSession
+      const { pendingSession: pending, activeSessionId: openedId } = store.getState()
+      const leaving = previous
+      previous = pending
       if (pending !== undefined) pendingComposerDraft.current = pending
+      if (leaving === undefined || leaving.revision === pending?.revision) return
+      const key = pendingDraftKey(leaving.revision)
+      if (pending === undefined && openedId !== undefined && leaving.createdSessionId === openedId) {
+        const text = readDraft(key)
+        setDraft(sessionDraftKey(openedId), (current) => current || text)
+      }
+      setDraft(key, '')
     }
     rememberPending()
     return store.subscribe(rememberPending)
@@ -456,7 +464,6 @@ const useAppControllerImpl = () => {
     discardAttachmentDrafts()
     // The failure belonged to the conversation that just left the screen.
     setComposerSubmitError(undefined)
-    if (state.pendingSession !== undefined) setDraft('')
   }, [composerOwner, discardAttachmentDrafts, state.pendingSession])
   // Runtime status and explicit Turn boundaries come from DSH. A settled
   // assistant step alone never closes a Turn while tools/later steps are active.
@@ -493,12 +500,9 @@ const useAppControllerImpl = () => {
   })
   /**
    * Leaving the current session must not cost the user the prompt they were
-   * writing. The composer's draft and its attachment chips belong to the
-   * session on screen, so they are only dropped once the Host has confirmed
-   * the navigation: an open that fails (a disconnected or restarted DSH after
-   * the store's bounded retries) leaves the user exactly where they were, and
-   * the draft has to survive with them. Releasing the attachment handles first
-   * would also be irreversible — they are host-side resources.
+   * writing. The text stays with its session. Release the attachment handles
+   * only after the Host confirms navigation, so a failed open leaves the
+   * current composition intact.
    *
    * Declared here, ahead of `timelineOnOpenSession`, because both echo it.
    */

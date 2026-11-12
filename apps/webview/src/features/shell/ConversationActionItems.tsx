@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react'
 import type { AppStore } from '../../app/store.js'
-import { setDraft } from '../../app/draft-store.js'
+import { sessionDraftKey, setDraft } from '../../app/draft-store.js'
 import type { useI18n } from '../../i18n.js'
 import { SelectMenu } from '../../components/common/SelectMenu.js'
 import { JobsDrawer } from '../jobs/JobsDrawer.js'
@@ -168,7 +168,9 @@ export function ConversationActionItems({
         onUpdate={(templateId, patch) => store.updatePromptTemplate(templateId, patch)}
         onDelete={(templateId) => store.deletePromptTemplate(templateId)}
         onApply={(text) => {
-          setDraft((current) => (current.trim() === '' ? text : `${current}\n\n${text}`))
+          setDraft(sessionDraftKey(activeId), (current) =>
+            current.trim() === '' ? text : `${current}\n\n${text}`,
+          )
           setError(undefined)
         }}
       />

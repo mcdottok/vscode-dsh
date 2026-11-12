@@ -7,6 +7,7 @@ import { clearedActiveSession, upsertOpenedSession } from './session-projection.
 import { isSessionSummary } from './session-guards.js'
 import { createDefaultConfiguration, isAgentConfiguration } from './model-catalog.js'
 import { findReusableBlankSession } from './session-registry.js'
+import { readDraft, sessionDraftKey } from '../draft-store.js'
 import type { createPromptActions } from './prompt-actions.js'
 import type { AppActions, AppState, StateSetter } from './types.js'
 import { object } from './unknown-record.js'
@@ -156,7 +157,11 @@ export function createSessionCreationActions(
           const reusableBlank =
             workspace === undefined
               ? undefined
-              : findReusableBlankSession(state.sessions, state.archivedSessionIds, workspace)
+              : findReusableBlankSession(
+                  state.sessions.filter((session) => readDraft(sessionDraftKey(session.id)) === ''),
+                  state.archivedSessionIds,
+                  workspace,
+                )
           if (state.connectedDshVersion === DSH_RC12_VERSION && reusableBlank !== undefined) {
             sessionId = reusableBlank.id
           } else {

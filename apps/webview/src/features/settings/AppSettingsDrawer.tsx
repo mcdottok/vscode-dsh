@@ -3,7 +3,6 @@ import type { SettingsDrawer } from './SettingsDrawer.js'
 import { useDeferredComponent } from '../../app/useDeferredComponent.js'
 import { ModalDialog } from '../../components/common/ModalDialog.js'
 import type { AppStore } from '../../app/store.js'
-import { setDraft } from '../../app/draft-store.js'
 import type { ThemePreference, ConversationFontSize } from '../../app/ui-preferences.js'
 import type { useI18n } from '../../i18n.js'
 
@@ -148,7 +147,6 @@ export function AppSettingsDrawer({
       onRemovePreset={(presetId) => store.removePreset(presetId)}
       onOpenPresetDocument={(presetId) => store.openPresetDocument(presetId)}
       onStartCreatorDraft={async () => {
-        const previousSessionId = store.getState().activeSessionId
         store.setDrawer(undefined)
         try {
           // DSH only lets a preset be chosen while the session is still blank, and
@@ -156,14 +154,8 @@ export function AppSettingsDrawer({
           // the host never confirmed, so create the session with the preset instead.
           await store.createSession(undefined, 'cordis')
         } catch (reason: unknown) {
-          // The create was refused, so its session never became the active one.
-          // Clearing the composer here would throw away a draft the user still
-          // needs, so the reset only runs on the success path below.
           setError(reason instanceof Error ? reason.message : t('app.error.createSession'))
-          return
         }
-        const currentSessionId = store.getState().activeSessionId
-        if (currentSessionId !== undefined && currentSessionId !== previousSessionId) setDraft('')
       }}
       pluginInventoryRevision={store.pluginInventoryRevision}
       pluginInstallProgress={store.pluginInstallProgress}
