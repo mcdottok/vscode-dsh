@@ -84,7 +84,7 @@ describe('quiet process summaries', () => {
       reasoning: { markdown: ' ', streaming: true },
     } as const
     const firstPrompt = { kind: 'user-message', id: 'first', markdown: 'First user message' } as const
-    const history = [
+    const history: readonly TimelineNode[] = [
       placeholder,
       { ...placeholder, id: 'interrupted', turn: 2, interrupted: true, streaming: false },
       {

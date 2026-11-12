@@ -97,7 +97,7 @@ describe('DshConnectionCoordinator', () => {
       mode: 'custom',
       autoStart: false,
       endpoint: connection.endpoint,
-      ...(desktop ? { desktopEndpoint: true } : {}),
+      ...(desktop ? { desktopEndpoint: true as const } : {}),
     } as const
     expect((await coordinator.connect(request)).state.backend.connectionSource).toBe(source)
     expect((await coordinator.connect(request)).state.backend.connectionSource).toBe(source)

@@ -78,6 +78,15 @@ function groupable(node: DisplayTimelineNode): node is FocusedWorkNode {
     : node.kind === 'assistant-message' ||
         (node.kind === 'assistant-turn' && node.tools.every((tool) => tool.tool.submittedPlan === undefined))
 }
+
+/**
+ * A reply surface stays its own row even when it cannot be folded. `groupable`
+ * is a narrowing predicate, so its negative branch loses the assistant kinds
+ * that this check still has to distinguish.
+ */
+function assistantSurface(node: DisplayTimelineNode): node is FocusedAnswerNode {
+  return node.kind === 'assistant-message' || node.kind === 'assistant-turn'
+}
 function hasBody(node: FocusedWorkNode): node is FocusedAnswerNode {
   return (
     node.kind !== 'tool' &&
@@ -221,7 +230,7 @@ export function createFocusedTimelineProjector(): (
     for (let index = start; index < nodes.length;) {
       const node = nodes[index]!
       if (!groupable(node)) {
-        if ((node.kind !== 'assistant-message' && node.kind !== 'assistant-turn') || hasFocusedWork(node)) {
+        if (!assistantSurface(node) || hasFocusedWork(node)) {
           starts.push(index)
           rows.push(node)
         }
