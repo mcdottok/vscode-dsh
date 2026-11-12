@@ -806,7 +806,15 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
         ) : null}
       </div>
       {showJumpToLatest ? (
-        <ScrollToLatestButton label={t('timeline.jump')} onClick={userScrollToLatest} />
+        <ScrollToLatestButton
+          label={t('timeline.jump')}
+          onClick={() => {
+            setLayoutAnchor(undefined)
+            prependAnchorRef.current = undefined
+            setHistoryAnchorSourceId(undefined)
+            userScrollToLatest()
+          }}
+        />
       ) : null}
       <div className="dsh-timeline__activity-slot" data-active={running || undefined}>
         {running ? (

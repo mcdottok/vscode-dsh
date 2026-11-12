@@ -5,6 +5,8 @@ const WHEEL_TAIL_DISTANCE = 32
 const USER_SCROLL_IDLE_MS = 220
 const STREAM_FOLLOW_DAMPING_MS = 36
 const MAX_FOLLOW_SPEED_PX_PER_MS = 2
+const INITIAL_PLACEMENT_STABLE_FRAMES = 2
+const INITIAL_PLACEMENT_MAX_FRAMES = 8
 const SCROLL_KEYS = new Set(['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', ' '])
 
 interface ScheduledFollow {
@@ -48,7 +50,7 @@ export interface ScrollFollowResult {
   readonly contentRef: RefObject<HTMLDivElement | null>
   readonly handleScroll: () => void
   readonly scrollToLatest: () => void
-  /** Move to the tail from an explicit reader action with smooth motion. */
+  /** Jump directly to the tail and supersede pending reader navigation. */
   readonly userScrollToLatest: () => void
   /** A deliberate reader navigation, such as revealing a selected Inspector row. */
   readonly userScrollToOffset: (offset: number) => void
@@ -102,9 +104,9 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
   const viewportHeightRef = useRef(0)
   const measuredTailRef = useRef<number | undefined>(undefined)
   const positionedSessionRef = useRef(false)
+  const initialPlacementFrameRef = useRef<number | undefined>(undefined)
   const preserveBottomOnLayoutRef = useRef(false)
   const layoutProtectionTimerRef = useRef<number | undefined>(undefined)
-  const smoothScrollActiveRef = useRef(false)
   const smoothTailGrowth = options.smoothTailGrowth === true
   const tailMotionRef = useRef<{ frame: number; target: number; position: number } | undefined>(undefined)
   const scrollHandlerRef = useRef<() => void>(() => undefined)
@@ -150,13 +152,19 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     tailMotionRef.current = undefined
   }, [])
 
+  const cancelInitialPlacement = useCallback((): void => {
+    const frame = initialPlacementFrameRef.current
+    if (frame === undefined) return
+    window.cancelAnimationFrame(frame)
+    initialPlacementFrameRef.current = undefined
+  }, [])
+
   const clearUserScrollLock = useCallback((): void => {
     if (userScrollIdleTimerRef.current !== undefined) {
       window.clearTimeout(userScrollIdleTimerRef.current)
       userScrollIdleTimerRef.current = undefined
     }
     userScrollActiveRef.current = false
-    smoothScrollActiveRef.current = false
   }, [])
 
   const clearLayoutProtection = useCallback((): void => {
@@ -250,8 +258,44 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     setShowJumpToLatest(false)
   }, [cancelScheduledFollow, cancelTailMotion, clearUserScrollLock])
 
+  const settleInitialPlacement = useCallback((): void => {
+    const element = scrollRef.current
+    if (
+      element === null ||
+      element.clientHeight === 0 ||
+      !smoothTailGrowth ||
+      document.visibilityState === 'hidden' ||
+      typeof window.requestAnimationFrame !== 'function'
+    )
+      return
+
+    // Opening a conversation can mount and measure several virtual ranges.
+    // Keep the initial placement through those frames, then let later content
+    // growth use normal follow motion. Bound the window for an already live reply.
+    let previousHeight = element.scrollHeight
+    let previousViewport = element.clientHeight
+    let stableFrames = 0
+    let remaining = INITIAL_PLACEMENT_MAX_FRAMES
+    const check = (): void => {
+      initialPlacementFrameRef.current = undefined
+      if (scrollRef.current !== element || !stickToBottomRef.current || userScrollActiveRef.current) return
+      const height = element.scrollHeight
+      const viewport = element.clientHeight
+      const misplaced = Math.abs(Math.max(0, height - viewport) - element.scrollTop) > 1
+      stableFrames =
+        height === previousHeight && viewport === previousViewport && !misplaced ? stableFrames + 1 : 0
+      previousHeight = height
+      previousViewport = viewport
+      if (misplaced) scrollToLatest()
+      if (--remaining > 0 && stableFrames < INITIAL_PLACEMENT_STABLE_FRAMES)
+        initialPlacementFrameRef.current = window.requestAnimationFrame(check)
+    }
+    initialPlacementFrameRef.current = window.requestAnimationFrame(check)
+  }, [scrollToLatest, smoothTailGrowth])
+
   const followGrowth = useCallback((): void => {
     if (
+      initialPlacementFrameRef.current !== undefined ||
       !smoothTailGrowth ||
       document.visibilityState === 'hidden' ||
       typeof window.requestAnimationFrame !== 'function' ||
@@ -314,39 +358,16 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
   }, [cancelTailMotion, scrollToLatest, smoothTailGrowth])
 
   const userScrollToLatest = useCallback((): void => {
+    interactionGenerationRef.current += 1
+    cancelInitialPlacement()
     clearLayoutProtection()
-    clearUserScrollLock()
-    cancelScheduledFollow()
-    cancelTailMotion()
-    const element = scrollRef.current
-    if (element === null) return
-
-    stickToBottomRef.current = true
-    setIsPinnedToBottom(true)
-    const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight)
-    setShowJumpToLatest(false)
-
-    const reduceMotion =
-      typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    if (
-      reduceMotion ||
-      Math.abs(element.scrollTop - maxScrollTop) <= 0.5 ||
-      typeof element.scrollTo !== 'function'
-    ) {
-      internalScrollTopRef.current = maxScrollTop
-      element.scrollTop = maxScrollTop
-      lastReaderScrollTopRef.current = maxScrollTop
-      return
-    }
-
-    internalScrollTopRef.current = undefined
-    smoothScrollActiveRef.current = true
-    element.scrollTo({ top: maxScrollTop, behavior: 'smooth' })
-  }, [cancelScheduledFollow, cancelTailMotion, clearLayoutProtection, clearUserScrollLock])
+    scrollToLatest()
+  }, [cancelInitialPlacement, clearLayoutProtection, scrollToLatest])
 
   const userScrollToOffset = useCallback(
     (offset: number): void => {
       if (!Number.isFinite(offset)) return
+      cancelInitialPlacement()
       clearLayoutProtection()
       clearUserScrollLock()
       cancelScheduledFollow()
@@ -363,6 +384,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       updateJumpVisibility()
     },
     [
+      cancelInitialPlacement,
       cancelScheduledFollow,
       cancelTailMotion,
       clearLayoutProtection,
@@ -441,6 +463,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
   const captureScrollAnchor = useCallback((): ScrollAnchor | undefined => {
     const element = scrollRef.current
     if (element === null) return undefined
+    cancelInitialPlacement()
     cancelScheduledFollow()
     cancelTailMotion()
     clearLayoutProtection()
@@ -461,7 +484,13 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       scrollTop: element.scrollTop,
       interactionGeneration: interactionGenerationRef.current,
     }
-  }, [cancelScheduledFollow, cancelTailMotion, clearLayoutProtection, updateJumpVisibility])
+  }, [
+    cancelInitialPlacement,
+    cancelScheduledFollow,
+    cancelTailMotion,
+    clearLayoutProtection,
+    updateJumpVisibility,
+  ])
 
   const restoreScrollAnchor = useCallback((anchor: ScrollAnchor, allowLayoutShift = false): boolean => {
     const element = scrollRef.current
@@ -496,6 +525,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
   const isUserScrollActive = useCallback((): boolean => userScrollActiveRef.current, [])
 
   const armUserScrollLock = useCallback((): void => {
+    cancelInitialPlacement()
     cancelTailMotion()
     clearLayoutProtection()
     internalScrollTopRef.current = undefined
@@ -507,16 +537,11 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       userScrollActiveRef.current = false
       if (stickToBottomRef.current && itemCountRef.current > 0) scheduleScrollToLatest()
     }, USER_SCROLL_IDLE_MS)
-  }, [cancelTailMotion, clearLayoutProtection, scheduleScrollToLatest])
+  }, [cancelInitialPlacement, cancelTailMotion, clearLayoutProtection, scheduleScrollToLatest])
 
   const handleScroll = useCallback((): void => {
     const element = scrollRef.current
     if (element === null) return
-    if (smoothScrollActiveRef.current) {
-      const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight)
-      if (element.scrollTop >= maxScrollTop - 1) smoothScrollActiveRef.current = false
-      return
-    }
     const expectedScrollTop = internalScrollTopRef.current
     const isInternalScroll =
       expectedScrollTop !== undefined && Math.abs(element.scrollTop - expectedScrollTop) <= 1
@@ -613,7 +638,6 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
         updateJumpVisibility()
         return
       }
-      smoothScrollActiveRef.current = false
       cancelScheduledFollow()
       armUserScrollLock()
 
@@ -683,20 +707,17 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     }
     const onPointerDown = (event: PointerEvent): void => {
       if (event.button !== 0 || isNestedScrollGesture(event)) return
-      smoothScrollActiveRef.current = false
       cancelScheduledFollow()
       armUserScrollLock()
     }
     const onKeyDown = (event: KeyboardEvent): void => {
       if (!SCROLL_KEYS.has(event.key) || isNestedScrollGesture(event)) return
       if (event.target instanceof HTMLButtonElement || event.target instanceof HTMLInputElement) return
-      smoothScrollActiveRef.current = false
       cancelScheduledFollow()
       armUserScrollLock()
     }
     const onScrollEnd = (event: Event): void => {
       if (event.target !== element) return
-      smoothScrollActiveRef.current = false
       if (!userScrollActiveRef.current) return
       clearUserScrollLock()
       if (stickToBottomRef.current && itemCountRef.current > 0) scheduleScrollToLatest()
@@ -731,16 +752,19 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
 
   useLayoutEffect(
     () => () => {
+      cancelInitialPlacement()
       clearLayoutProtection()
       clearUserScrollLock()
       cancelTailMotion()
     },
-    [cancelTailMotion, clearLayoutProtection, clearUserScrollLock],
+    [cancelInitialPlacement, cancelTailMotion, clearLayoutProtection, clearUserScrollLock],
   )
 
   useLayoutEffect(() => {
     const sessionChanged = previousSessionRef.current !== options.sessionId
     if (sessionChanged) {
+      cancelInitialPlacement()
+      clearUserScrollLock()
       previousSessionRef.current = options.sessionId
       positionedSessionRef.current = false
       stickToBottomRef.current = true
@@ -756,13 +780,17 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
         immediate: initialPlacement,
         snap: initialPlacement,
       })
+      if (initialPlacement) settleInitialPlacement()
     }
   }, [
+    cancelInitialPlacement,
+    clearUserScrollLock,
     options.contentKey,
     options.itemCount,
     options.sessionId,
     restoreReaderPosition,
     scheduleScrollToLatest,
+    settleInitialPlacement,
     smoothTailGrowth,
     updateJumpVisibility,
   ])

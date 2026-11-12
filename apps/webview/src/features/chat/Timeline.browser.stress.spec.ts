@@ -217,6 +217,16 @@ it.skipIf(browser === undefined)(
             }
           }
           expect(completionReady).toBe(true)
+          for (const remount of [false, true]) {
+            for (const count of [5, 80]) {
+              const gaps = (await evaluate(
+                `window.openHistory(${JSON.stringify({ remount, count })})`,
+              )) as number[]
+              expect(Math.max(...gaps), JSON.stringify({ layout, remount, count, gaps })).toBeLessThanOrEqual(
+                2,
+              )
+            }
+          }
         }
         await evaluate(`window.beginReply(${JSON.stringify(scenario)})`)
         await delay(500)

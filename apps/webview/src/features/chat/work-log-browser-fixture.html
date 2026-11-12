@@ -99,6 +99,33 @@
       render(nodes, live)
 
       if (params.has('completion')) {
+        window.openHistory = async ({ remount, count }) => {
+          if (remount) {
+            flushSync(() => root.render(null))
+            await new Promise(requestAnimationFrame)
+          }
+          sessionId = `history-${remount}-${count}`
+          const history = Array.from({ length: count }, (_, index) => ({
+            kind: 'user-message',
+            id: `history-${index}`,
+            markdown: 'Older message\n\n'.repeat((index % 5) + 1),
+          }))
+          history.push({
+            kind: 'assistant-message',
+            id: 'history-tail',
+            markdown: 'Historical reply paragraph.\n\n'.repeat(26) + 'Latest historical line.',
+            turn: 1,
+            turnCompleted: true,
+          })
+          flushSync(() => render(history, false))
+          const gaps = []
+          for (let frame = 0; frame < 12; frame++) {
+            await new Promise(requestAnimationFrame)
+            const viewport = document.querySelector('.dsh-timeline')
+            gaps.push(viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop)
+          }
+          return gaps
+        }
         const history = Array.from({ length: 28 }, (_, index) => ({
           kind: 'user-message',
           id: 'history-' + index,

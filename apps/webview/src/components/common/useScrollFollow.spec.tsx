@@ -218,50 +218,36 @@ describe('useScrollFollow user jump', () => {
     expect(screen.getByTestId('jump-state').getAttribute('data-visible')).toBe('true')
   })
 
-  it('uses smooth scrolling for an explicit jump when motion is allowed', () => {
-    stubReducedMotion(false)
-    const { viewport, scrollTo } = renderHarness()
-    setScrollMetrics(viewport, 200, 1_000, 400)
+  it.each([
+    { distance: 40, reducedMotion: false },
+    { distance: 25_000, reducedMotion: false },
+    { distance: 25_000, reducedMotion: true },
+  ])(
+    'jumps $distance pixels immediately with reduced motion set to $reducedMotion',
+    ({ distance, reducedMotion }) => {
+      stubReducedMotion(reducedMotion)
+      const { viewport, scrollTo } = renderHarness()
+      const start = 200
+      const tail = start + distance
+      setScrollMetrics(viewport, start, tail + 400, 400)
+      fireEvent.wheel(viewport, { deltaY: -30 })
+      expect(screen.getByTestId('jump-state').getAttribute('data-visible')).toBe('true')
 
+      fireEvent.click(screen.getByRole('button', { name: 'Jump to latest' }))
+
+      expect(scrollTo).not.toHaveBeenCalled()
+      expect(viewport.scrollTop).toBe(tail)
+      expect(screen.getByTestId('jump-state').getAttribute('data-pinned')).toBe('true')
+      expect(screen.getByTestId('jump-state').getAttribute('data-visible')).toBe('false')
+    },
+  )
+
+  it('still lets the reader scroll away after an explicit jump', () => {
+    const { viewport } = renderHarness()
+    setScrollMetrics(viewport, 200, 1_000, 400)
     fireEvent.click(screen.getByRole('button', { name: 'Jump to latest' }))
 
-    expect(scrollTo).toHaveBeenCalledWith({ top: 600, behavior: 'smooth' })
-  })
-
-  it('uses an immediate jump when reduced motion is enabled', () => {
-    stubReducedMotion(true)
-    const { viewport, scrollTo } = renderHarness()
-    setScrollMetrics(viewport, 200, 1_000, 400)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Jump to latest' }))
-
-    expect(scrollTo).not.toHaveBeenCalled()
     expect(viewport.scrollTop).toBe(600)
-  })
-
-  it('does not let intermediate native smooth-scroll events re-arm the reader jump', () => {
-    stubReducedMotion(false)
-    const { viewport } = renderHarness()
-    setScrollMetrics(viewport, 200, 1_000, 400)
-    fireEvent.click(screen.getByRole('button', { name: 'Jump to latest' }))
-
-    viewport.scrollTop = 350
-    fireEvent.scroll(viewport)
-    expect(screen.getByTestId('jump-state').getAttribute('data-visible')).toBe('false')
-
-    fireEvent.wheel(viewport, { deltaY: -30 })
-    expect(screen.getByTestId('jump-state').getAttribute('data-visible')).toBe('true')
-  })
-
-  it('restores ordinary reader semantics after the smooth jump settles', () => {
-    stubReducedMotion(false)
-    const { viewport } = renderHarness()
-    setScrollMetrics(viewport, 200, 1_000, 400)
-    fireEvent.click(screen.getByRole('button', { name: 'Jump to latest' }))
-
-    // The native smooth scroll settles at the tail: the arrival event clears
-    // the internal smooth-scroll flag without arming a reader lock.
-    viewport.scrollTop = 600
     fireEvent.scroll(viewport)
     expect(screen.getByTestId('jump-state').getAttribute('data-visible')).toBe('false')
 
