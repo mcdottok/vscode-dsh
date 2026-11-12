@@ -462,7 +462,7 @@ describe('focused conversation interactions', () => {
     expect(screen.queryByText('I am examining the implementation')).toBeNull()
   })
 
-  it('opens the existing footer slots when the live reply settles', () => {
+  it('reveals usage and actions in the existing footer when the live reply settles', () => {
     const answer = (streaming: boolean): TimelineNode => ({
       kind: 'assistant-message',
       id: 'answer',
@@ -479,35 +479,37 @@ describe('focused conversation interactions', () => {
       </ConversationLayoutProvider>
     )
     const view = render(viewFor(true))
-    const usage = view.container.querySelector('.dsh-focused-turn__usage')
-    const actions = view.container.querySelector('.dsh-focused-turn__actions')
-    expect(usage?.hasAttribute('data-visible')).toBe(false)
-    expect(actions?.hasAttribute('data-visible')).toBe(false)
+    const footer = view.container.querySelector<HTMLElement>('.dsh-focused-turn__footer')!
+    expect(footer.hasAttribute('data-visible')).toBe(false)
 
     view.rerender(viewFor(false))
-    expect(view.container.querySelector('.dsh-focused-turn__usage[data-visible]')).toBe(usage)
-    expect(view.container.querySelector('.dsh-focused-turn__actions[data-visible]')).toBe(actions)
-    expect(screen.getAllByText('Token usage')).toHaveLength(1)
+    expect(view.container.querySelector('.dsh-focused-turn__footer[data-visible]')).toBe(footer)
+    expect(within(footer).getByText('Token usage')).toBeDefined()
+    expect(within(footer).getByRole('button', { name: 'Copy' })).toBeDefined()
   })
 
-  it('keeps the turn actions below produced files in one always-mounted row', () => {
+  it('keeps usage and actions below produced files', () => {
     const source = nodes.map((node) =>
       node.kind === 'tool'
         ? { ...node, tool: { ...node.tool, category: 'edit', locations: [{ path: 'src/result.ts' }] } }
-        : node,
+        : node.kind === 'assistant-message' && node.id === 'answer'
+          ? { ...node, turnUsage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } }
+          : node,
     )
     const view = render(session('standard', source))
     const turn = view.container.querySelector('.dsh-focused-turn')!
     const footer = turn.lastElementChild as HTMLElement
     const produced = turn.querySelector('.dsh-timeline__produced-files')!
-    expect(footer.className).toBe('dsh-focused-turn__actions')
+    expect(footer.className).toBe('dsh-focused-turn__footer')
     // The footer closes the Turn: produced files first, controls after them.
     expect(produced.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     )
-    // Controls are mounted for a folded Turn too; the row never appears only on
-    // hover, so no empty strip is reserved above the files.
-    expect(within(footer).getByRole('button', { name: 'Copy' })).toBeDefined()
+    const usage = within(footer).getByText('Token usage')
+    const copy = within(footer).getByRole('button', { name: 'Copy' })
+    expect(usage.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
   })
 
   it('uses the turn end as the fork point for a focused reply', () => {

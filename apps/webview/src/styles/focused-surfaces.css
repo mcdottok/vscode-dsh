@@ -501,43 +501,42 @@
   gap: 4px;
 }
 
-/* The Turn footer owns the controls' place: one always-visible row below any
- * produced files, never a hover-only strip above them. */
-.dsh-focused-turn > :is(.dsh-focused-turn__usage, .dsh-focused-turn__actions) {
+/* Reveal usage and actions as one footer below the produced files. */
+.dsh-focused-turn__footer {
   display: grid;
   grid-template-rows: 0fr;
   opacity: 0;
 }
 
-.dsh-focused-turn > :is(.dsh-focused-turn__usage, .dsh-focused-turn__actions)[data-visible] {
+.dsh-focused-turn__footer[data-visible] {
   grid-template-rows: 1fr;
   opacity: 1;
 }
 
-.dsh-focused-turn > :is(.dsh-focused-turn__usage, .dsh-focused-turn__actions) > div {
+.dsh-focused-turn__footer > div {
   min-width: 0;
   min-height: 0;
   overflow: clip;
 }
 
-.dsh-focused-turn > :is(.dsh-focused-turn__usage, .dsh-focused-turn__actions)[data-visible] > div {
+.dsh-focused-turn__footer[data-visible] > div {
   overflow-clip-margin: 4px;
 }
 
-.dsh-focused-turn__usage > div > .dsh-timeline__turn-usage {
-  margin-top: 4px;
+.dsh-focused-turn__footer > div > :first-child {
+  margin-block-start: var(--dsh-space-2);
+}
+
+.dsh-focused-turn__footer .dsh-timeline__turn-usage + .dsh-message-actions {
+  margin-block-start: var(--dsh-space-1);
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .dsh-focused-turn > :is(.dsh-focused-turn__usage, .dsh-focused-turn__actions)[data-visible] {
+  .dsh-focused-turn__footer[data-visible] {
     transition:
-      grid-template-rows var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard),
-      opacity var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard);
+      grid-template-rows var(--dsh-motion-duration-standard) var(--dsh-motion-ease-standard),
+      opacity var(--dsh-motion-duration-standard) var(--dsh-motion-ease-standard);
   }
-}
-
-.dsh-app[data-conversation-layout='focused'] .dsh-focused-turn__actions .dsh-message-actions {
-  margin-top: var(--dsh-space-2);
 }
 
 .dsh-app[data-conversation-layout='focused'] .dsh-message-actions__button {

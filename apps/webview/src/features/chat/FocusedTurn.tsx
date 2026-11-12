@@ -292,17 +292,19 @@ export function FocusedTurn(props: {
       {answer === undefined ? null : (
         <div className="dsh-focused-turn__answer">{renderTimelineNode(answer, context)}</div>
       )}
-      <div className="dsh-focused-turn__usage" data-visible={answerUsage !== null || undefined}>
-        <div>{answerUsage}</div>
-      </div>
       {renderProducedFiles(
         producedFilePaths(node.nodes.flatMap((member) => (member.kind === 'tool' ? [member] : []))),
         context.onOpenLink === undefined ? undefined : context.requestOpenLink,
         context.t,
       )}
-      {/* Copy, feedback and branch close the Turn, below every produced file. */}
-      <div className="dsh-focused-turn__actions" data-visible={answerActions !== null || undefined}>
-        <div>{answerActions}</div>
+      <div
+        className="dsh-focused-turn__footer"
+        data-visible={answerUsage !== null || answerActions !== null || undefined}
+      >
+        <div>
+          {answerUsage}
+          {answerActions}
+        </div>
       </div>
     </section>
   )
