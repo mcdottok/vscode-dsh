@@ -237,7 +237,9 @@
   position: relative;
   max-height: min(46vh, 340px);
   overflow: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior-x: contain;
+  /* Continue scrolling the conversation once the work log reaches either edge. */
+  overscroll-behavior-y: auto;
   scrollbar-gutter: stable;
   overflow-anchor: none;
   padding: 2px 4px 8px 0;

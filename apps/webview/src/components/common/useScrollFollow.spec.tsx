@@ -162,19 +162,28 @@ describe('useScrollFollow user jump', () => {
     expect(viewport.scrollTop).toBe(520)
   })
 
-  it('keeps the outer viewport pinned when a nested work log scrolls', () => {
-    const { viewport } = renderHarness()
-    setScrollMetrics(viewport, 600, 1_000, 400)
-    const workLog = document.createElement('div')
-    workLog.setAttribute('data-scroll-follow-boundary', '')
-    setScrollMetrics(workLog, 100, 500, 200)
-    viewport.append(workLog)
+  it.each([
+    { top: 100, deltaY: -80, pinned: true },
+    { top: 0, deltaY: 80, pinned: true },
+    { top: 0, deltaY: -80, pinned: false },
+    { top: 300, deltaY: 80, pinned: false },
+  ])(
+    'gives a wheel gesture to the work log only when it can scroll in that direction (%j)',
+    ({ top, deltaY, pinned }) => {
+      const { viewport } = renderHarness()
+      setScrollMetrics(viewport, 580, 1_000, 400)
+      const workLog = document.createElement('div')
+      workLog.setAttribute('data-scroll-follow-boundary', '')
+      workLog.style.overflowY = 'auto'
+      setScrollMetrics(workLog, top, 500, 200)
+      viewport.append(workLog)
 
-    fireEvent.wheel(workLog, { deltaY: -80 })
-    fireEvent.scroll(workLog)
+      fireEvent.wheel(workLog, { deltaY })
+      fireEvent.scroll(workLog)
 
-    expect(screen.getByTestId('jump-state').getAttribute('data-pinned')).toBe('true')
-  })
+      expect(screen.getByTestId('jump-state').getAttribute('data-pinned')).toBe(String(pinned))
+    },
+  )
 
   afterEach(() => {
     cleanup()

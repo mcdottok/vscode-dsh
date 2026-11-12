@@ -134,6 +134,68 @@ it.skipIf(browser === undefined)(
         expect(geometry.text).toContain('Hello.')
         expect(geometry.overflow).toBeLessThanOrEqual(2)
       }
+      const checkWorkLogWheel = async (): Promise<void> => {
+        await evaluate(`(() => {
+          const viewport = document.querySelector('.dsh-timeline');
+          const process = viewport.querySelector('.dsh-focused-turn__process:not([hidden])');
+          const content = process.querySelector('.dsh-focused-turn__process-content');
+          const spacers = Array.from({ length: 2 }, () => {
+            const spacer = document.createElement('div');
+            spacer.style.height = '600px';
+            return spacer;
+          });
+          viewport.prepend(spacers[0]);
+          viewport.append(spacers[1]);
+          viewport.dispatchEvent(new WheelEvent('wheel', { deltaY: -80 }));
+          window.workLogProbe = { viewport, process, content, spacers };
+        })()`)
+        for (const { edge, deltaY, inner } of [
+          { edge: 'top', deltaY: 80, inner: true },
+          { edge: 'bottom', deltaY: 80, inner: false },
+          { edge: 'top', deltaY: -80, inner: false },
+          { edge: 'short', deltaY: 80, inner: false },
+        ]) {
+          await evaluate(`(() => {
+            const { process, content } = window.workLogProbe;
+            if ('${edge}' === 'short') {
+              content.style.height = '52px';
+              content.style.overflow = 'clip';
+            }
+            process.scrollIntoView({ block: 'center' });
+            process.scrollTop = '${edge}' === 'bottom' ? process.scrollHeight : 0;
+          })()`)
+          await settle()
+          const before = (await evaluate(`(() => {
+            const { viewport, process } = window.workLogProbe;
+            const rect = process.getBoundingClientRect();
+            return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2,
+              outer: viewport.scrollTop, inner: process.scrollTop, overflow: process.scrollHeight - process.clientHeight };
+          })()`)) as { x: number; y: number; outer: number; inner: number; overflow: number }
+          if (edge === 'short') expect(before.overflow).toBe(0)
+          else expect(before.overflow).toBeGreaterThan(80)
+          await send('Input.dispatchMouseEvent', {
+            type: 'mouseWheel',
+            x: before.x,
+            y: before.y,
+            deltaX: 0,
+            deltaY,
+          })
+          await delay(200)
+          const after = (await evaluate(`(() => {
+            const { viewport, process } = window.workLogProbe;
+            return { outer: viewport.scrollTop, inner: process.scrollTop };
+          })()`)) as { outer: number; inner: number }
+          expect(after.inner - before.inner).toBe(inner ? deltaY : 0)
+          expect(after.outer - before.outer, edge).toBe(inner ? 0 : deltaY)
+        }
+        await evaluate(`(() => {
+          const { content, spacers } = window.workLogProbe;
+          content.style.height = '';
+          content.style.overflow = '';
+          spacers.forEach((spacer) => spacer.remove());
+          delete window.workLogProbe;
+        })()`)
+      }
       for (const mode of ['compact', 'standard', 'detailed', 'verbose']) {
         await send('Page.navigate', { url: `${origin}/__work_log_${process.pid}.html?mode=${mode}` })
         let ready = false
@@ -149,6 +211,7 @@ it.skipIf(browser === undefined)(
         await check()
         await evaluate("document.querySelector('.dsh-focused-turn__summary').click()")
         await check()
+        if (mode === 'compact') await checkWorkLogWheel()
         for (let index = 0; index < 12; index++) {
           await evaluate(
             `(() => { const buttons = [...document.querySelectorAll('.dsh-focused-tools__summary')]; const button = buttons[Math.min(${index} * 3, buttons.length - 1)]; if (button && !button.disabled) button.click(); })()`,

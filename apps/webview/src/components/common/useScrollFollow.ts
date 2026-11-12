@@ -662,40 +662,43 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
   useLayoutEffect(() => {
     const element = scrollRef.current
     if (element === null) return
-    const isNestedScrollGesture = (event: Event): boolean => {
-      if (!(event.target instanceof Element)) return false
+    const getNestedScrollBoundary = (event: Event): Element | null => {
+      if (!(event.target instanceof Element)) return null
       const boundary = event.target.closest('[data-scroll-follow-boundary]')
-      return (
-        boundary !== null &&
-        boundary !== element &&
-        element.contains(boundary) &&
-        boundary.scrollHeight - boundary.clientHeight > 1
-      )
+      return boundary !== null && boundary !== element && element.contains(boundary) ? boundary : null
+    }
+    const isNestedScrollGesture = (event: Event): boolean => {
+      const boundary = getNestedScrollBoundary(event)
+      return boundary !== null && boundary.scrollHeight - boundary.clientHeight > 1
+    }
+    const nestedWheelConsumes = (target: EventTarget | null, deltaY: number): boolean => {
+      for (
+        let node = target instanceof Element ? target : null;
+        node !== null && node !== element;
+        node = node.parentElement
+      ) {
+        const maxTop = node.scrollHeight - node.clientHeight
+        if (maxTop <= 1) continue
+        const style = getComputedStyle(node)
+        if (!/^(auto|scroll)$/u.test(style.overflowY)) continue
+        const remaining = deltaY > 0 ? maxTop - node.scrollTop : node.scrollTop
+        if (remaining > 1 || /^(contain|none)$/u.test(style.overscrollBehaviorY)) return true
+      }
+      return false
     }
     const onWheel = (event: WheelEvent): void => {
-      if (isNestedScrollGesture(event) || event.defaultPrevented || event.ctrlKey || event.shiftKey) return
+      if (event.defaultPrevented || event.ctrlKey || event.shiftKey) return
       const { deltaMode, deltaX, deltaY } = event
       if (Math.abs(deltaY) <= Math.abs(deltaX)) return
+      const insideWorkLog = getNestedScrollBoundary(event) !== null
+      if (insideWorkLog && nestedWheelConsumes(event.target, deltaY)) return
       if (options.snapToTailOnWheel && event.cancelable && deltaY > 0) {
         let distance = deltaY
         if (deltaMode === 1) distance *= Number.parseFloat(getComputedStyle(element).lineHeight) || 16
         if (deltaMode === 2) distance *= element.clientHeight
         const maxTop = element.scrollHeight - element.clientHeight
         if (maxTop > 1 && maxTop - element.scrollTop <= distance + WHEEL_TAIL_DISTANCE) {
-          for (
-            let target = event.target instanceof Element ? event.target : null;
-            target !== null && target !== element;
-            target = target.parentElement
-          ) {
-            const remaining = target.scrollHeight - target.clientHeight
-            if (remaining <= 1) continue
-            const style = getComputedStyle(target)
-            if (
-              /^(auto|scroll)$/u.test(style.overflowY) &&
-              (remaining - target.scrollTop > 1 || /^(contain|none)$/u.test(style.overscrollBehaviorY))
-            )
-              return
-          }
+          if (!insideWorkLog && nestedWheelConsumes(event.target, deltaY)) return
           // Reattach against the current layout before another chunk can move
           // the tail or the native wheel animation can leave a stale offset.
           event.preventDefault()
