@@ -64,6 +64,7 @@ export interface PluginManagerWireProfile {
   readonly restartReason?: boolean
   readonly alreadyInstalled?: boolean
   readonly unsupportedPlatform?: boolean
+  readonly unexpectedPackage?: boolean
 }
 
 const RESTART_REASONS = [
@@ -484,6 +485,7 @@ function readManagementErrorCode(
   const error = requiredRecord(value, part)
   if (profile.alreadyInstalled && error.code === 'already-installed') return error.code
   if (profile.unsupportedPlatform && error.code === 'unsupported-platform') return error.code
+  if (profile.unexpectedPackage && error.code === 'unexpected-package') return 'operation-error'
   if (!isOneOf(MANAGEMENT_ERROR_CODES, error.code)) throw malformed(part)
   return error.code
 }

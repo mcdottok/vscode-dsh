@@ -3,8 +3,9 @@ import type { BackendEvent } from '../../packages/domain/src/events.js'
 import { canConnect, LIVE_TIMEOUT_MS, startManagedRuntime } from './harness.js'
 
 // A disposable DSH home/workspace and synthetic prompt, without a real account.
-describe.skipIf(process.env.DSH_LIVE_SMOKE !== '1' || process.env.DSH_LIVE_RUNTIME_VERSION !== '0.2.2-rc.1')(
-  'live DSH 0.2.2-rc.1 message history',
+const version = process.env.DSH_LIVE_RUNTIME_VERSION ?? ''
+describe.skipIf(process.env.DSH_LIVE_SMOKE !== '1' || !['0.2.2-rc.1', '0.2.2-rc.2'].includes(version))(
+  'live DSH 0.2.2 message history',
   () => {
     it(
       'retains the prompt and request identity in history and the live stream',

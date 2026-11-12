@@ -26,6 +26,12 @@ export interface SubagentRepositoryOptions {
   readonly inlineImagePrompts?: boolean
   /** DSH 0.1.3-alpha.2 requires the queue/steer delivery discriminator. */
   readonly subagentPromptDelivery?: boolean
+  /**
+   * DSH 0.2.2-rc.2 addresses a continuation through its subagent tree root and
+   * checks access on the target Session, so `parentSessionId` and `mode` are no
+   * longer part of the prompt request and interrupt is `interruptByUser`.
+   */
+  readonly treeScopedSubagentWire?: boolean
   readonly maxPromptAttachmentBytes?: number
   readonly maxPromptAttachmentTotalBytes?: number
   /** 0.0.1-rc.1 predates the browser-local time-zone field. */
@@ -118,6 +124,9 @@ export class Rc6SubagentRepository implements SubagentRepository {
         : signal
     const address = this.addresses.resolve(sessionId)
     if (address?.mode !== 'continuable') throw unavailable('one-shot subagent follow-up')
+    // rc.2 authorizes the continuation on the target Session alone: keeping the
+    // older parent/mode pair would fail the Host's strict request schema.
+    const treeScoped = this.options.treeScopedSubagentWire === true
     const content = encodePromptContent(message, attachments, {
       maxImageBytes: this.options.maxPromptAttachmentBytes ?? 20 * 1024 * 1024,
       maxAttachmentTotalBytes: this.options.maxPromptAttachmentTotalBytes ?? 200 * 1024 * 1024,
@@ -130,10 +139,14 @@ export class Rc6SubagentRepository implements SubagentRepository {
         this.transport,
         'subagent.prompt',
         {
-          parentSessionId: address.parentSessionId,
-          childSessionId: sessionId,
-          mode: address.mode,
-          ...(this.options.subagentPromptDelivery === true ? { delivery: mode } : {}),
+          ...(treeScoped
+            ? { childSessionId: sessionId, delivery: mode }
+            : {
+                parentSessionId: address.parentSessionId,
+                childSessionId: sessionId,
+                mode: address.mode,
+                ...(this.options.subagentPromptDelivery === true ? { delivery: mode } : {}),
+              }),
           content,
           ...(this.options.includeClientTimeZone === false ? {} : clientTimeZoneField()),
         },
@@ -198,7 +211,9 @@ export class Rc6SubagentRepository implements SubagentRepository {
       await callRpc<unknown>(
         this.transport,
         'subagent.interrupt',
-        { parentSessionId: address.parentSessionId, childSessionId: sessionId, mode: address.mode },
+        this.options.treeScopedSubagentWire === true
+          ? { childSessionId: sessionId }
+          : { parentSessionId: address.parentSessionId, childSessionId: sessionId, mode: address.mode },
         signal,
       ),
     )

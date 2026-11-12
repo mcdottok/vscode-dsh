@@ -391,7 +391,13 @@ export class AlphaLoopbackApiClient implements DshTransport {
           signal,
         )
       case 'subagent.interrupt':
-        return this.legacyRpc.legacy('subagents/interruptByParent', value, signal)
+        return this.options.treeScopedSubagentWire === true
+          ? this.legacyRpc.legacy(
+              'subagents/interruptByUser',
+              { childSessionId: stringValue(value.childSessionId, 'subagent.interrupt childSessionId') },
+              signal,
+            )
+          : this.legacyRpc.legacy('subagents/interruptByParent', value, signal)
       case 'host.pickDirectory':
         return this.legacyRpc.legacy('directoryPicker/pick', {}, signal, (result) => ({ path: result }))
       case 'host.listDirectory':

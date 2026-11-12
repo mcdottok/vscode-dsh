@@ -96,6 +96,8 @@ export class Alpha1VersionAdapter extends DshVersionAdapterBase {
   protected readonly supportsUserQuestions: boolean = false
   /** Only DSH 0.1.3-alpha.2 requires `subagent.prompt.delivery`. */
   protected readonly supportsSubagentPromptDelivery: boolean = false
+  /** Only DSH 0.2.2-rc.2 addresses continuations through the subagent tree root. */
+  protected readonly supportsTreeScopedSubagentWire: boolean = false
   /** 0.1.3-alpha.1 renamed the commands/execute attachment parameter. */
   protected readonly commandAttachmentWire: CommandAttachmentWire = 'images'
   /** New Session Control profiles supplement host queues from durable follow snapshots. */
@@ -206,6 +208,7 @@ export class Alpha1VersionAdapter extends DshVersionAdapterBase {
     const options: AlphaLoopbackApiClientOptions = {
       ...this.options,
       endpoint,
+      treeScopedSubagentWire: this.supportsTreeScopedSubagentWire,
     }
     return options
   }
@@ -290,6 +293,7 @@ export class Alpha1VersionAdapter extends DshVersionAdapterBase {
       subagents: this.createSubagentRepository(transport, {
         inlineImagePrompts: backend.capabilities.subagentImagePrompts === true,
         subagentPromptDelivery: this.supportsSubagentPromptDelivery,
+        treeScopedSubagentWire: this.supportsTreeScopedSubagentWire,
         maxPromptAttachmentBytes: 20 * 1024 * 1024,
         maxPromptAttachmentTotalBytes: 200 * 1024 * 1024,
         addresses: subagentAddresses,

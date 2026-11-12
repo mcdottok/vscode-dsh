@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { PluginBundleUseCases } from '../../packages/application/src/use-cases/plugin-bundle-use-cases.js'
 import { canConnect, LIVE_TIMEOUT_MS, startManagedRuntime } from './harness.js'
 
-/** Exact 0.2.1 releases and 0.2.2-rc.1; pins in the version contract specs.
+/** Exact 0.2.1 and 0.2.2 releases; pins in the version contract specs.
  * Only a harness-owned process with disposable workspace and home; no model, account or package mutation.
  */
 const version = process.env.DSH_LIVE_RUNTIME_VERSION ?? ''
@@ -15,6 +15,7 @@ const releases = [
   '0.2.1-rc.3',
   '0.2.1-rc.5',
   '0.2.2-rc.1',
+  '0.2.2-rc.2',
 ]
 
 describe.skipIf(process.env.DSH_LIVE_SMOKE !== '1' || !releases.includes(version))(
@@ -164,7 +165,7 @@ describe.skipIf(process.env.DSH_LIVE_SMOKE !== '1' || !releases.includes(version
           expect((await backend.workspaces.list()).find((item) => item.id === workspace.id)?.name).toBe(
             'Renamed fixture',
           )
-          if (version === '0.2.2-rc.1') expect(backend.schedules).toBeUndefined()
+          if (version.startsWith('0.2.2-')) expect(backend.schedules).toBeUndefined()
           else expect(await backend.schedules?.catalog()).toEqual([])
           expect(await backend.account?.getState()).toMatchObject({ status: 'signed-out' })
           expect(await backend.inspectorDevtools?.discover()).toEqual({ available: false })

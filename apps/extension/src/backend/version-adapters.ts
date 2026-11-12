@@ -41,11 +41,13 @@ import {
   Rc213VersionAdapter,
   Rc215VersionAdapter,
   Rc221VersionAdapter,
+  Rc222VersionAdapter,
 } from '@dsh-vscode/dsh-adapter'
 import type { createAdapterOptions } from './adapter-options.js'
 
 /** Exact versions take precedence in this order; registration has one source of truth. */
 const VERSION_ADAPTER_CONSTRUCTORS = [
+  Rc222VersionAdapter,
   Rc221VersionAdapter,
   Rc215VersionAdapter,
   Rc213VersionAdapter,

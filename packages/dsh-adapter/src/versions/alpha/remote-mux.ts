@@ -68,6 +68,11 @@ export interface AlphaLoopbackApiClientOptions {
   /** Alpha.2, rc.1, and rc.2 add the Session Controller turnWindow request field. */
   readonly sessionHistoryTurnWindow?: boolean
   /**
+   * 0.2.2-rc.2 authorizes a continuation on the target Session and interrupts it
+   * through `subagents/interruptByUser`; older versions address the live parent.
+   */
+  readonly treeScopedSubagentWire?: boolean
+  /**
    * Child-session routing committed by the subagent catalog. The Session
    * Controller refuses a session-kind address for a subagent-origin Session,
    * so every session-addressed read has to reuse the descriptor the catalog

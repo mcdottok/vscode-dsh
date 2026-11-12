@@ -41,6 +41,7 @@ describe('managed Web Profile launch contract', () => {
     ['0.2.1-rc.4', true],
     ['0.2.1-rc.5', true],
     ['0.2.2-rc.1', true],
+    ['0.2.2-rc.2', true],
     ['0.2.1-rc.6', false],
     ['0.1.0-rc.99', false],
   ])('uses --no-open only for verified CLI versions: %s', (version, noOpen) => {
