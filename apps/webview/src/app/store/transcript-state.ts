@@ -102,12 +102,39 @@ export function installTranscript(state: AppState, window: TranscriptWindow, liv
   if (sameSession && previous.delivery === 'live' && window.delivery === 'live') {
     const nextIds = new Set(window.nodes.map((node) => node.id))
     const oldIds = new Set(previous.nodes.map((node) => node.id))
-    const prefix = state.timeline.nodes.filter(
-      (node) =>
-        !node.id.startsWith('optimistic:') &&
-        !nextIds.has(node.id) &&
-        (!oldIds.has(node.id) || retainDeliveredNode(node)),
-    )
+    const durableStepSequence = (candidate: TimelineNode): readonly [string, number] | undefined =>
+      candidate.kind === 'assistant-message' &&
+      candidate.liveAttemptId === undefined &&
+      !candidate.streaming &&
+      candidate.reasoning?.streaming !== true &&
+      candidate.turn !== undefined &&
+      candidate.step !== undefined &&
+      candidate.sequence !== undefined
+        ? [`${candidate.turn}:${candidate.step}`, candidate.sequence]
+        : undefined
+    let durableSteps: Map<string, number> | undefined
+    const prefix = state.timeline.nodes.filter((node) => {
+      if (node.id.startsWith('optimistic:') || nextIds.has(node.id)) return false
+      if (node.kind === 'assistant-message' || node.kind === 'reasoning') {
+        // Step end can stop streaming before the durable message replaces the
+        // attempt ID. That removed preview is not an evicted history row.
+        if (node.liveAttemptId !== undefined) return false
+        const step = durableStepSequence(node)
+        if (step !== undefined && node.kind === 'assistant-message' && node.markdown.trim() === '') {
+          // Older projections can omit the attempt ID. Use the durable step
+          // coordinates to recognize a newer replacement for reasoning alone.
+          durableSteps ??= new Map(
+            window.nodes.flatMap((next) => {
+              const entry = durableStepSequence(next)
+              return entry === undefined ? [] : [entry]
+            }),
+          )
+          const replacement = durableSteps.get(step[0])
+          if (replacement !== undefined && replacement >= step[1]) return false
+        }
+      }
+      return !oldIds.has(node.id) || retainDeliveredNode(node)
+    })
     nodes = [...prefix, ...window.nodes]
   }
   const priorNodes = new Map(
@@ -168,7 +195,8 @@ function retainDeliveredNode(node: TimelineNode): boolean {
   )
     return false
   if (node.kind === 'tool') return node.tool.preparation === undefined
-  if (node.kind === 'assistant-message' || node.kind === 'reasoning') return !node.streaming
+  if (node.kind === 'assistant-message') return !node.streaming && node.reasoning?.streaming !== true
+  if (node.kind === 'reasoning') return !node.streaming
   return true
 }
 

@@ -4,6 +4,7 @@ import { renderAnswerActions, renderAnswerUsage, renderTimelineNode } from './ti
 import { assistantBlocksFromAggregates, type TimelineNodeRenderContext } from './timeline-shared.js'
 import {
   hasFocusedWork,
+  hasReadableReasoning,
   summarizeFocusedWork,
   type FocusedAnswerNode,
   type FocusedTurnNode,
@@ -38,9 +39,7 @@ export function FocusedTurn(props: {
       const plain = { ...body, turnUsage: undefined }
       const blocks = answer.blocks.length === 0 ? assistantBlocksFromAggregates(answer) : answer.blocks
       const thinking = blocks.filter(
-        (block) =>
-          block.kind === 'tool' ||
-          (block.kind === 'reasoning' && (block.streaming || block.markdown.trim() !== '')),
+        (block) => block.kind === 'tool' || (block.kind === 'reasoning' && hasReadableReasoning(block)),
       )
       if (thinking.length > 0) {
         work.push({
@@ -61,7 +60,7 @@ export function FocusedTurn(props: {
     } else {
       const { reasoning, ...body } = answer
       const plain = { ...body, turnUsage: undefined }
-      if (reasoning !== undefined && (reasoning.streaming || reasoning.markdown.trim() !== ''))
+      if (reasoning !== undefined && hasReadableReasoning(reasoning))
         work.push({ ...plain, markdown: '', images: [], reasoning })
       answer = plain
     }

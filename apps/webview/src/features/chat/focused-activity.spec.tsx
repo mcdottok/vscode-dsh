@@ -74,6 +74,42 @@ describe('quiet process summaries', () => {
     expect(screen.getByText(answer.markdown)).toBeTruthy()
   })
 
+  it('keeps empty history steps out of the chat and shows the first real work when it arrives', () => {
+    const placeholder = {
+      kind: 'assistant-message',
+      id: 'empty',
+      turn: 1,
+      markdown: ' ',
+      streaming: true,
+      reasoning: { markdown: ' ', streaming: true },
+    } as const
+    const firstPrompt = { kind: 'user-message', id: 'first', markdown: 'First user message' } as const
+    const history = [
+      placeholder,
+      { ...placeholder, id: 'interrupted', turn: 2, interrupted: true, streaming: false },
+      {
+        ...placeholder,
+        id: 'usage-only',
+        turn: 3,
+        streaming: false,
+        reasoning: { markdown: '', streaming: false },
+      },
+      firstPrompt,
+      { ...answer, turn: 4 },
+    ]
+    const view = render(conversation(history))
+    expect(view.container.querySelector('.dsh-timeline__row')?.textContent).toContain(firstPrompt.markdown)
+    expect(screen.queryByRole('button', { name: 'Work details' })).toBeNull()
+    expect(screen.getByText(answer.markdown)).toBeTruthy()
+
+    const restored = { ...placeholder, reasoning: { markdown: 'Actual work arrived.', streaming: false } }
+    view.rerender(conversation([restored, ...history.slice(1)]))
+    const disclosure = screen.getByRole('button', { name: 'Work details' })
+    fireEvent.click(disclosure)
+    fireEvent.click(screen.getByRole('button', { name: 'Show reasoning' }))
+    expect(screen.getByText(restored.reasoning.markdown)).toBeTruthy()
+  })
+
   it('folds failed work behind a summary that still reports the failures', () => {
     const tool = call('failed')
     const view = render(

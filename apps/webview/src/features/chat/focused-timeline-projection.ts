@@ -52,19 +52,18 @@ export function summarizeFocusedWork(nodes: readonly FocusedWorkNode[]): Focused
 export function hasFocusedWork(node: FocusedWorkNode): boolean {
   if (node.kind === 'tool') return true
   return (
-    node.interrupted === true ||
-    node.streaming ||
-    node.reasoning?.streaming === true ||
-    (node.reasoning?.markdown.trim() ?? '') !== '' ||
+    hasReadableReasoning(node.reasoning) ||
     (node.kind === 'assistant-turn' &&
       (node.tools.length > 0 ||
         node.blocks.some(
-          (block) =>
-            block.kind === 'tool' ||
-            (block.kind === 'reasoning' && (block.streaming || block.markdown.trim() !== '')),
+          (block) => block.kind === 'tool' || (block.kind === 'reasoning' && hasReadableReasoning(block)),
         ))) ||
     hasBody(node)
   )
+}
+
+export function hasReadableReasoning(reasoning: { readonly markdown: string } | undefined): boolean {
+  return reasoning !== undefined && reasoning.markdown.trim() !== ''
 }
 
 function workTurn(node: DisplayTimelineNode | undefined): number | undefined {
@@ -214,14 +213,18 @@ export function createFocusedTimelineProjector(): (
     if (previous !== undefined)
       while (stableRows + 1 < previous.starts.length && previous.starts[stableRows + 1]! < common)
         stableRows++
-    const start = previous?.starts[stableRows] ?? 0
+    // Hidden steps have no row start. An updated step can become visible
+    // before the first row that would otherwise be rebuilt.
+    const start = Math.min(previous?.starts[stableRows] ?? 0, common)
     const rows: PresentedTimelineNode[] = previous?.rows.slice(0, stableRows) ?? []
     const starts: number[] = previous?.starts.slice(0, stableRows) ?? []
     for (let index = start; index < nodes.length;) {
       const node = nodes[index]!
       if (!groupable(node)) {
-        starts.push(index)
-        rows.push(node)
+        if ((node.kind !== 'assistant-message' && node.kind !== 'assistant-turn') || hasFocusedWork(node)) {
+          starts.push(index)
+          rows.push(node)
+        }
         index++
         continue
       }
@@ -237,6 +240,10 @@ export function createFocusedTimelineProjector(): (
       const uninterrupted = state.first >= runStart && state.last < runEnd
       const runLast = nodes[runEnd - 1]!
       const runMembers = nodes.slice(runStart, runEnd).filter(groupable)
+      if (!runMembers.some(hasFocusedWork)) {
+        index = runEnd
+        continue
+      }
       // Replies interleaved with tool steps need ordering metadata before one of
       // them can be read as the closing answer; otherwise keep the whole Turn
       // open instead of hiding a reply inside the fold.

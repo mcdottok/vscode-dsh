@@ -37,6 +37,48 @@ function installed(): ReturnType<typeof installTranscript> {
 }
 
 describe('transcript patches', () => {
+  it.each([true, false])(
+    'does not prepend replaced reasoning after a full live update (transient: %s)',
+    (transient) => {
+      const prompt: TimelineNode = { kind: 'user-message', id: 'prompt', markdown: 'First prompt' }
+      const reasoning = { markdown: 'Reasoning for the current prompt', streaming: false }
+      const live: TimelineNode = {
+        kind: 'assistant-message',
+        id: 'assistant:1:2',
+        markdown: '',
+        reasoning,
+        turn: 1,
+        step: 2,
+        sequence: 11,
+        streaming: false,
+        ...(transient ? { liveAttemptId: 'live-attempt', liveLastIndex: 1 } : {}),
+      }
+      const durable: TimelineNode = {
+        kind: 'assistant-message',
+        id: 'durable-12',
+        markdown: 'Finished reply',
+        reasoning,
+        turn: 1,
+        step: 2,
+        sequence: 12,
+        streaming: false,
+      }
+      const older = { ...assistant('older', 'Earlier reply'), streaming: false }
+      const before = installTranscript(
+        { ...createInitialState({}), activeSessionId: sessionId },
+        { ...window(), delivery: 'live', nodes: [older, prompt, live], lastSequence: 11 },
+      )
+      const next = installTranscript(before, {
+        ...window(),
+        revision: 5,
+        delivery: 'live',
+        nodes: [prompt, durable],
+        lastSequence: 12,
+      })
+      expect(next.timeline.nodes).toEqual([older, prompt, durable])
+    },
+  )
+
   it('keeps loaded history when a live patch replaces metadata without a delivery field', () => {
     const initial = installTranscript(
       { ...createInitialState({}), activeSessionId: sessionId },
