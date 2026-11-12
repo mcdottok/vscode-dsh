@@ -341,8 +341,7 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
     sessionId: props.sessionId,
     layoutMeasurementsActive: virtualizeTimeline,
     snapToTailOnWheel: running,
-    smoothStreamingGrowth: props.streaming,
-    replyInProgress: running || props.streaming,
+    smoothTailGrowth: true,
   })
   const getFocusedTimelineIndex = useCallback((): number | undefined => {
     const timeline = scrollRef.current
@@ -427,7 +426,7 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
     // Folding the live work log can shrink the last row before its size
     // observer runs. Update the canvas before following the new bottom.
     remeasureItem(displayNodes.length - 1)
-    scheduleScrollToLatest({ preserveBottom: true, immediate: true, animateGrowth: true })
+    scheduleScrollToLatest({ preserveBottom: true, immediate: true })
   }, [
     displayNodes.length,
     focusedTailId,
@@ -532,17 +531,25 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
   const enteredId = useTailEntrance(latestNode?.id, props.sessionId, props.streaming || running)
   const measuredSessionRef = useRef<string | undefined>(undefined)
   useLayoutEffect(() => {
-    if (!virtualizedReady || virtualized.totalSize <= 0) {
-      measuredSessionRef.current = undefined
+    if (!virtualized.enabled) {
+      if (displayNodes.length > 0) measuredSessionRef.current = props.sessionId
       return
     }
-    const animateGrowth = measuredSessionRef.current === props.sessionId
+    if (!virtualizedReady || virtualized.totalSize <= 0) return
+    const firstMeasurement = measuredSessionRef.current !== props.sessionId
     measuredSessionRef.current = props.sessionId
     // Virtual rows refine the canvas height as they enter the measurement
     // cache. Reconcile that estimate only through the shared scroll owner;
     // native reader input cancels it before it can move the viewport.
-    scheduleScrollToLatest({ preserveBottom: true, immediate: true, animateGrowth })
-  }, [props.sessionId, scheduleScrollToLatest, virtualizedReady, virtualized.totalSize])
+    scheduleScrollToLatest({ preserveBottom: true, immediate: true, snap: firstMeasurement })
+  }, [
+    displayNodes.length,
+    props.sessionId,
+    scheduleScrollToLatest,
+    virtualized.enabled,
+    virtualizedReady,
+    virtualized.totalSize,
+  ])
   const loadOlderHistory = useCallback((): void => {
     if (
       hasMoreHistory !== true ||

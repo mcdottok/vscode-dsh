@@ -396,13 +396,16 @@ describe('MarkdownContent', () => {
   })
 
   it('defers copy controls until a streaming message reaches its terminal render', async () => {
-    const markdown = ['```ts', 'const value = 1', '```'].join('\n')
+    const markdown = ['```', 'const value = 1', '```'].join('\n')
     const view = render(<MarkdownContent markdown={markdown} streaming />)
 
-    expect(view.container.querySelector('.dsh-markdown__copy-region')).toBeNull()
+    const region = view.container.querySelector('.dsh-markdown__copy-region')
+    expect(region).not.toBeNull()
+    expect(screen.queryByRole('button', { name: 'Copy' })).toBeNull()
 
     view.rerender(<MarkdownContent markdown={markdown} />)
     expect(await screen.findByRole('button', { name: 'Copy' })).toBeDefined()
+    expect(view.container.querySelector('.dsh-markdown__copy-region')).toBe(region)
   })
 
   it('highlights a closed fence while the message is still streaming', async () => {

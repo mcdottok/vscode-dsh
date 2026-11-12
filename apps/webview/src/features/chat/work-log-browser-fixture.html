@@ -5,6 +5,7 @@
     <div id="root"></div>
     <script type="module">
       import React from 'react'
+      import { flushSync } from 'react-dom'
       import { createRoot } from 'react-dom/client'
       import { Timeline } from '/src/features/chat/Timeline.tsx'
       import { ConversationLayoutProvider } from '/src/app/ConversationLayoutProvider.tsx'
@@ -61,26 +62,167 @@
           turnCompleted: !live,
         },
       )
-      createRoot(document.getElementById('root')).render(
-        React.createElement(
-          ConversationLayoutProvider,
-          { initialLayout: 'focused' },
+      const root = createRoot(document.getElementById('root'))
+      const params = new URLSearchParams(location.search)
+      const layout = params.get('layout') || 'focused'
+      let narrow = false
+      let sessionId = 'probe'
+      const onOpenLink = () => {}
+      const render = (nodes, streaming, running = streaming) =>
+        root.render(
           React.createElement(
-            'div',
-            {
-              className: 'dsh-app',
-              'data-conversation-layout': 'focused',
-              style: { height: '100vh', display: 'flex', flexDirection: 'column' },
-            },
-            React.createElement(Timeline, {
-              sessionId: 'probe',
-              nodes,
-              streaming: live,
-              transcriptView: new URLSearchParams(location.search).get('mode') || 'compact',
-            }),
+            ConversationLayoutProvider,
+            { initialLayout: layout },
+            React.createElement(
+              'div',
+              {
+                className: 'dsh-app',
+                'data-conversation-layout': layout,
+                style: {
+                  height: '100vh',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  width: narrow ? '300px' : undefined,
+                },
+              },
+              React.createElement(Timeline, {
+                sessionId,
+                nodes,
+                streaming,
+                running,
+                onOpenLink,
+                transcriptView: new URLSearchParams(location.search).get('mode') || 'compact',
+              }),
+            ),
           ),
-        ),
-      )
+        )
+      render(nodes, live)
+
+      if (params.has('completion')) {
+        const history = Array.from({ length: 28 }, (_, index) => ({
+          kind: 'user-message',
+          id: 'history-' + index,
+          markdown: 'Previous message ' + index,
+        }))
+        const paragraph = 'A paragraph of the answer with enough text to wrap in the reading column.\n\n'
+        const table = '| Data | Meaning |\n| --- | --- |\n| 73 | Example |\n\n'
+        const code = '\`\`\`text\nExample code\n\`\`\`\n\n'
+        let commit
+        let answer
+        let replyNumber = 0
+        window.beginReply = ({ shortHistory = false, work = true, rich = false, produced = false } = {}) => {
+          sessionId = `completion-${++replyNumber}`
+          narrow = produced
+          const edit = {
+            kind: 'tool',
+            id: 'edit',
+            tool: {
+              id: 'edit',
+              name: 'edit',
+              category: 'edit',
+              title: 'Edit files',
+              status: 'completed',
+              turn: 2,
+              step: 1,
+              metadata: {},
+            },
+          }
+          const locations = [
+            'README.md',
+            'README.en.md',
+            'apps/extension/CHANGELOG.md',
+            'docs/architecture.md',
+            'docs/capability-matrix.md',
+            'docs/quality.md',
+          ].map((path) => ({ path }))
+          answer = {
+            kind: 'assistant-message',
+            id: 'final-answer',
+            markdown:
+              (rich ? (table + code).repeat(2) : '') +
+              paragraph.repeat(24) +
+              (produced ? 'Updated `README.md` and `README.en.md` in this workspace.\n\n' : '') +
+              'Stable line before the final batch.\n\n',
+            ...(work
+              ? { reasoning: { markdown: 'Checking the work.\n\n'.repeat(25), streaming: false } }
+              : {}),
+            turn: 2,
+            step: produced ? 2 : 1,
+          }
+          commit = (reply, streaming, running, showFiles = false) =>
+            flushSync(() =>
+              render(
+                [
+                  ...(shortHistory ? history.slice(0, 1) : history),
+                  ...(produced
+                    ? [{ ...edit, tool: { ...edit.tool, locations: showFiles ? locations : [] } }]
+                    : []),
+                  reply,
+                ],
+                streaming,
+                running,
+              ),
+            )
+          commit({ ...answer, streaming: true }, true, true)
+        }
+        window.finishReply = ({ order, finalBatch = 0, produced = false, statusDuringTail = false }) => {
+          const complete = () =>
+            commit(
+              {
+                ...answer,
+                streaming: false,
+                turnCompleted: true,
+                markdown: answer.markdown + paragraph.repeat(finalBatch),
+                turnUsage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+              },
+              false,
+              false,
+            )
+          if (produced) {
+            const finished = {
+              ...answer,
+              streaming: false,
+              turnCompleted: true,
+              turnUsage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
+            }
+            commit(finished, false, false)
+            setTimeout(() => commit(finished, false, false, true), 400)
+            return
+          }
+          if (order === 'together') return complete()
+          if (order === 'async content resize') {
+            complete()
+            setTimeout(() => {
+              const line = [...document.querySelectorAll('.dsh-timeline .dsh-markdown p')].find(
+                (p) => p.textContent === 'Stable line before the final batch.',
+              )
+              const content = document.createElement('div')
+              content.style.height = '320px'
+              line.after(content)
+            }, 900)
+            return
+          }
+          if (order === 'last text before turn end') {
+            const append = (count, running = true) =>
+              commit(
+                { ...answer, markdown: answer.markdown + paragraph.repeat(count), streaming: true },
+                true,
+                running,
+              )
+            append(finalBatch / 2)
+            requestAnimationFrame(() => {
+              append(finalBatch, !statusDuringTail)
+              requestAnimationFrame(() => requestAnimationFrame(complete))
+            })
+            return
+          }
+          if (order === 'status first') commit({ ...answer, streaming: true }, true, false)
+          else commit({ ...answer, streaming: false }, false, order === 'text first')
+          if (order === 'late turn end') setTimeout(complete, 400)
+          else requestAnimationFrame(() => requestAnimationFrame(complete))
+        }
+        window.beginReply()
+      }
     </script>
   </body>
 </html>

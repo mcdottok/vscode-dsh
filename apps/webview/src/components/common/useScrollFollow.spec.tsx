@@ -60,7 +60,9 @@ describe('useScrollFollow user jump', () => {
     expect(viewport.scrollTop).toBe(800)
   })
 
-  it('eases to the growing tail across frames and yields to an upward wheel', async () => {
+  it('eases to the growing tail through reply completion and yields to an upward wheel', async () => {
+    stubReducedMotion(false)
+    const resize = stubViewportResize()
     let nextFrame: FrameRequestCallback | undefined
     const advanceFrame = (timestamp: number): void => {
       const callback = nextFrame
@@ -78,14 +80,19 @@ describe('useScrollFollow user jump', () => {
       const follow = useScrollFollow({
         contentKey: revision,
         itemCount: 1,
-        smoothStreamingGrowth: true,
-        observeContentSize: false,
+        smoothTailGrowth: true,
       })
-      return <div ref={follow.scrollRef} data-testid="stream-viewport" onScroll={follow.handleScroll} />
+      return (
+        <div ref={follow.scrollRef} data-testid="stream-viewport" onScroll={follow.handleScroll}>
+          <div ref={follow.contentRef} data-testid="stream-content" />
+        </div>
+      )
     }
     const view = render(<Stream revision={0} />)
     const viewport = screen.getByTestId<HTMLDivElement>('stream-viewport')
+    const content = screen.getByTestId('stream-content')
     setScrollMetrics(viewport, 600, 1000, 400)
+    act(() => resize(content, 1000))
     await act(async () => Promise.resolve())
 
     setScrollMetrics(viewport, 600, 1036, 400)
@@ -105,20 +112,29 @@ describe('useScrollFollow user jump', () => {
     expect(viewport.scrollTop).toBe(firstPosition)
     advanceFrame(now + 32)
     expect(viewport.scrollTop - firstPosition).toBeGreaterThan(firstPosition - 600)
+    const beforeCompletion = viewport.scrollTop
+    view.rerender(<Stream revision={3} />)
+    expect(viewport.scrollTop).toBe(beforeCompletion)
+
+    // The footer expands after the terminal commit, while the last line is
+    // still scrolling into place. Retarget the same motion.
+    setScrollMetrics(viewport, beforeCompletion, 1096, 400)
+    act(() => resize(content, 1096))
+    expect(viewport.scrollTop).toBe(beforeCompletion)
     for (let frame = 3; frame <= 24 && nextFrame !== undefined; frame++) {
       const before = viewport.scrollTop
       advanceFrame(now + frame * 16)
       expect(viewport.scrollTop).toBeGreaterThanOrEqual(before)
-      expect(viewport.scrollTop).toBeLessThanOrEqual(660)
+      expect(viewport.scrollTop).toBeLessThanOrEqual(696)
     }
-    expect(viewport.scrollTop).toBe(660)
+    expect(viewport.scrollTop).toBe(696)
     expect(nextFrame).toBeUndefined()
 
     // A native event for the last animated write can arrive after the next
     // line grows the tail. It should start another eased follow.
-    setScrollMetrics(viewport, 660, 1084, 400)
+    setScrollMetrics(viewport, 696, 1120, 400)
     fireEvent.scroll(viewport)
-    expect(viewport.scrollTop).toBe(660)
+    expect(viewport.scrollTop).toBe(696)
     expect(nextFrame).toBeDefined()
 
     fireEvent.wheel(viewport, { deltaY: -40 })
@@ -449,23 +465,16 @@ describe('useScrollFollow user jump', () => {
   })
 
   it.each(['no input', 'before completion', 'during completion'])(
-    'settles a streaming reply through a content clamp and late footer resize (%s)',
+    'preserves scroll intent through content clamps and late resizes (%s)',
     async (readerInput) => {
       vi.useFakeTimers()
       stubReducedMotion(true)
       const resize = stubViewportResize()
-      function Stream({
-        streaming,
-        replyInProgress,
-      }: {
-        streaming: boolean
-        replyInProgress: boolean
-      }): ReactElement {
+      function Stream(): ReactElement {
         const follow = useScrollFollow({
           contentKey: 'same-reply',
           itemCount: 1,
-          smoothStreamingGrowth: streaming,
-          replyInProgress,
+          smoothTailGrowth: true,
         })
         return (
           <div ref={follow.scrollRef} data-testid="settling-viewport">
@@ -474,7 +483,7 @@ describe('useScrollFollow user jump', () => {
           </div>
         )
       }
-      const view = render(<Stream streaming replyInProgress />)
+      render(<Stream />)
       const viewport = screen.getByTestId<HTMLDivElement>('settling-viewport')
       const content = screen.getByTestId('settling-content')
       setScrollMetrics(viewport, 600, 1000, 400)
@@ -489,7 +498,7 @@ describe('useScrollFollow user jump', () => {
       setScrollMetrics(viewport, position, 960, 400)
       fireEvent.scroll(viewport)
       setScrollMetrics(viewport, position, 1040, 400)
-      view.rerender(<Stream streaming={false} replyInProgress />)
+      act(() => resize(content, 1040))
       expect(viewport.scrollTop).toBe(scrolledBefore ? 540 : 640)
 
       setScrollMetrics(viewport, viewport.scrollTop, 1100, 400)
@@ -502,10 +511,8 @@ describe('useScrollFollow user jump', () => {
       fireEvent.scroll(viewport)
       expect(viewport.scrollTop).toBe(scrolledBefore ? 540 : 712)
 
-      // The durable turn end can arrive after text streaming has stopped.
-      // Chromium delivers the earlier clamp's scroll event after the footer
-      // has already grown again, so the offset is below the current maximum.
-      view.rerender(<Stream streaming={false} replyInProgress={false} />)
+      // Chromium can deliver a clamp after the content has already grown
+      // again, so the offset is below the current maximum.
       const scrolledDuring = readerInput === 'during completion'
       if (scrolledDuring) fireEvent.wheel(viewport, { deltaY: -30 })
       setScrollMetrics(viewport, scrolledBefore ? 540 : 670, 1124, 400)

@@ -4,7 +4,7 @@ const DEFAULT_BOTTOM_THRESHOLD = 64
 const WHEEL_TAIL_DISTANCE = 32
 const USER_SCROLL_IDLE_MS = 220
 const STREAM_FOLLOW_DAMPING_MS = 36
-const MAX_ANIMATED_GROWTH = 160
+const MAX_FOLLOW_SPEED_PX_PER_MS = 2
 const SCROLL_KEYS = new Set(['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', ' '])
 
 interface ScheduledFollow {
@@ -30,10 +30,8 @@ export interface ScrollFollowOptions {
   readonly layoutMeasurementsActive?: boolean
   /** Reattach to an actively growing conversation when a downward wheel reaches its tail. */
   readonly snapToTailOnWheel?: boolean
-  /** Ease upward when a streaming transcript grows while the reader is pinned. */
-  readonly smoothStreamingGrowth?: boolean
-  /** The reply can stay active after its text stream stops, until its footer settles. */
-  readonly replyInProgress?: boolean
+  /** Ease toward a growing tail, including size changes outside React commits. */
+  readonly smoothTailGrowth?: boolean
 }
 
 /** A reader position captured before an older history page is inserted. */
@@ -78,8 +76,8 @@ export interface ScrollFollowScheduleOptions {
   readonly preserveBottom?: boolean
   /** Correct a known layout transition before the browser paints it. */
   readonly immediate?: boolean
-  /** This reconciliation follows transcript growth rather than a viewport change. */
-  readonly animateGrowth?: boolean
+  /** Place an initially opened or switched conversation at its tail immediately. */
+  readonly snap?: boolean
 }
 
 /**
@@ -102,14 +100,13 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
   const internalScrollTopRef = useRef<number | undefined>(undefined)
   const lastReaderScrollTopRef = useRef<number | undefined>(undefined)
   const viewportHeightRef = useRef(0)
+  const measuredTailRef = useRef<number | undefined>(undefined)
+  const positionedSessionRef = useRef(false)
   const preserveBottomOnLayoutRef = useRef(false)
-  const preserveReplyTailRef = useRef(false)
   const layoutProtectionTimerRef = useRef<number | undefined>(undefined)
   const smoothScrollActiveRef = useRef(false)
-  const streamingGrowthRef = useRef(options.smoothStreamingGrowth)
-  const replyInProgress = options.replyInProgress ?? options.smoothStreamingGrowth === true
-  const previousReplyInProgressRef = useRef(replyInProgress)
-  const streamingFollowRef = useRef<{ frame: number; target: number } | undefined>(undefined)
+  const smoothTailGrowth = options.smoothTailGrowth === true
+  const tailMotionRef = useRef<{ frame: number; target: number; position: number } | undefined>(undefined)
   const scrollHandlerRef = useRef<() => void>(() => undefined)
   const itemCountRef = useRef(options.itemCount)
   const [isPinnedToBottom, setIsPinnedToBottom] = useState(true)
@@ -146,11 +143,11 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     scheduledFrameRef.current = undefined
   }, [])
 
-  const cancelStreamingFollow = useCallback((): void => {
-    const follow = streamingFollowRef.current
+  const cancelTailMotion = useCallback((): void => {
+    const follow = tailMotionRef.current
     if (follow === undefined) return
     window.cancelAnimationFrame(follow.frame)
-    streamingFollowRef.current = undefined
+    tailMotionRef.current = undefined
   }, [])
 
   const clearUserScrollLock = useCallback((): void => {
@@ -168,7 +165,6 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       layoutProtectionTimerRef.current = undefined
     }
     preserveBottomOnLayoutRef.current = false
-    preserveReplyTailRef.current = false
   }, [])
 
   const armLayoutProtection = useCallback((): void => {
@@ -176,7 +172,6 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     layoutProtectionTimerRef.current = window.setTimeout(() => {
       layoutProtectionTimerRef.current = undefined
       preserveBottomOnLayoutRef.current = false
-      preserveReplyTailRef.current = false
     }, USER_SCROLL_IDLE_MS)
   }, [])
 
@@ -209,7 +204,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       if (element === null) return
       // The canvas resize reconciles the measured tail. Applying its adjustment
       // here would move the pinned viewport before the animation can start.
-      if (options.smoothStreamingGrowth && stickToBottomRef.current && !userScrollActiveRef.current) return
+      if (smoothTailGrowth && stickToBottomRef.current && !userScrollActiveRef.current) return
 
       // If a virtualized canvas was briefly collapsed, the DOM can report zero
       // even though the reader was stably in the middle. Continue from the last
@@ -230,19 +225,20 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       element.scrollTop = nextScrollTop
       lastReaderScrollTopRef.current = nextScrollTop
     },
-    [options.smoothStreamingGrowth],
+    [smoothTailGrowth],
   )
 
   const scrollToLatest = useCallback((): void => {
     clearUserScrollLock()
     cancelScheduledFollow()
-    cancelStreamingFollow()
+    cancelTailMotion()
     const element = scrollRef.current
     if (element === null) return
 
     stickToBottomRef.current = true
     setIsPinnedToBottom(true)
     const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight)
+    measuredTailRef.current = maxScrollTop
     // Retain ownership even if layout already clamped to this offset. Chromium
     // can still deliver the pending scroll event after the resize callback.
     internalScrollTopRef.current = maxScrollTop
@@ -252,11 +248,11 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     lastReaderScrollTopRef.current = maxScrollTop
     viewportHeightRef.current = element.clientHeight
     setShowJumpToLatest(false)
-  }, [cancelScheduledFollow, cancelStreamingFollow, clearUserScrollLock])
+  }, [cancelScheduledFollow, cancelTailMotion, clearUserScrollLock])
 
   const followGrowth = useCallback((): void => {
     if (
-      !streamingGrowthRef.current ||
+      !smoothTailGrowth ||
       document.visibilityState === 'hidden' ||
       typeof window.requestAnimationFrame !== 'function' ||
       window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
@@ -268,52 +264,60 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     if (element === null) return
     const viewportHeight = element.clientHeight
     const target = Math.max(0, element.scrollHeight - viewportHeight)
-    const distance = target - element.scrollTop
-    if (distance <= 1 || distance > MAX_ANIMATED_GROWTH) {
+    const scrollTop = element.scrollTop
+    measuredTailRef.current = target
+    const distance = target - scrollTop
+    if (distance <= 1) {
       scrollToLatest()
       return
     }
-    const active = streamingFollowRef.current
-    if (active !== undefined) {
+    const active = tailMotionRef.current
+    if (active !== undefined && Math.abs(active.position - scrollTop) <= 1) {
       active.target = target
       return
     }
 
-    let position = element.scrollTop
+    // A shrinking scrollport may clamp the last animated offset before
+    // the next size notification. Continue from the actual browser position.
+    cancelTailMotion()
     let velocity = 0
     let previousFrame = window.performance.now()
     const tick = (timestamp: number): void => {
-      const follow = streamingFollowRef.current
+      const follow = tailMotionRef.current
       if (follow === undefined) return
       if (scrollRef.current !== element || !stickToBottomRef.current || userScrollActiveRef.current) {
-        cancelStreamingFollow()
+        cancelTailMotion()
         return
       }
       const elapsed = Math.min(32, Math.max(0, timestamp - previousFrame))
       previousFrame = timestamp
-      const remaining = follow.target - position
+      const remaining = follow.target - follow.position
       // A critically damped spring starts gently and keeps its velocity
       // when another line grows the tail before the previous motion settles.
       const decay = Math.exp(-elapsed / STREAM_FOLLOW_DAMPING_MS)
       const transient = (remaining / STREAM_FOLLOW_DAMPING_MS - velocity) * elapsed
       const nextRemaining = (remaining + transient) * decay
       velocity = (velocity + transient / STREAM_FOLLOW_DAMPING_MS) * decay
-      position = nextRemaining <= 0.5 ? follow.target : Math.max(position, follow.target - nextRemaining)
-      internalScrollTopRef.current = position
-      lastReaderScrollTopRef.current = position
-      element.scrollTop = position
-      if (position < follow.target) follow.frame = window.requestAnimationFrame(tick)
-      else streamingFollowRef.current = undefined
+      const easedPosition = nextRemaining <= 0.5 ? follow.target : follow.target - nextRemaining
+      follow.position = Math.min(
+        follow.position + MAX_FOLLOW_SPEED_PX_PER_MS * elapsed,
+        Math.max(follow.position, easedPosition),
+      )
+      internalScrollTopRef.current = follow.position
+      lastReaderScrollTopRef.current = follow.position
+      element.scrollTop = follow.position
+      if (follow.position < follow.target) follow.frame = window.requestAnimationFrame(tick)
+      else tailMotionRef.current = undefined
     }
     viewportHeightRef.current = viewportHeight
-    streamingFollowRef.current = { frame: window.requestAnimationFrame(tick), target }
-  }, [cancelStreamingFollow, scrollToLatest])
+    tailMotionRef.current = { frame: window.requestAnimationFrame(tick), target, position: scrollTop }
+  }, [cancelTailMotion, scrollToLatest, smoothTailGrowth])
 
   const userScrollToLatest = useCallback((): void => {
     clearLayoutProtection()
     clearUserScrollLock()
     cancelScheduledFollow()
-    cancelStreamingFollow()
+    cancelTailMotion()
     const element = scrollRef.current
     if (element === null) return
 
@@ -338,7 +342,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     internalScrollTopRef.current = undefined
     smoothScrollActiveRef.current = true
     element.scrollTo({ top: maxScrollTop, behavior: 'smooth' })
-  }, [cancelScheduledFollow, cancelStreamingFollow, clearLayoutProtection, clearUserScrollLock])
+  }, [cancelScheduledFollow, cancelTailMotion, clearLayoutProtection, clearUserScrollLock])
 
   const userScrollToOffset = useCallback(
     (offset: number): void => {
@@ -346,7 +350,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       clearLayoutProtection()
       clearUserScrollLock()
       cancelScheduledFollow()
-      cancelStreamingFollow()
+      cancelTailMotion()
       const element = scrollRef.current
       if (element === null) return
       interactionGenerationRef.current += 1
@@ -360,7 +364,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     },
     [
       cancelScheduledFollow,
-      cancelStreamingFollow,
+      cancelTailMotion,
       clearLayoutProtection,
       clearUserScrollLock,
       updateJumpVisibility,
@@ -381,12 +385,11 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
         itemCountRef.current > 0
       if (preserveBottom) preserveBottomOnLayoutRef.current = true
       if (preserveBottom && scheduleOptions?.immediate === true) {
-        // A known layout transition runs from a layout effect or a
-        // ResizeObserver callback. Correct synchronously so the browser never
-        // paints its transient clamped offset before reconciliation can run.
+        // Reconcile before paint, using the same follow motion for text,
+        // footer and viewport changes throughout a reply.
         cancelScheduledFollow()
-        if (scheduleOptions.animateGrowth === true) followGrowth()
-        else scrollToLatest()
+        if (scheduleOptions.snap === true) scrollToLatest()
+        else followGrowth()
         armLayoutProtection()
         return
       }
@@ -409,8 +412,8 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
             stickToBottomRef.current = true
             setIsPinnedToBottom(true)
           }
-          if (scheduleOptions?.animateGrowth === true) followGrowth()
-          else scrollToLatest()
+          if (scheduleOptions?.snap === true) scrollToLatest()
+          else followGrowth()
           if (preserveBottom) armLayoutProtection()
         }
       }
@@ -439,7 +442,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     const element = scrollRef.current
     if (element === null) return undefined
     cancelScheduledFollow()
-    cancelStreamingFollow()
+    cancelTailMotion()
     clearLayoutProtection()
     // Loading earlier content is a deliberate departure from append-follow.
     stickToBottomRef.current = false
@@ -458,7 +461,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       scrollTop: element.scrollTop,
       interactionGeneration: interactionGenerationRef.current,
     }
-  }, [cancelScheduledFollow, cancelStreamingFollow, clearLayoutProtection, updateJumpVisibility])
+  }, [cancelScheduledFollow, cancelTailMotion, clearLayoutProtection, updateJumpVisibility])
 
   const restoreScrollAnchor = useCallback((anchor: ScrollAnchor, allowLayoutShift = false): boolean => {
     const element = scrollRef.current
@@ -493,7 +496,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
   const isUserScrollActive = useCallback((): boolean => userScrollActiveRef.current, [])
 
   const armUserScrollLock = useCallback((): void => {
-    cancelStreamingFollow()
+    cancelTailMotion()
     clearLayoutProtection()
     internalScrollTopRef.current = undefined
     if (!userScrollActiveRef.current) interactionGenerationRef.current += 1
@@ -504,7 +507,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       userScrollActiveRef.current = false
       if (stickToBottomRef.current && itemCountRef.current > 0) scheduleScrollToLatest()
     }, USER_SCROLL_IDLE_MS)
-  }, [cancelStreamingFollow, clearLayoutProtection, scheduleScrollToLatest])
+  }, [cancelTailMotion, clearLayoutProtection, scheduleScrollToLatest])
 
   const handleScroll = useCallback((): void => {
     const element = scrollRef.current
@@ -522,7 +525,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     // distance from the new tail must not turn it into a reader scroll-away.
     const isInternalFollowScroll =
       isInternalScroll && stickToBottomRef.current && !userScrollActiveRef.current
-    if (isInternalFollowScroll && streamingFollowRef.current !== undefined) return
+    if (isInternalFollowScroll && tailMotionRef.current !== undefined) return
     if (!isInternalScroll) internalScrollTopRef.current = undefined
     if (isInternalScroll) lastReaderScrollTopRef.current = element.scrollTop
     // Chromium can deliver several scroll events for the same internal write;
@@ -534,19 +537,18 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       viewportHeightRef.current > 0 && viewportHeightRef.current !== element.clientHeight
     viewportHeightRef.current = element.clientHeight
     const isViewportLayoutScroll = stickToBottomRef.current && viewportResized && !userScrollActiveRef.current
-    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight
-    // During settlement the footer can already have expanded again by the
-    // time Chromium reports the clamp from the shorter layout.
-    const finishingReply =
-      preserveReplyTailRef.current ||
-      (previousReplyInProgressRef.current && streamingGrowthRef.current === false)
+    const scrollLimit = Math.max(0, element.scrollHeight - element.clientHeight)
+    const distanceFromBottom = scrollLimit - element.scrollTop
+    const tailResized =
+      measuredTailRef.current !== undefined && Math.abs(scrollLimit - measuredTailRef.current) > 1
     const isTailClamp =
       stickToBottomRef.current &&
       !userScrollActiveRef.current &&
       expectedScrollTop !== undefined &&
       expectedScrollTop - element.scrollTop > 1 &&
-      (distanceFromBottom <= 1 || finishingReply)
+      (distanceFromBottom <= 1 || (smoothTailGrowth && (tailResized || preserveBottomOnLayoutRef.current)))
     if (isViewportLayoutScroll || isTailClamp) {
+      if (!isInternalScroll) cancelTailMotion()
       internalScrollTopRef.current = element.scrollTop
       lastReaderScrollTopRef.current = element.scrollTop
     }
@@ -581,15 +583,16 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       scheduleScrollToLatest({
         preserveBottom: true,
         immediate: isTailClamp || distanceFromBottom > 1,
-        animateGrowth: isInternalFollowScroll && !isViewportLayoutScroll,
       })
     updateJumpVisibility()
   }, [
     armUserScrollLock,
     bottomThreshold,
     cancelScheduledFollow,
+    cancelTailMotion,
     options.layoutMeasurementsActive,
     scheduleScrollToLatest,
+    smoothTailGrowth,
     updateJumpVisibility,
   ])
 
@@ -730,44 +733,37 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     () => () => {
       clearLayoutProtection()
       clearUserScrollLock()
-      cancelStreamingFollow()
+      cancelTailMotion()
     },
-    [cancelStreamingFollow, clearLayoutProtection, clearUserScrollLock],
+    [cancelTailMotion, clearLayoutProtection, clearUserScrollLock],
   )
 
   useLayoutEffect(() => {
     const sessionChanged = previousSessionRef.current !== options.sessionId
-    const streamingEnded = streamingGrowthRef.current === true && options.smoothStreamingGrowth !== true
-    const replyEnded = previousReplyInProgressRef.current && !replyInProgress
-    const settlingReply = !sessionChanged && (streamingEnded || replyEnded)
-    // Read the current mode without rebuilding the size observer at completion.
-    // Its previous measurements are needed to detect the footer's first resize.
-    streamingGrowthRef.current = options.smoothStreamingGrowth
-    previousReplyInProgressRef.current = replyInProgress
-    if (sessionChanged || settlingReply)
-      preserveReplyTailRef.current =
-        settlingReply && stickToBottomRef.current && !userScrollActiveRef.current && options.itemCount > 0
     if (sessionChanged) {
       previousSessionRef.current = options.sessionId
+      positionedSessionRef.current = false
       stickToBottomRef.current = true
       setIsPinnedToBottom(true)
       setShowJumpToLatest(false)
     } else restoreReaderPosition(true)
     updateJumpVisibility()
-    if (stickToBottomRef.current && options.itemCount > 0)
+    if (stickToBottomRef.current && options.itemCount > 0) {
+      const initialPlacement = sessionChanged || (smoothTailGrowth && !positionedSessionRef.current)
+      positionedSessionRef.current = true
       scheduleScrollToLatest({
         preserveBottom: true,
-        immediate: sessionChanged || settlingReply,
-        animateGrowth: !sessionChanged && !settlingReply,
+        immediate: initialPlacement,
+        snap: initialPlacement,
       })
+    }
   }, [
     options.contentKey,
     options.itemCount,
     options.sessionId,
-    options.smoothStreamingGrowth,
-    replyInProgress,
     restoreReaderPosition,
     scheduleScrollToLatest,
+    smoothTailGrowth,
     updateJumpVisibility,
   ])
 
@@ -776,10 +772,10 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     if (element === null || typeof ResizeObserver === 'undefined') return
 
     const content = contentRef.current
-    const observedSizes = { width: 0, height: 0 }
+    let contentHeight: number | undefined
     const viewportSizes = { width: 0, height: 0 }
     const observer = new ResizeObserver((entries) => {
-      updateJumpVisibility()
+      let resized = false
       for (const entry of entries) {
         if (entry.target === element) {
           const { width, height } = entry.contentRect
@@ -792,20 +788,19 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
           // Notifications and in-flow helpers resize the scroll owner without
           // changing its content. Reconcile only through the existing intent
           // guard: a free reader or an active gesture always keeps control.
-          if (measured && changed && !userScrollActiveRef.current)
-            scheduleScrollToLatest({ preserveBottom: true, immediate: true })
+          if (measured && changed) resized = true
           continue
         }
         if (entry.target !== content) continue
-        const rect = entry.contentRect
-        const previous = { ...observedSizes }
-        observedSizes.width = rect.width
-        observedSizes.height = rect.height
-        const widthChanged = Math.abs(rect.width - previous.width) >= 0.5
-        const heightChanged = Math.abs(rect.height - previous.height) >= 0.5
-        if (previous.width > 0 && heightChanged && !widthChanged && !userScrollActiveRef.current)
-          scheduleScrollToLatest({ preserveBottom: true, immediate: true, animateGrowth: true })
+        const { height } = entry.contentRect
+        const heightChanged =
+          contentHeight === undefined ? smoothTailGrowth : Math.abs(height - contentHeight) >= 0.5
+        if (heightChanged) resized = true
+        contentHeight = height
       }
+      if (resized && !userScrollActiveRef.current)
+        scheduleScrollToLatest({ preserveBottom: true, immediate: true })
+      else updateJumpVisibility()
     })
     observer.observe(element)
     if (options.observeContentSize !== false && content !== null && content !== element)
@@ -819,6 +814,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     options.observeContentSize,
     options.sessionId,
     scheduleScrollToLatest,
+    smoothTailGrowth,
     updateJumpVisibility,
   ])
 

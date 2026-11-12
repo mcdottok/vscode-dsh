@@ -193,7 +193,8 @@ describe('Timeline', () => {
     await act(async () => {
       await Promise.resolve()
     })
-    expect(timeline.scrollTop).toBe(800)
+    expect(timeline.scrollTop).toBe(600)
+    await waitFor(() => expect(timeline.scrollTop).toBe(800))
   })
 
   it('shows tool activity when a live tool is present in the transcript tail', () => {

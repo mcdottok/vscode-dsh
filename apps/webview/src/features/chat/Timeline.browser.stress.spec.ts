@@ -17,7 +17,7 @@ const root = resolve(import.meta.dirname, '../../..')
 // Real CSS overflow is absent from jsdom. Run this with the stress suite and
 // Chrome/Edge installed (or DSH_TEST_BROWSER pointing to a Chromium executable).
 it.skipIf(browser === undefined)(
-  'keeps nested work log overflow inside its scroller in all four modes',
+  'keeps nested work log overflow bounded and reply completion scroll smooth',
   { tags: ['stress'], timeout: 60_000 },
   async () => {
     const fixture = resolve(root, `__work_log_${process.pid}.html`)
@@ -177,6 +177,88 @@ it.skipIf(browser === undefined)(
         expect(reply.height).toBeGreaterThan(340)
         expect(reply.rows).toBe(40)
         await check()
+      }
+      let completionLayout: string | undefined
+      for (const scenario of [
+        { order: 'async content resize', work: false, shortHistory: true },
+        { order: 'async content resize', work: false },
+        { order: 'last text before turn end', finalBatch: 10, shortHistory: true, work: false },
+        { order: 'last text before turn end', finalBatch: 10, work: false, statusDuringTail: true },
+        { order: 'together', shortHistory: true, work: false },
+        { order: 'together', shortHistory: true },
+        { order: 'status first' },
+        { order: 'text first' },
+        { order: 'late turn end' },
+        { order: 'together', rich: true },
+        { order: 'late turn end', rich: true, shortHistory: true },
+        { order: 'together', rich: true, produced: true },
+        { order: 'status first', finalBatch: 8 },
+        { order: 'text first', finalBatch: 8 },
+        { order: 'together', layout: 'classic', work: false, shortHistory: true },
+        { order: 'late turn end', layout: 'classic', work: false },
+        { order: 'async content resize', layout: 'classic', work: false },
+      ]) {
+        const layout = scenario.layout ?? 'focused'
+        if (completionLayout !== layout) {
+          completionLayout = layout
+          await send('Page.navigate', {
+            url: `${origin}/__work_log_${process.pid}.html?completion=1&layout=${layout}`,
+          })
+          let completionReady = false
+          for (let attempt = 0; attempt < 100 && !completionReady; attempt++) {
+            await delay(50)
+            try {
+              completionReady =
+                (await evaluate(
+                  `location.search.includes('layout=${layout}') && typeof window.finishReply === 'function'`,
+                )) === true
+            } catch {
+              /* Wait for the new document. */
+            }
+          }
+          expect(completionReady).toBe(true)
+        }
+        await evaluate(`window.beginReply(${JSON.stringify(scenario)})`)
+        await delay(500)
+        const samples = (await evaluate(`new Promise((resolve, reject) => {
+          const frames = [];
+          let started;
+          const sample = (time) => {
+            started ??= time;
+            const viewport = document.querySelector('.dsh-timeline');
+            const last = [...document.querySelectorAll('.dsh-timeline .dsh-markdown p')]
+              .find(p => p.textContent === 'Stable line before the final batch.');
+            if (!last) return reject(new Error('The measured reply line disappeared.'));
+            const row = last.closest('.dsh-timeline__row');
+            frames.push({ line: last.getBoundingClientRect().bottom, top: viewport.scrollTop,
+              max: viewport.scrollHeight - viewport.clientHeight,
+              gap: viewport.getBoundingClientRect().bottom - row.getBoundingClientRect().bottom });
+            if (frames.length === 1) window.finishReply(${JSON.stringify(scenario)});
+            if (time - started < ${scenario.order === 'async content resize' ? 1550 : scenario.order === 'late turn end' || scenario.produced ? 900 : 520}) requestAnimationFrame(sample);
+            else resolve(frames);
+          };
+          requestAnimationFrame(sample);
+        })`)) as { line: number; top: number; max: number; gap: number }[]
+        const initial = samples[0]!
+        expect(initial.max - initial.top, JSON.stringify({ scenario, initial })).toBeLessThanOrEqual(2)
+        const moves = samples.slice(1).map((frame, index) => ({
+          pixelsUp: samples[index]!.line - frame.line,
+          frame,
+        }))
+        const largest = moves.reduce((a, b) => (a.pixelsUp >= b.pixelsUp ? a : b))
+        expect(largest.pixelsUp, JSON.stringify({ scenario, largest })).toBeLessThan(
+          scenario.finalBatch || scenario.order === 'async content resize' ? 65 : 25,
+        )
+        const final = samples.at(-1)!
+        expect(final.max - final.top).toBeLessThanOrEqual(2)
+        if (scenario.order === 'async content resize') expect(final.max - initial.max).toBeGreaterThan(300)
+        if (scenario.produced) {
+          const files = await evaluate(`(() => {
+            const list = document.querySelector('.dsh-timeline__produced-list');
+            return { chips: list?.children.length, overflows: list?.scrollWidth > list?.clientWidth };
+          })()`)
+          expect(files).toEqual({ chips: 6, overflows: true })
+        }
       }
       await send('Browser.close')
     } finally {

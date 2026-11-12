@@ -226,6 +226,10 @@
   outline-offset: -2px;
 }
 
+.dsh-markdown__copy-mount {
+  min-block-size: var(--dsh-control-height);
+}
+
 .dsh-markdown__block-toolbar {
   display: flex;
   align-items: center;

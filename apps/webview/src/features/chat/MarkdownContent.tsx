@@ -131,14 +131,14 @@ export const MarkdownContent = memo(function MarkdownContent({
   // argument.
   const highlightVersion = useSyncExternalStore(subscribeCodeHighlights, codeHighlightVersion)
   const frozenHtml = useMemo(
-    () => highlightRegionHtml(projection?.primaryHtml ?? '', streaming, highlightMemory.current),
+    () => renderRegionHtml(projection?.primaryHtml ?? '', streaming, highlightMemory.current),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [projection?.primaryHtml, streaming, highlightVersion],
   )
   const projectedTail = projection?.tailHtml ?? null
   const tailHtml = useMemo(
     () =>
-      projectedTail === null ? null : highlightRegionHtml(projectedTail, streaming, highlightMemory.current),
+      projectedTail === null ? null : renderRegionHtml(projectedTail, streaming, highlightMemory.current),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [projectedTail, streaming, highlightVersion],
   )
@@ -158,15 +158,11 @@ export const MarkdownContent = memo(function MarkdownContent({
     }
 
     const mounted: MountedCopyRegion[] = []
-    for (const target of Array.from(container.querySelectorAll<HTMLElement>('pre, table'))) {
-      if (target.parentElement?.classList.contains('dsh-markdown__copy-region')) continue
-
-      const region = document.createElement('div')
+    for (const region of container.querySelectorAll<HTMLDivElement>('.dsh-markdown__copy-region')) {
+      const target = region.querySelector<HTMLElement>('pre, table')
+      const mount = region.querySelector<HTMLDivElement>('.dsh-markdown__copy-mount')
+      if (target === null || mount === null) continue
       const kind = target.tagName.toLowerCase() === 'table' ? 'table' : 'code'
-      region.className = `dsh-markdown__copy-region dsh-markdown__copy-region--${kind}`
-      const mount = document.createElement('div')
-      mount.className = 'dsh-markdown__copy-mount'
-      region.append(mount)
       const label =
         kind === 'table' ? t('markdown.table') : (codeLanguageLabel(target) ?? t('markdown.plainText'))
       const ariaLabel = kind === 'table' ? label : t('markdown.codeBlock', { language: label })
@@ -175,36 +171,25 @@ export const MarkdownContent = memo(function MarkdownContent({
           ? ['tabindex', 'role', 'aria-label'].map((name) => ({ name, value: target.getAttribute(name) }))
           : []
       let details: string
+      let scrollPort: HTMLElement | null = null
       if (kind === 'table') {
         const columns = target.querySelector<HTMLTableRowElement>('tr')?.cells.length ?? 0
         details = t('markdown.tableDimensions', {
           rows: target.querySelectorAll('tbody tr').length,
           columns,
         })
-        const wide = columns >= 4 && target.closest('blockquote') === null
-        region.classList.add(
-          wide ? 'dsh-markdown__copy-region--table-wide' : 'dsh-markdown__copy-region--table-fill',
-        )
-        // Even a two-column table can exceed a narrow sidebar. Keep its
-        // scrollport separate so the header and copy action stay in view.
-        const scrollPort = document.createElement('div')
-        scrollPort.className = 'dsh-markdown__table-scroll'
-        scrollPort.tabIndex = 0
-        scrollPort.setAttribute('role', 'region')
-        scrollPort.setAttribute('aria-label', label)
-        target.replaceWith(region)
-        scrollPort.append(target)
-        region.append(scrollPort)
+        scrollPort = target.parentElement
+        scrollPort?.setAttribute('tabindex', '0')
+        scrollPort?.setAttribute('role', 'region')
+        scrollPort?.setAttribute('aria-label', label)
       } else {
         const source = (target.textContent ?? '').replace(/\n$/u, '')
         details = t('markdown.codeLines', { count: source === '' ? 0 : source.split('\n').length })
         target.tabIndex = 0
         target.setAttribute('role', 'region')
         target.setAttribute('aria-label', ariaLabel)
-        target.replaceWith(region)
-        region.append(target)
       }
-      mounted.push({ mount, region, target, label, ariaLabel, details, codeAttributes })
+      mounted.push({ mount, scrollPort, target, label, ariaLabel, details, codeAttributes })
     }
     // Portals belong to the existing React tree. Separate roots per block made
     // parent cleanup synchronously unmount roots during React's own commit.
@@ -228,23 +213,26 @@ export const MarkdownContent = memo(function MarkdownContent({
         button.textContent = value
         const handleClick = (): void => onOpenLink(path)
         button.addEventListener('click', handleClick)
-        code.replaceWith(button)
-        mentions.push({ button, code, handleClick })
+        const originalChildren = Array.from(code.childNodes)
+        code.replaceChildren(button)
+        mentions.push({ button, code, originalChildren, handleClick })
       }
     }
 
     return () => {
       for (const mention of mentions) {
         mention.button.removeEventListener('click', mention.handleClick)
-        if (mention.button.parentNode !== null) mention.button.replaceWith(mention.code)
+        if (mention.button.parentNode === mention.code)
+          mention.code.replaceChildren(...mention.originalChildren)
       }
       for (const entry of mounted) {
         for (const { name, value } of entry.codeAttributes) {
           if (value === null) entry.target.removeAttribute(name)
           else entry.target.setAttribute(name, value)
         }
-        if (entry.region.parentNode !== null && entry.region.contains(entry.target))
-          entry.region.replaceWith(entry.target)
+        entry.scrollPort?.removeAttribute('tabindex')
+        entry.scrollPort?.removeAttribute('role')
+        entry.scrollPort?.removeAttribute('aria-label')
       }
     }
   }, [markdown, onOpenLink, producedFiles, frozenHtml, tailHtml, streaming, t])
@@ -463,12 +451,10 @@ function stableBlockCount(markdown: string, blocks: readonly string[]): number {
  * keeps the pass synchronous: the next cache version re-renders the region with
  * whatever landed. A grammar the Webview does not bundle stays plaintext.
  */
-function highlightRegionHtml(html: string, streaming: boolean, memory: HighlightMemory): string {
-  if (!html.includes('language-') || typeof DOMParser === 'undefined') return html
+function renderRegionHtml(html: string, streaming: boolean, memory: HighlightMemory): string {
+  if ((!html.includes('<pre') && !html.includes('<table')) || typeof DOMParser === 'undefined') return html
   const parsed = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html')
   const codeBlocks = Array.from(parsed.body.querySelectorAll<HTMLElement>('pre > code[class*="language-"]'))
-  if (codeBlocks.length === 0) return html
-  let changed = false
   for (const code of codeBlocks) {
     const languageClass = Array.from(code.classList).find((value) => value.startsWith('language-'))
     const language = languageClass === undefined ? undefined : resolveBundledLanguage(languageClass.slice(9))
@@ -481,9 +467,27 @@ function highlightRegionHtml(html: string, streaming: boolean, memory: Highlight
     if (replacement === null || code.parentElement === null) continue
     replacement.setAttribute('data-code-language', language)
     code.parentElement.replaceWith(replacement)
-    changed = true
   }
-  return changed ? parsed.body.innerHTML : html
+  // Reserve the same block geometry before the copy toolbar is interactive.
+  for (const target of parsed.body.querySelectorAll<HTMLPreElement | HTMLTableElement>('pre, table')) {
+    const region = parsed.createElement('div')
+    const mount = parsed.createElement('div')
+    mount.className = 'dsh-markdown__copy-mount'
+    region.append(mount)
+    target.replaceWith(region)
+    if (target instanceof HTMLTableElement) {
+      const wide = (target.rows[0]?.cells.length ?? 0) >= 4 && region.closest('blockquote') === null
+      region.className = `dsh-markdown__copy-region dsh-markdown__copy-region--table dsh-markdown__copy-region--table-${wide ? 'wide' : 'fill'}`
+      const scrollPort = parsed.createElement('div')
+      scrollPort.className = 'dsh-markdown__table-scroll'
+      scrollPort.append(target)
+      region.append(scrollPort)
+    } else {
+      region.className = 'dsh-markdown__copy-region dsh-markdown__copy-region--code'
+      region.append(target)
+    }
+  }
+  return parsed.body.innerHTML
 }
 
 function highlightedBlockHtml(
@@ -551,7 +555,7 @@ function withPlainRemainder(html: string, remainder: string): string | undefined
 
 interface MountedCopyRegion {
   readonly mount: HTMLDivElement
-  readonly region: HTMLDivElement
+  readonly scrollPort: HTMLElement | null
   readonly target: HTMLElement
   readonly label: string
   readonly ariaLabel: string
@@ -572,6 +576,7 @@ function codeLanguageLabel(target: HTMLElement): string | undefined {
 interface MountedFileMention {
   readonly button: HTMLButtonElement
   readonly code: HTMLElement
+  readonly originalChildren: readonly ChildNode[]
   readonly handleClick: () => void
 }
 
