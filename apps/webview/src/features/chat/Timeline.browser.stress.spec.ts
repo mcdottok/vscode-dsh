@@ -290,6 +290,41 @@ it.skipIf(browser === undefined)(
               )
             }
           }
+          await evaluate('window.beginReply({ work: false })')
+          await delay(500)
+          const burst = (await evaluate(`(() => {
+            const viewport = document.querySelector('.dsh-timeline');
+            const status = viewport.querySelector('.dsh-timeline__streaming-status');
+            const canvas = viewport.querySelector('.dsh-timeline__canvas');
+            const rect = viewport.getBoundingClientRect();
+            const before = status.getBoundingClientRect().bottom;
+            const block = document.createElement('div');
+            block.style.height = '320px';
+            canvas.lastElementChild.append(block);
+            return { before, after: status.getBoundingClientRect().bottom,
+              bottom: rect.top + viewport.clientTop + viewport.clientHeight,
+              gap: viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop,
+              x: rect.left + 20, y: rect.top + rect.height / 2 };
+          })()`)) as { before: number; after: number; bottom: number; gap: number; x: number; y: number }
+          expect(burst.gap).toBeGreaterThan(300)
+          expect(Math.abs(burst.after - burst.before)).toBeLessThanOrEqual(1)
+          expect(Math.abs(burst.after - burst.bottom)).toBeLessThanOrEqual(2)
+          await send('Input.dispatchMouseEvent', {
+            type: 'mouseWheel',
+            x: burst.x,
+            y: burst.y,
+            deltaX: 0,
+            deltaY: -360,
+          })
+          await delay(200)
+          expect(
+            await evaluate(`(() => {
+              const viewport = document.querySelector('.dsh-timeline');
+              const status = viewport.querySelector('.dsh-timeline__streaming-status');
+              return viewport.dataset.scrollFollow === 'free' &&
+                status.getBoundingClientRect().top >= viewport.getBoundingClientRect().bottom;
+            })()`),
+          ).toBe(true)
         }
         await evaluate(`window.beginReply(${JSON.stringify(scenario)})`)
         await delay(500)

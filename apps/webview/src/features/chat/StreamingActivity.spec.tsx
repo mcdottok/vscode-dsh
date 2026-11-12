@@ -72,9 +72,23 @@ describe('streaming activity clock', () => {
     act(() => {
       document.dispatchEvent(new Event('visibilitychange'))
     })
-    expect(screen.getByRole('status').textContent).toBe('正在回复，用时 1 分钟 5 秒…')
+    expect(screen.getByRole('status').textContent).toBe('深度求索中，用时 1 分钟 5 秒…')
     view.unmount()
     expect(removed).toHaveBeenCalledWith('visibilitychange', expect.any(Function))
     expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it.each([
+    [59, '59 秒'],
+    [60, '1 分钟 0 秒'],
+    [3_599, '59 分钟 59 秒'],
+    [3_600, '1 小时 0 分钟'],
+    [3_665, '1 小时 1 分钟'],
+  ])('formats Chinese elapsed time after %i seconds', (seconds, duration) => {
+    vi.useFakeTimers()
+    vi.setSystemTime(seconds * 1_000)
+    setActiveLocale('zh')
+    render(<StreamingActivity startedAt={0} translate={translate} />)
+    expect(screen.getByRole('status').textContent).toBe(`深度求索中，用时 ${duration}…`)
   })
 })
