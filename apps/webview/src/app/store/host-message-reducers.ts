@@ -7,6 +7,7 @@ import type {
 import { CONNECTION_PHASES } from '@dsh-vscode/domain'
 import {
   connectionOutputSchema,
+  extensionUpdateSchema,
   transcriptPatchSchema,
   type HostMessage,
   type TranscriptPatch,
@@ -49,6 +50,11 @@ export function applyHostMessage(
   onConnectionEpoch?: () => void,
 ): void {
   if (message.type !== 'event') return
+  if (message.name === 'extension.update') {
+    const update = extensionUpdateSchema.nullable().safeParse(message.payload)
+    if (update.success) setState({ ...state, extensionUpdate: update.data ?? undefined })
+    return
+  }
   if (message.name === 'session.transcript.patch') {
     try {
       setState(installTranscriptPatch(state, transcriptPatchSchema.parse(message.payload) as TranscriptPatch))

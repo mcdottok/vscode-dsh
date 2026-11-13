@@ -6,6 +6,7 @@ import type {
   AccountLifecycleSnapshotDto,
   AccountSignOutImpactDto,
   AccountProfileDetailsSnapshotDto,
+  ExtensionUpdate,
   TranscriptWindow,
 } from '@dsh-vscode/webview-protocol'
 import type {
@@ -171,6 +172,7 @@ export interface AppState extends SessionModelDirectoryState {
   readonly dshCompatibilityWarning: string | undefined
   /** Latest Host-owned npm registry snapshot for the DSH runtime. */
   readonly dshUpdate: DshUpdateSnapshot | undefined
+  readonly extensionUpdate?: ExtensionUpdate | undefined
   /** Latest phase emitted by the Host while an update request is running. */
   readonly dshUpdateProgress: DshRuntimeUpdateProgress | undefined
   readonly sessions: readonly SessionSummary[]
@@ -275,6 +277,7 @@ export interface DshSettingsSnapshot {
 }
 
 export interface AppActions {
+  dismissExtensionUpdate?(version: string): Promise<void>
   featureRequest<T>(this: void, request: FeatureRequest): Promise<T>
   subscribeFeature(this: void, listener: (message: FeatureHostEvent) => void): () => void
   loadAccountLifecycle(): Promise<void>

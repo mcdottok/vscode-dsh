@@ -7,6 +7,7 @@ import {
   AUTOMATIC_DESKTOP_ORIGIN,
 } from './backend/desktop-auto-discovery.js'
 import { connectDesktop } from './vscode/connect-desktop.js'
+import { ExtensionUpdates, VSIX_UPDATE_SETTING } from './vscode/extension-updates.js'
 import type { DshRuntimeUpdateProgress, EditorContextOwner, SessionSummary } from '@dsh-vscode/domain'
 import {
   featureHostEnvelopeSchema,
@@ -510,7 +511,14 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
     promptTemplateUseCases,
     currentWorkspaceFolders,
   })
+  const extensionUpdates = new ExtensionUpdates({
+    installedVersion: extensionVersion,
+    state: context.globalState,
+    isEnabled: () => vscode.workspace.getConfiguration().get<boolean>(VSIX_UPDATE_SETTING, true),
+    publish: (update) => postEvent('extension.update', update),
+  })
   const gateway = createRequestGateway({
+    extensionUpdates,
     prepareEditorSession: (sessionId, signal) => commands.editorCompanion.prepareSession(sessionId, signal),
     transcript,
     resyncView: async () => {
@@ -634,8 +642,21 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
   })
 
   const root: CompositionRoot = {
-    start: commands.start,
+    start: () => {
+      context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration((event) => {
+          if (event.affectsConfiguration(VSIX_UPDATE_SETTING))
+            void extensionUpdates.configurationChanged().catch(() => undefined)
+        }),
+        vscode.window.onDidChangeWindowState(({ focused }) => {
+          if (focused) void extensionUpdates.check()
+        }),
+      )
+      void extensionUpdates.check()
+      return commands.start()
+    },
     dispose: () => {
+      extensionUpdates.dispose()
       transcript.dispose()
       disposeHostEventPipeline()
       return commands.dispose()

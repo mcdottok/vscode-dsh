@@ -6,6 +6,7 @@ import { budgetFailure } from './protocol-budget.js'
 import { webviewRequestSchema } from './webview-request-schema.js'
 import { transcriptWindowSchema } from './transcript.js'
 import { projectionBaselinePartSchema } from './projection-baseline-transfer.js'
+import { extensionUpdateSchema } from './extension-update.js'
 
 const hostError = z
   .object({
@@ -223,6 +224,7 @@ const genericHostEventSchema = z
           name !== 'job.follow.failed' &&
           name !== 'queue.updated' &&
           name !== 'tool.preparing' &&
+          name !== 'extension.update' &&
           name !== 'session.transcript' &&
           name !== 'session.projection.baseline.part',
       ),
@@ -271,6 +273,14 @@ const jobFollowFailedHostEventSchema = z
   .strict()
 
 export const hostEventSchema = z.union([
+  z
+    .object({
+      type: z.literal('event'),
+      name: z.literal('extension.update'),
+      sequence: z.number().int().nonnegative(),
+      payload: extensionUpdateSchema.nullable(),
+    })
+    .strict(),
   z
     .object({
       type: z.literal('event'),

@@ -6,6 +6,7 @@ export const STATE_VIEW_KEYS_B = [
   'subagentImagePrompts',
   'dshCompatibilityWarning',
   'dshUpdate',
+  'extensionUpdate',
   'dshUpdateProgress',
   'sessions',
   'archivedSessionIds',

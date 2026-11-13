@@ -176,6 +176,26 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
   }
   const [dismissedTimelineNotices, setDismissedTimelineNotices] = useState<ReadonlySet<string>>(new Set())
   const notices: AppNotice[] = []
+  const extensionUpdate = state.extensionUpdate
+  if (extensionUpdate !== undefined) {
+    notices.push({
+      id: `extension-update:${extensionUpdate.version}`,
+      tone: 'info',
+      title: t('app.extensionUpdateAvailable', { version: extensionUpdate.version }),
+      message: t('app.extensionUpdatePublished', {
+        date: new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(
+          new Date(extensionUpdate.publishedAt),
+        ),
+      }),
+      dismissLabel: t('app.dismissExtensionUpdate'),
+      onDismiss: () => void store.dismissExtensionUpdate?.(extensionUpdate.version).catch(() => undefined),
+      action: {
+        label: t('app.downloadExtensionVsix'),
+        icon: 'arrow-down',
+        run: () => void timelineOnOpenLink(extensionUpdate.downloadUrl).catch(() => undefined),
+      },
+    })
+  }
   if (error !== undefined) {
     notices.push({
       id: 'error',

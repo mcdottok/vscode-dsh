@@ -1512,6 +1512,35 @@ describe('App connected rendering', () => {
     expect(screen.getByRole('button', { name: 'Show notifications (1)' })).toBeDefined()
   })
 
+  it('shows the VSIX release date and download action inside the notification bell', () => {
+    const publishedAt = '2026-11-13T08:00:00Z'
+    const downloadUrl =
+      'https://github.com/mcdottok/vscode-dsh/releases/download/v0.1.100/dsh-coding-agent-0.1.100.vsix'
+    const dismissExtensionUpdate = vi
+      .fn<NonNullable<AppStore['dismissExtensionUpdate']>>()
+      .mockResolvedValue()
+    const openLink = vi.fn<AppStore['openLink']>().mockResolvedValue()
+    currentStore = {
+      ...storeFor({
+        ...connectedState(true),
+        extensionUpdate: { version: '0.1.100', publishedAt, downloadUrl },
+      }),
+      dismissExtensionUpdate,
+      openLink,
+    }
+    render(<App />)
+
+    expect(screen.queryByRole('button', { name: 'Download VSIX' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Show notifications (1)' }))
+    const notices = within(screen.getByRole('dialog', { name: 'Notifications' }))
+    expect(notices.getByText('DSH Coding Agent 0.1.100 is available')).toBeDefined()
+    expect(notices.getByText(/^Published /)).toBeDefined()
+    fireEvent.click(notices.getByRole('button', { name: 'Download VSIX' }))
+    expect(openLink).toHaveBeenCalledWith(downloadUrl)
+    fireEvent.click(notices.getByRole('button', { name: 'Dismiss extension update' }))
+    expect(dismissExtensionUpdate).toHaveBeenCalledWith('0.1.100')
+  })
+
   it('lets the user dismiss an update notice for the current upstream version', () => {
     currentStore = storeFor({
       ...connectedState(false),

@@ -17,6 +17,13 @@ export const connectionRequestSchemas = [
     })
     .strict(),
   z.object({ type: z.literal('app.ready'), ...requestBase }).strict(),
+  z
+    .object({
+      type: z.literal('extension.update.dismiss'),
+      ...requestBase,
+      payload: z.object({ version: z.string().min(1).max(64) }).strict(),
+    })
+    .strict(),
   z.object({ type: z.literal('connection.retry'), ...requestBase }).strict(),
   z
     .object({

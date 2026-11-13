@@ -25,8 +25,10 @@ import type { WebviewSurfaceRegistry } from '../view/webview-surface-registry.js
 import type { SessionScope } from './session-scope.js'
 import type { PostHostMessage, PostHostMessageTo, PostSurfaceEvent } from './host-event-pipeline.js'
 import type { TranscriptWindowRegistry } from '../view/transcript-window-registry.js'
+import type { ExtensionUpdates } from '../vscode/extension-updates.js'
 
 export interface RequestGatewayDependencies {
+  readonly extensionUpdates?: ExtensionUpdates
   readonly prepareEditorSession?: (sessionId: string, signal: AbortSignal) => Promise<void>
   readonly transcript: TranscriptWindowRegistry
   readonly resyncView?: () => Promise<void>

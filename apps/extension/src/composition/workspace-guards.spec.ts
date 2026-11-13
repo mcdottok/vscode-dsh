@@ -23,6 +23,7 @@ const routesAllowedWhileUntrusted = [
   'diagnostics.show',
   'diagnostics.snapshot',
   'extensionSettings.read',
+  'extension.update.dismiss',
   'models.discover',
   'models.list',
   'models.session.list',

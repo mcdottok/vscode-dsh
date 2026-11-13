@@ -329,6 +329,10 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
       return reconnect(signal)
     }
     if (request.type === 'view.openLink') return openMarkdownLink(request.payload.href)
+    if (request.type === 'extension.update.dismiss') {
+      await deps.extensionUpdates?.dismiss(request.payload.version)
+      return undefined
+    }
     if (request.type === 'view.showInFolder') return openMarkdownLink(request.payload.href, true)
     if (request.type === 'runtime.action') {
       if (request.payload.action === 'connect-desktop') {
@@ -895,6 +899,10 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
     await postEventTo(surfaceId, 'ui.surface.assigned', assigned, isCurrent)
     await postEventTo(surfaceId, 'ui.surface.handoff', { editorChats: surfaces.editorCount }, isCurrent)
   }
+  const replayExtensionUpdate = (surfaceId: string): void => {
+    const update = deps.extensionUpdates?.snapshot()
+    if (update != null) void postEventTo(surfaceId, 'extension.update', update).catch(() => undefined)
+  }
   const provider = new DshWebviewViewProvider({
     extensionUri: context.extensionUri,
     onMessage: (message) => router.handle(message, SIDEBAR_SURFACE_ID),
@@ -912,6 +920,7 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
     onBecameReady: () => {
       diagnostics.log('info', 'webview-ready', { requestType: 'app.ready', surfaceKind: 'sidebar' })
       deps.transcript.setVisible(SIDEBAR_SURFACE_ID, provider.visible)
+      replayExtensionUpdate(SIDEBAR_SURFACE_ID)
     },
     onViewDisposed: () => {
       openingConnection?.abort.abort()
@@ -930,6 +939,7 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
     onBecameReady: (surface) => {
       diagnostics.log('info', 'webview-ready', { requestType: 'app.ready', surfaceKind: surface.kind })
       deps.transcript.setVisible(surface.surfaceId, surface.visible)
+      replayExtensionUpdate(surface.surfaceId)
     },
     onDisposed: (surface) => onSurfaceWorkCancelled(surface.surfaceId),
     onVisibilityChanged: (surface) =>

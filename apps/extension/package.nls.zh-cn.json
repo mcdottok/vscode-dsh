@@ -1,4 +1,5 @@
 {
   "extension.description": "在 VS Code 中连接 DSH，支持代码对话、工具执行、变更审阅和桌面会话接续。由社区维护。",
-  "extension.workspaceTrust.description": "DSH 可以访问工作区文件并运行工具，因此需要信任工作区。"
+  "extension.workspaceTrust.description": "DSH 可以访问工作区文件并运行工具，因此需要信任工作区。",
+  "extension.autoCheckUpdates.description": "自动检查 GitHub Releases 上的 VSIX 更新，有新版时在 DSH 通知铃铛中提醒。"
 }

@@ -412,6 +412,12 @@
     "configuration": {
       "title": "DSH Coding Agent",
       "properties": {
+        "dsh.extension.autoCheckUpdates": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "%extension.autoCheckUpdates.description%"
+        },
         "dsh.editor.enabled": {
           "type": "boolean",
           "default": true,
