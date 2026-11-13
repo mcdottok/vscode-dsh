@@ -126,7 +126,7 @@
       {
         "command": "dsh.openSidebar",
         "title": "DSH Coding Agent: Open Chat / 打开聊天",
-        "icon": "resources/dsh.svg"
+        "icon": "resources/dsh-open-chat.svg"
       },
       {
         "command": "dsh.connectDesktop",
