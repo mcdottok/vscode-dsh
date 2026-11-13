@@ -10,6 +10,7 @@ import {
   Rc215VersionAdapter,
   Rc221VersionAdapter,
   Rc222VersionAdapter,
+  Rc223VersionAdapter,
   VersionedBackendProbe,
 } from '@dsh-vscode/dsh-adapter'
 
@@ -65,16 +66,18 @@ describe('production version adapter registry', () => {
 
     expect(marker).toBeInstanceOf(Rc202VersionAdapter)
     expect(marker?.fallback).toBe(false)
-    expect(adapters[0]).toBeInstanceOf(Rc222VersionAdapter)
+    expect(adapters[0]).toBeInstanceOf(Rc223VersionAdapter)
     expect(adapters[0]?.fallback).toBe(false)
-    expect(adapters[1]).toBeInstanceOf(Rc221VersionAdapter)
+    expect(adapters[1]).toBeInstanceOf(Rc222VersionAdapter)
     expect(adapters[1]?.fallback).toBe(false)
-    expect(adapters[2]).toBeInstanceOf(Rc215VersionAdapter)
+    expect(adapters[2]).toBeInstanceOf(Rc221VersionAdapter)
     expect(adapters[2]?.fallback).toBe(false)
-    expect(adapters[3]).toBeInstanceOf(Rc213VersionAdapter)
-    expect(adapters[4]).toBeInstanceOf(Rc212VersionAdapter)
+    expect(adapters[3]).toBeInstanceOf(Rc215VersionAdapter)
+    expect(adapters[4]).toBeInstanceOf(Rc213VersionAdapter)
+    expect(adapters[5]).toBeInstanceOf(Rc212VersionAdapter)
     expect(new Set(adapters.map((adapter) => adapter.supportedVersion)).size).toBe(adapters.length)
-    expect(adapters.slice(0, 14).map((adapter) => adapter.supportedVersion)).toEqual([
+    expect(adapters.slice(0, 15).map((adapter) => adapter.supportedVersion)).toEqual([
+      '0.2.2-rc.3',
       '0.2.2-rc.2',
       '0.2.2-rc.1',
       '0.2.1-rc.5',
@@ -95,8 +98,8 @@ describe('production version adapter registry', () => {
     expect(adapters.filter((adapter) => adapter.supportedVersion === '0.2.0-rc.1')).toHaveLength(1)
     // The newest published release is separate from the newest exact adapter
     // and the previously verified guided install default.
-    expect(LATEST_PUBLISHED_DSH_VERSION).toBe('0.2.2-rc.2')
-    expect(LATEST_SUPPORTED_DSH_VERSION).toBe('0.2.2-rc.2')
+    expect(LATEST_PUBLISHED_DSH_VERSION).toBe('0.2.2-rc.3')
+    expect(LATEST_SUPPORTED_DSH_VERSION).toBe('0.2.2-rc.3')
     expect(DEFAULT_INSTALL_DSH_VERSION).toBe('0.2.1-rc.2')
   })
 })

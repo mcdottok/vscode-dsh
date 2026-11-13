@@ -16,6 +16,7 @@ const releases = [
   '0.2.1-rc.5',
   '0.2.2-rc.1',
   '0.2.2-rc.2',
+  '0.2.2-rc.3',
 ]
 
 describe.skipIf(process.env.DSH_LIVE_SMOKE !== '1' || !releases.includes(version))(

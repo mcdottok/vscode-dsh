@@ -3,6 +3,7 @@ import { AppError } from '@dsh-vscode/domain'
 import { Rc212VersionAdapter } from '../src/versions/rc212/adapter.js'
 import { Rc213VersionAdapter } from '../src/versions/rc213/adapter.js'
 import { Rc215VersionAdapter } from '../src/versions/rc215/adapter.js'
+import { Rc223VersionAdapter } from '../src/versions/rc223/adapter.js'
 import { acceptsRc212CompatibilityVersion } from '../src/versions/rc212/compatibility.js'
 import { VersionedBackendProbe } from '../src/probe.js'
 import { candidate, transportOptions } from './support/contract-harness.js'
@@ -25,7 +26,6 @@ describe('rc.2 protocol family compatibility', () => {
       '0.2.1-rc.10',
       '0.2.1',
       '0.2.2-alpha.1',
-      '0.2.99',
       '0.2.1-rc.2+build.01',
     ])
       expect(acceptsRc212CompatibilityVersion(version), version).toBe(true)
@@ -35,6 +35,8 @@ describe('rc.2 protocol family compatibility', () => {
       '0.2.1-rc.1',
       '0.2.1-rc',
       '0.2.1-rc.01',
+      '0.2.2-rc.2',
+      '0.2.99',
       '0.3.0-0',
       '0.3.0-rc.1',
       '0.3.0',
@@ -45,7 +47,7 @@ describe('rc.2 protocol family compatibility', () => {
       expect(acceptsRc212CompatibilityVersion(version), version).toBe(false)
   })
 
-  it.each(['0.2.1-rc.4', '0.2.1-rc.6', '0.2.1-rc.8', '0.2.2-alpha.2', '0.2.2'])(
+  it.each(['0.2.1-rc.4', '0.2.1-rc.6', '0.2.1-rc.8', '0.2.2-alpha.2'])(
     'selects rc.2 for %s, preserves runtime identity and never calls legacy fallback',
     async (version) => {
       const fixture = new ProbeFixtureTransport()
@@ -75,6 +77,31 @@ describe('rc.2 protocol family compatibility', () => {
       expect(legacy.probeCompatibility).not.toHaveBeenCalled()
     },
   )
+
+  it.each([
+    ['0.2.2-rc.3', 'exact'],
+    ['0.2.2-rc.4', 'best-effort'],
+    ['0.2.2', 'best-effort'],
+  ])('selects the rc223 wire for %s and reports %s', async (version, mode) => {
+    const fixture = new ProbeFixtureTransport()
+    class FixtureAdapter extends Rc223VersionAdapter {
+      public override createTransport(): ProbeFixtureTransport {
+        return fixture
+      }
+    }
+    const older = new ProbeFixtureTransport()
+    const adapter = new FixtureAdapter(transportOptions(globalThis.fetch))
+    const result = await new VersionedBackendProbe([adapterFor(older), adapter]).probe(candidate(version))
+    expect(result?.capabilities).toMatchObject({
+      dshVersion: version,
+      protocolVersion: 'rc223',
+      adapterId: 'dsh-0.2.2-rc.3',
+      compatibilityMode: mode,
+    })
+    expect(fixture.methods).toEqual(['session.list', 'workspace.list'])
+    expect(fixture.closeCalls).toBe(1)
+    expect(older.methods).toEqual([])
+  })
 
   it.each(['malformed', 'business-error', 'protocol-error', 'timeout'] as const)(
     'declines %s responses and releases transport without downgrading to legacy',

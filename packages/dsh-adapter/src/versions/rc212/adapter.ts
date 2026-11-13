@@ -5,7 +5,7 @@ import { Rc212EditorBridgeRepository } from './editor-bridge-repository.js'
 import type { BackendCandidate, BackendCapabilities } from '@dsh-vscode/domain'
 import { isKnownDshVersion } from '../../contracts.js'
 import { withBestEffortAdapterCapabilities } from '../../compatibility.js'
-import { acceptsRc212CompatibilityVersion, RC212_COMPATIBILITY_RANGE } from './compatibility.js'
+import { acceptsRc212CompatibilityVersion } from './compatibility.js'
 
 /** dsh-v0.2.1-rc.2 / 687f282e8625c6b8d11ff58211a90524be2e4317.
  * Consumed Remote, Gateway, V4, tools and account contracts retain the rc.1 wire.
@@ -35,7 +35,7 @@ export class Rc212VersionAdapter extends Rc211VersionAdapter {
     return withBestEffortAdapterCapabilities(
       {
         ...capabilities,
-        compatibilityWarning: `DSH ${version} is using the 0.2.1-rc.2 protocol baseline (${RC212_COMPATIBILITY_RANGE}); initial response checks passed, but this runtime has not been individually verified.`,
+        compatibilityWarning: `DSH ${version} is using the ${this.supportedVersion} protocol baseline; initial response checks passed, but this runtime has not been individually verified.`,
       },
       version,
       this.id,
