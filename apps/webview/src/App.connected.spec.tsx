@@ -753,7 +753,7 @@ describe('App connected rendering', () => {
     expect(screen.getByTestId('timeline')).toBeDefined()
   })
 
-  it('keeps an idle send in the composer through RPC acceptance until its durable message appears', async () => {
+  it('clears an accepted idle send without waiting for a matching timeline message', async () => {
     let state = connectedState(true)
     const listeners = new Set<() => void>()
     const publish = (next: AppState): void => {
@@ -798,34 +798,23 @@ describe('App connected rendering', () => {
     expect(input.value).toBe('Hello')
     expect(screen.queryByRole('region', { name: 'Queued prompts' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Cancel sending' }).getAttribute('aria-busy')).toBe('true')
-    await act(async () => {
-      acknowledge()
-      await ack
-    })
-    expect(input.value).toBe('Hello')
-    expect(screen.getByRole('button', { name: 'Cancel sending' })).toBeTruthy()
-    // Identity wins even if DSH expands a reference in the displayed text.
     act(() => {
       publish({
         ...state,
         queue: [],
         timeline: {
           ...state.timeline,
-          nodes: [
-            {
-              kind: 'user-message',
-              id: 'direct-message',
-              rpcId: 'direct-request',
-              markdown: 'Hello (expanded reference)',
-            },
-          ],
+          nodes: [{ kind: 'user-message', id: 'delivered', markdown: 'Hello (expanded reference)' }],
         },
       })
     })
-    await waitFor(() => {
-      expect(input.value).toBe('')
-      expect(screen.queryByRole('button', { name: 'Cancel sending' })).toBeNull()
+    expect(input.value).toBe('Hello')
+    await act(async () => {
+      acknowledge()
+      await ack
     })
+    expect(input.value).toBe('')
+    expect(screen.queryByRole('button', { name: 'Cancel sending' })).toBeNull()
     expect(screen.queryByRole('region', { name: 'Queued prompts' })).toBeNull()
   })
 
@@ -970,18 +959,7 @@ describe('App connected rendering', () => {
       acknowledge()
       await receipt
     })
-    expect(timeline.getAttribute('data-awaiting-first-prompt')).toBe('true')
-
-    act(() => {
-      publish({
-        ...state,
-        timeline: {
-          ...state.timeline,
-          nodes: [{ kind: 'user-message', id: 'first-message', markdown: 'Hello', rpcId: 'first-prompt' }],
-        },
-      })
-    })
-    await waitFor(() => expect(timeline.getAttribute('data-awaiting-first-prompt')).toBe('false'))
+    expect(timeline.getAttribute('data-awaiting-first-prompt')).toBe('false')
     expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Prompt' }).value).toBe('')
   })
 

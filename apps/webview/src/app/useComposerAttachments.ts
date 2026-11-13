@@ -398,7 +398,6 @@ export function useComposerAttachments(deps: ComposerAttachmentDependencies): Co
     }
     const beforeIds = new Set(before.timeline.nodes.map((node) => node.id))
     const beforeRequests = new Set(before.directPromptRequestIds)
-    let awaitingVisibility = false
     let submission: Promise<void>
     try {
       submission =
@@ -490,63 +489,11 @@ export function useComposerAttachments(deps: ComposerAttachmentDependencies): Co
       }
       if (!mountedRef.current || Boolean(signal?.aborted)) return
       const admitted = store.getState()
-      if (selectDraftKey(admitted) !== submittedDraftKey()) {
-        clearSubmittedDraft()
-        return
-      }
-      const directRequests = admitted.directPromptRequestIds?.filter((id) => !beforeRequests.has(id)) ?? []
-      if (directRequests.length > 0 && !signal?.aborted) {
-        awaitingVisibility = true
-        // An RPC receipt can precede the durable user message. Keep the
-        // original draft visible until that message reaches the timeline.
-        const sessionId = admitted.activeSessionId
-        await new Promise<void>((resolve, reject) => {
-          let unsubscribe = (): void => undefined
-          let settled = false
-          const finish = (error?: Error): void => {
-            if (settled) return
-            settled = true
-            clearTimeout(timer)
-            unsubscribe()
-            admissionWaitsRef.current.delete(cancelled)
-            signal?.removeEventListener('abort', cancelled)
-            if (error === undefined) resolve()
-            else reject(error)
-          }
-          const cancelled = (): void => finish(new DOMException('Cancelled', 'AbortError'))
-          const check = (): void => {
-            const current = store.getState()
-            if (current.backend.kind !== 'connected') {
-              cancelled()
-              return
-            }
-            // The receipt already succeeded. If the reader leaves, there is
-            // no longer a visible composer to hold until the transcript arrives.
-            if (current.activeSessionId !== sessionId) {
-              finish()
-              return
-            }
-            if (
-              current.timeline.nodes.some(
-                (node) =>
-                  node.kind === 'user-message' &&
-                  ((node.rpcId !== undefined && directRequests.includes(node.rpcId)) ||
-                    (!beforeIds.has(node.id) && node.markdown === text)),
-              )
-            )
-              finish()
-          }
-          const timer = setTimeout(() => finish(new Error(t('app.error.promptTimeout'))), 30_000)
-          unsubscribe = store.subscribe(check)
-          admissionWaitsRef.current.add(cancelled)
-          signal?.addEventListener('abort', cancelled, { once: true })
-          if (signal?.aborted) cancelled()
-          else check()
-        })
-      }
-      if (!mountedRef.current || Boolean(signal?.aborted)) return
+      // The Host has accepted the prompt. Some runtimes omit the request ID
+      // or transform the displayed text, so timeline matching is only useful
+      // before this receipt, when an exact ID can confirm earlier delivery.
       clearSubmittedDraft()
-      if (selectDraftKey(store.getState()) !== submittedDraftKey()) return
+      if (selectDraftKey(admitted) !== submittedDraftKey()) return
       // The Extension Host consumes only the handles admitted by this send;
       // keep any draft attachments the user added while it was in flight.
       removeAttachmentDrafts(
@@ -559,10 +506,6 @@ export function useComposerAttachments(deps: ComposerAttachmentDependencies): Co
         if (Boolean(signal?.aborted) || (reason instanceof DOMException && reason.name === 'AbortError'))
           return
         if (!mountedRef.current || selectDraftKey(store.getState()) !== submittedDraftKey()) return
-        if (awaitingVisibility) {
-          setSubmitError(t('app.error.promptTimeout'))
-          return
-        }
         // One Session has one writer across DSH instances. Name that condition
         // instead of forwarding the Host's generic busy text, and keep the
         // slower hint on every other failure: the user otherwise only sees a
