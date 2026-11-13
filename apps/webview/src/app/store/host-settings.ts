@@ -35,6 +35,9 @@ export function parseExtensionSettings(value: unknown): ExtensionSettingsSummary
     return undefined
   return {
     extensionVersion,
+    ...(typeof settings?.autoCheckUpdates === 'boolean'
+      ? { autoCheckUpdates: settings.autoCheckUpdates }
+      : {}),
     connection: {
       mode: connection.mode,
       customEndpointConfigured: connection.customEndpointConfigured,

@@ -262,6 +262,19 @@ function expectActiveTabControlsMountedPanel(): void {
 }
 
 describe('SettingsDrawer', () => {
+  it('lets the user turn off automatic VSIX update checks from the extension version card', async () => {
+    const onSetAutoCheckUpdates = vi.fn<(enabled: boolean) => Promise<boolean>>().mockResolvedValue(false)
+    renderDrawer({ onSetAutoCheckUpdates })
+    const checkbox = screen.getByRole<HTMLInputElement>('checkbox', {
+      name: 'Automatically check for updates',
+    })
+    await waitFor(() => expect(checkbox.disabled).toBe(false))
+    expect(checkbox.checked).toBe(true)
+    fireEvent.click(checkbox)
+    expect(onSetAutoCheckUpdates).toHaveBeenCalledWith(false)
+    await waitFor(() => expect(checkbox.checked).toBe(false))
+  })
+
   afterEach(() => {
     cleanup()
     window.localStorage.clear()
@@ -1275,7 +1288,9 @@ describe('SettingsDrawer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Full Access' }))
     const confirm = screen.getByRole<HTMLButtonElement>('button', { name: 'Confirm full access' })
     expect(confirm.disabled).toBe(true)
-    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: 'I understand that Full access removes permission prompts.' }),
+    )
     fireEvent.click(screen.getByRole('button', { name: 'Confirm full access' }))
     await waitFor(() =>
       expect(onUpdateDshSetting).toHaveBeenCalledWith('permission.defaultPreset', 'danger-full-access', 1),

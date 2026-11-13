@@ -43,6 +43,7 @@ export interface ExtensionSettings {
 export interface ExtensionSettingsSummary {
   /** The installed VS Code extension version, sourced from its manifest. */
   readonly extensionVersion: string
+  readonly autoCheckUpdates?: boolean
   readonly connection: Pick<ConnectionSettings, 'mode'> & {
     /** The endpoint is deliberately not returned to the Webview. */
     readonly customEndpointConfigured: boolean

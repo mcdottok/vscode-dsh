@@ -876,6 +876,8 @@
   "settings.extensionVersion": "Extension version",
   "settings.extensionUpdateHint": "The extension has been temporarily removed from the VS Code Marketplace. Visit GitHub Releases to check for new versions and download a VSIX to update manually.",
   "settings.extensionCheckUpdates": "Go to Release",
+  "settings.autoCheckUpdates": "Automatically check for updates",
+  "settings.autoCheckUpdatesError": "Could not save the automatic update check preference.",
   "settings.dshVersion": "DSH version",
   "settings.notConnected": "not connected",
   "settings.versionUnavailable": "connected · version unavailable",

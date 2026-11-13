@@ -63,6 +63,8 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
     onOpenChange,
   } = props
   const [settingsState, setSettingsState] = useState<LoadedSettings | undefined>(undefined)
+  const [savingAutoCheckUpdates, setSavingAutoCheckUpdates] = useState(false)
+  const [autoCheckUpdatesError, setAutoCheckUpdatesError] = useState(false)
   const [dshState, setDshState] = useState<DshSettingsState>({ status: 'loading' })
   const [dshSettingsSnapshotFresh, setDshSettingsSnapshotFresh] = useState(false)
   const dshSettingsOpenedRef = useRef(false)
@@ -186,6 +188,7 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
     setWasOpen(open)
     if (!open) {
       setSettingsState(undefined)
+      setAutoCheckUpdatesError(false)
       // Clear the private draft before a closed drawer can reopen.
       setConnectionEndpoint('')
       // DSH settings can change outside this drawer while it is closed.
@@ -509,10 +512,30 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
     removingProviderId === undefined
       ? undefined
       : props.providers.find((provider) => provider.id === removingProviderId)
+  const changeAutoCheckUpdates = (enabled: boolean): void => {
+    if (savingAutoCheckUpdates || props.onSetAutoCheckUpdates === undefined) return
+    const epoch = openEpochRef.current
+    setSavingAutoCheckUpdates(true)
+    setAutoCheckUpdatesError(false)
+    void props
+      .onSetAutoCheckUpdates(enabled)
+      .then((autoCheckUpdates) => {
+        setSettingsState((current) =>
+          current?.value === undefined ? current : { value: { ...current.value, autoCheckUpdates } },
+        )
+      })
+      .catch(() => {
+        if (openEpochRef.current === epoch) setAutoCheckUpdatesError(true)
+      })
+      .finally(() => setSavingAutoCheckUpdates(false))
+  }
   const generalView = {
     props,
     t,
     settingsState,
+    savingAutoCheckUpdates,
+    autoCheckUpdatesError,
+    changeAutoCheckUpdates,
     refreshAccountDetails,
     acknowledgeAccountBonus,
     openAccountUsage,

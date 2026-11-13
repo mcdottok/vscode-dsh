@@ -10,6 +10,7 @@ import { EditorChatSurfaceManager } from '../view/editor-chat-surface-manager.js
 import { WebviewMessageRouter } from '../view/message-router.js'
 import { publicWorkspaceSummary } from '../view/public-value.js'
 import { requestOptionalProviderApiKey, requestProviderSecret } from '../vscode/credential-input.js'
+import { VSIX_UPDATE_SETTING } from '../vscode/extension-updates.js'
 import { createAttachmentRequestHandler, isAttachmentRequest } from './attachment-request-handler.js'
 import {
   publicValue as projectPublicValue,
@@ -657,14 +658,20 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
       await vscode.commands.executeCommand('workbench.action.openGlobalKeybindings')
       return undefined
     }
+    if (request.type === 'extensionSettings.setAutoCheckUpdates') {
+      const settings = vscode.workspace.getConfiguration()
+      await settings.update(VSIX_UPDATE_SETTING, request.payload.enabled, vscode.ConfigurationTarget.Global)
+      return vscode.workspace.getConfiguration().get<boolean>(VSIX_UPDATE_SETTING, true)
+    }
     if (request.type === 'extensionSettings.read')
-      return publicValue(
-        publicExtensionSettings(
+      return publicValue({
+        ...publicExtensionSettings(
           configuration.read(),
           extensionVersion,
           typeof context.workspaceState.get<unknown>('dsh.desktop.lastEndpoint') === 'string',
         ),
-      )
+        autoCheckUpdates: vscode.workspace.getConfiguration().get<boolean>(VSIX_UPDATE_SETTING, true),
+      })
     if (request.type === 'settings.update')
       return settingsUseCases.update(
         request.payload.path,

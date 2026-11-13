@@ -28,6 +28,9 @@ export interface GeneralSettingsTabProps {
   readonly props: SettingsDrawerProps
   readonly t: Translate
   readonly settingsState: { readonly value: ExtensionSettingsSummary | undefined } | undefined
+  readonly savingAutoCheckUpdates: boolean
+  readonly autoCheckUpdatesError: boolean
+  readonly changeAutoCheckUpdates: (enabled: boolean) => void
   readonly refreshAccountDetails: () => void
   readonly acknowledgeAccountBonus: (orderId: string) => Promise<boolean>
   readonly openAccountUsage: () => void
@@ -72,6 +75,9 @@ export function GeneralSettingsTab(input: GeneralSettingsTabProps): ReactElement
     props,
     t,
     settingsState,
+    savingAutoCheckUpdates,
+    autoCheckUpdatesError,
+    changeAutoCheckUpdates,
 
     refreshAccountDetails,
     acknowledgeAccountBonus,
@@ -138,14 +144,36 @@ export function GeneralSettingsTab(input: GeneralSettingsTabProps): ReactElement
           status={settingsState?.value?.extensionVersion ?? t('settings.unavailable')}
           description={t('settings.extensionUpdateHint')}
           control={
-            <a
-              className="dsh-button dsh-button--secondary dsh-button--compact dsh-settings__release-link"
-              href="https://github.com/mcdottok/vscode-dsh/releases"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {t('settings.extensionCheckUpdates')}
-            </a>
+            <div className="dsh-settings__update-actions">
+              <a
+                className="dsh-button dsh-button--secondary dsh-button--compact dsh-settings__release-link"
+                href="https://github.com/mcdottok/vscode-dsh/releases"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {t('settings.extensionCheckUpdates')}
+              </a>
+              <label className="dsh-settings__update-checkbox">
+                <input
+                  type="checkbox"
+                  checked={settingsState?.value?.autoCheckUpdates ?? true}
+                  disabled={
+                    settingsState?.value === undefined ||
+                    savingAutoCheckUpdates ||
+                    props.onSetAutoCheckUpdates === undefined
+                  }
+                  onChange={(event) => changeAutoCheckUpdates(event.currentTarget.checked)}
+                />
+                {t('settings.autoCheckUpdates')}
+              </label>
+            </div>
+          }
+          footer={
+            autoCheckUpdatesError ? (
+              <span className="dsh-settings__error" role="alert">
+                {t('settings.autoCheckUpdatesError')}
+              </span>
+            ) : undefined
           }
         />
       </SettingCard>

@@ -876,6 +876,8 @@
   "settings.extensionVersion": "扩展版本",
   "settings.extensionUpdateHint": "扩展暂时被 VS Code 扩展商城下架，请前往 GitHub Releases 检查新版本和下载 VSIX 手动更新",
   "settings.extensionCheckUpdates": "前往 Release",
+  "settings.autoCheckUpdates": "自动检测更新",
+  "settings.autoCheckUpdatesError": "无法保存自动检测更新设置。",
   "settings.dshVersion": "DSH 版本",
   "settings.notConnected": "未连接",
   "settings.versionUnavailable": "已连接 · 版本信息不可用",

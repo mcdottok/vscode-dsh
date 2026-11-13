@@ -50,6 +50,7 @@ export interface SettingsDrawerProps {
   readonly providers: readonly ModelProvider[]
   readonly models: readonly ModelDescriptor[]
   readonly onLoadSettings: () => Promise<ExtensionSettingsSummary | undefined>
+  readonly onSetAutoCheckUpdates?: (enabled: boolean) => Promise<boolean>
   readonly onLoadDshSettings: () => Promise<DshSettingsSnapshot | undefined>
   readonly onOpenDshSettingsDocument: () => Promise<void>
   readonly onOpenKeyboardShortcuts: () => Promise<void>

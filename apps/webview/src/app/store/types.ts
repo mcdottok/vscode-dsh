@@ -434,6 +434,7 @@ export interface AppActions {
   checkDshUpdates(force?: boolean): Promise<DshUpdateSnapshot | undefined>
   installDshVersion(version: string): Promise<DshUpdateSnapshot | undefined>
   readSettings(): Promise<ExtensionSettingsSummary | undefined>
+  readonly setAutoCheckUpdates?: (enabled: boolean) => Promise<boolean>
   readDshSettings(): Promise<DshSettingsSnapshot | undefined>
   openDshSettingsDocument(): Promise<void>
   openKeyboardShortcuts(): Promise<void>

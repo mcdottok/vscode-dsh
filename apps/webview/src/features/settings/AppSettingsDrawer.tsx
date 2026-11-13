@@ -125,6 +125,9 @@ export function AppSettingsDrawer({
       providers={state.providers}
       models={state.models}
       onLoadSettings={() => store.readSettings()}
+      {...(store.setAutoCheckUpdates === undefined
+        ? {}
+        : { onSetAutoCheckUpdates: store.setAutoCheckUpdates })}
       onLoadDshSettings={readDshSettingsForUi}
       onOpenDshSettingsDocument={() => store.openDshSettingsDocument()}
       onOpenKeyboardShortcuts={() => store.openKeyboardShortcuts()}
