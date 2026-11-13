@@ -8,6 +8,8 @@ export const VIEW_CONTAINER_ID = 'vscode-dsh'
 export const EDITOR_CHAT_VIEW_TYPE = 'dsh.chatPanel'
 /** Host-assigned identity of the secondary-side-bar chat surface. */
 export const SIDEBAR_SURFACE_ID = 'sidebar'
-export const DSH_PACKAGE = `${DSH_PACKAGE_NAME}@${DEFAULT_INSTALL_DSH_VERSION}`
-export const INSTALL_COMMAND = `npm install --global ${DSH_PACKAGE}`
+export function dshInstallCommand(version: string): string {
+  return `npm install --global "${DSH_PACKAGE_NAME}@${version}"`
+}
+export const INSTALL_COMMAND = dshInstallCommand(DEFAULT_INSTALL_DSH_VERSION)
 export const DSH_DOCUMENTATION_URL = 'https://github.com/deepseek-ai/deepseek-harness'

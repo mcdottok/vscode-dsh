@@ -1,64 +1,40 @@
 import type * as vscode from 'vscode'
 import { AppError } from '@dsh-vscode/domain'
+import { DEFAULT_INSTALL_DSH_VERSION, isDshPackageVersion } from '@dsh-vscode/dsh-adapter'
 
-import { DSH_DOCUMENTATION_URL, INSTALL_COMMAND } from '../constants.js'
-import { runtimeInstallationFailureMessage } from './runtime-installation.js'
+import { DSH_DOCUMENTATION_URL, dshInstallCommand, INSTALL_COMMAND } from '../constants.js'
 
 export interface RuntimeInstallerDependencies {
-  readonly tasks: typeof vscode.tasks
   readonly window: typeof vscode.window
   readonly env: typeof vscode.env
   readonly Uri: typeof vscode.Uri
   readonly workspace?: typeof vscode.workspace
-  readonly runInstall?: () => Promise<void>
-  readonly verifyInstall?: () => Promise<boolean>
   readonly verifyExecutable?: (path: string) => Promise<boolean>
 }
 
 export class RuntimeInstaller {
   public constructor(private readonly dependencies: RuntimeInstallerDependencies) {}
 
-  public install(): Promise<void> {
-    if (!isSupportedNodeVersion())
+  public install(version: string = DEFAULT_INSTALL_DSH_VERSION): Promise<void> {
+    if (version !== version.trim() || !isDshPackageVersion(version))
       return Promise.reject(
-        runtimeInstallError(
-          'node-version',
-          'DSH installation requires Node.js 22.19.0 or newer in the Extension Host.',
-          false,
-        ),
+        new AppError({
+          code: 'INVALID_CONFIGURATION',
+          message: 'Select an exact DSH version.',
+          retryable: false,
+        }),
       )
-    if (this.dependencies.runInstall !== undefined) {
-      return this.dependencies
-        .runInstall()
-        .then(async () => {
-          if (this.dependencies.verifyInstall !== undefined && !(await this.dependencies.verifyInstall()))
-            throw runtimeInstallError(
-              'verify-failed',
-              'DSH installation finished, but the installed executable could not be verified.',
-              true,
-            )
-        })
-        .catch((error: unknown) => {
-          if (error instanceof AppError) throw error
-          if (isMissingExecutable(error))
-            throw runtimeInstallError(
-              'npm-not-found',
-              'npm was not found in the Extension Host environment. Use Copy command or open a terminal to install DSH.',
-              true,
-              error,
-            )
-          throw runtimeInstallError(
-            'install-failed',
-            runtimeInstallationFailureMessage(error) ??
-              'The DSH installation command failed. Check the npm install log and try again.',
-            true,
-            error,
-          )
-        })
-    }
+    if (this.dependencies.workspace?.isTrusted === false)
+      return Promise.reject(
+        new AppError({
+          code: 'PERMISSION_DENIED',
+          message: 'Trust this workspace before opening the DSH installation terminal.',
+          retryable: false,
+        }),
+      )
     const terminal = this.dependencies.window.createTerminal({ name: 'Install DSH CLI' })
-    terminal.show(true)
-    terminal.sendText(INSTALL_COMMAND, true)
+    terminal.show(false)
+    terminal.sendText(dshInstallCommand(version), false)
     return Promise.resolve()
   }
 
@@ -89,34 +65,4 @@ export class RuntimeInstaller {
   public openDocumentation(): Thenable<boolean> {
     return this.dependencies.env.openExternal(this.dependencies.Uri.parse(DSH_DOCUMENTATION_URL))
   }
-}
-
-export function isSupportedNodeVersion(version = process.versions.node): boolean {
-  const match = version.match(/^(\d+)\.(\d+)\.(\d+)/)
-  if (match === null) return false
-  const major = Number(match[1])
-  const minor = Number(match[2])
-  const patch = Number(match[3])
-  return major > 22 || (major === 22 && (minor > 19 || (minor === 19 && patch >= 0)))
-}
-
-function runtimeInstallError(
-  reason: 'node-version' | 'verify-failed' | 'npm-not-found' | 'install-failed',
-  message: string,
-  retryable: boolean,
-  cause?: unknown,
-): AppError {
-  return new AppError({
-    code:
-      reason === 'npm-not-found' || reason === 'verify-failed' ? 'DSH_NOT_FOUND' : 'INVALID_CONFIGURATION',
-    message,
-    retryable,
-    cause,
-    context: { operation: 'runtime.install', reason },
-  })
-}
-
-function isMissingExecutable(error: unknown): boolean {
-  if (typeof error !== 'object' || error === null || !('code' in error)) return false
-  return (error as { readonly code?: unknown }).code === 'ENOENT'
 }

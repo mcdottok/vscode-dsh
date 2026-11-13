@@ -499,43 +499,15 @@ function publicErrorMessage(
   if (code === 'STALE_INTERACTION' && requestType.startsWith('session.transcript.'))
     return 'The conversation history changed while loading. Retry loading history or reopen the session.'
   if (requestType === 'runtime.action') {
-    if (context?.operation === 'runtime.install') {
-      const reason = context.reason
-      if (reason === 'node-version')
-        return 'DSH installation requires Node.js 22.19.0 or newer in the Extension Host.'
-      if (reason === 'npm-not-found')
-        return 'npm was not found in the Extension Host environment. Copy the install command or open a terminal.'
-      if (reason === 'verify-failed')
-        return 'DSH installation finished, but the installed executable could not be verified. Check the runtime path.'
-      if (reason === 'install-failed')
-        return 'The DSH installation command failed. Check the install output and try again.'
-    }
     if (context?.operation === 'runtime.select' && context.reason === 'invalid-executable')
       return 'The selected file is not a supported DSH executable.'
   }
   if (requestType === 'runtime.update.install' || requestType === 'runtime.update.check') {
     if (context?.operation === 'runtime.update') {
       const reason = context.reason
-      if (reason === 'node-version')
-        return 'DSH installation requires Node.js 22.19.0 or newer in the Extension Host.'
-      if (reason === 'npm-not-found')
-        return 'npm was not found in the Extension Host environment. Copy the install command or open a terminal.'
       if (reason === 'invalid-version') return 'Select an exact DSH version from the upstream version list.'
       if (reason === 'metadata-unavailable')
-        return withRuntimeUpdateDetail(
-          'The selected DSH version could not be verified against the upstream registry.',
-          context.detail,
-        )
-      if (reason === 'verify-failed')
-        return withRuntimeUpdateDetail(
-          'DSH installation finished, but the selected global version could not be verified.',
-          context.detail,
-        )
-      if (reason === 'install-failed')
-        return withRuntimeUpdateDetail(
-          'The selected DSH version could not be installed. Check the npm output and try again.',
-          context.detail,
-        )
+        return 'The selected DSH version could not be verified against the upstream registry.'
     }
   }
   const fallback: Record<string, string> = {
@@ -644,12 +616,6 @@ function withFailureDetail(
 function safeCommandDiagnostic(message: string): string | undefined {
   const redacted = redactText(message, 320)
   return redacted === '' ? undefined : redacted
-}
-
-function withRuntimeUpdateDetail(base: string, value: string | number | boolean | undefined): string {
-  if (typeof value !== 'string') return base
-  const detail = safeCommandDiagnostic(value)
-  return detail === undefined ? base : `${base} Detail: ${detail}`
 }
 
 /** Correlation ids are local to a Webview, never global Host authority. */

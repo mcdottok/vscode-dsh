@@ -63,7 +63,7 @@ export function RuntimeMissingView(props: RuntimeMissingViewProps): ReactElement
           {t('runtime.copy')}
         </button>
         <button className="dsh-button dsh-button--ghost" type="button" onClick={props.onRetry}>
-          {t('runtime.retry')}
+          {t('runtime.recheck')}
         </button>
         {props.onOpenSettings === undefined ? null : (
           <button className="dsh-button dsh-button--ghost" type="button" onClick={props.onOpenSettings}>

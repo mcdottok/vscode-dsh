@@ -29,7 +29,7 @@ This option requires neither Desktop nor the connect plugin. Install Node.js (se
 npm install --global @deepseek-ai/dsh
 ```
 
-In the extension, open **Settings → Connection source**, select **DSH CLI**, confirm the detected DSH CLI installation or select an executable, then click **Start and connect**. You can also install a specific version under **DSH CLI installation and version** in settings. The extension starts a separate service; use option 1 to continue an existing Desktop session.
+In the extension, open **Settings → Connection source**, select **DSH CLI**, confirm the detected DSH CLI installation or select an executable, then click **Start and connect**. To install the default version from the missing-runtime screen or a specific version from settings, choose **Install in Terminal**. Press Enter in the terminal to run the command, then choose **Recheck DSH** when it finishes. The extension starts a separate service; use option 1 to continue an existing Desktop session.
 
 Chat in the side bar or an editor tab. Available models, tools and advanced features depend on the connected DSH runtime. See [compatibility](https://github.com/mcdottok/vscode-dsh/blob/main/docs/dsh-contract.md) and the [capability matrix](https://github.com/mcdottok/vscode-dsh/blob/main/docs/capability-matrix.md) for scope and limitations, and [support](https://github.com/mcdottok/vscode-dsh/blob/main/apps/extension/SUPPORT.md) for reporting instructions.
 

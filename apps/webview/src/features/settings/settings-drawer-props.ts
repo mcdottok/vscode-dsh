@@ -4,7 +4,6 @@ import type {
   AgentPresetRoster,
   CustomProviderCreateResult,
   CustomProviderDraft,
-  DshRuntimeUpdateProgress,
   DshUpdateSnapshot,
   DiscoveredModel,
   ExtensionSettingsSummary,
@@ -37,7 +36,6 @@ export interface SettingsDrawerProps {
   ) => Promise<void>
   readonly onConnectDesktop?: () => Promise<void>
   readonly dshUpdate?: DshUpdateSnapshot | undefined
-  readonly dshUpdateProgress?: DshRuntimeUpdateProgress | undefined
   readonly onCheckDshUpdates?: (force?: boolean) => Promise<DshUpdateSnapshot | undefined>
   readonly onInstallDshVersion?: (version: string) => Promise<DshUpdateSnapshot | undefined>
   readonly theme: ThemePreference

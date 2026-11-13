@@ -325,6 +325,7 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
     if (request.type === 'connection.retry') {
       openingConnection?.abort.abort()
       openingConnection = undefined
+      runtimeLocator.invalidate()
       return reconnect(signal)
     }
     if (request.type === 'view.openLink') return openMarkdownLink(request.payload.href)
@@ -343,9 +344,7 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
         return { requested: true }
       }
       await runtimeUseCases.execute(request.payload.action)
-      if (request.payload.action === 'install' || request.payload.action === 'select') {
-        // Install or select may move or replace the executable; the memoized
-        // lookup and its persisted hint must not outlive that change.
+      if (request.payload.action === 'select') {
         runtimeLocator.invalidate()
         return connect(signal)
       }
@@ -354,11 +353,8 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
     if (request.type === 'runtime.update.check')
       return publicValue(await runtimeUseCases.checkForUpdates(request.payload.force === true, signal))
     if (request.type === 'runtime.update.install') {
-      const snapshot = await runtimeUseCases.installVersion(request.payload.version, signal)
-      // The global install replaced the executable behind the same path; drop
-      // the memoized version so the next connection reports the new one.
-      runtimeLocator.invalidate()
-      return publicValue(snapshot)
+      if (!vscode.workspace.isTrusted) throw workspaceTrustRequired()
+      return publicValue(await runtimeUseCases.installVersion(request.payload.version, signal))
     }
     if (request.type === 'diagnostics.show') {
       diagnostics.show()

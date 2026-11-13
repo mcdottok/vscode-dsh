@@ -5,12 +5,6 @@ import { requestId } from './ids.js'
 import { parseDshUpdateSnapshot } from './host-settings.js'
 import type { StateSetter } from './types.js'
 
-/**
- * Runtime update checks and installs share one progress convention: flip the
- * progress phase first, then publish the snapshot only when DSH returned one.
- * A failed check leaves the progress row on screen for the error path to
- * settle.
- */
 export function createDshUpdateActions({
   client,
   setState,
@@ -37,10 +31,6 @@ export function createDshUpdateActions({
     return snapshot
   }
   const installDshVersion = async (version: string): Promise<DshUpdateSnapshot | undefined> => {
-    setState((current) => ({
-      ...current,
-      dshUpdateProgress: { phase: 'checking', version },
-    }))
     const snapshot = parseDshUpdateSnapshot(
       await client.request<unknown>({
         type: 'runtime.update.install',

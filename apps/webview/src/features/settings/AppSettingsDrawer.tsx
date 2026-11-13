@@ -26,7 +26,6 @@ interface AppSettingsDrawerProps {
     | 'backend'
     | 'connectedDshVersion'
     | 'dshUpdate'
-    | 'dshUpdateProgress'
     | 'providers'
     | 'models'
     | 'pluginInstallOperation'
@@ -114,7 +113,6 @@ export function AppSettingsDrawer({
       onConfigureConnection={(mode, endpoint) => store.configureConnection(mode, endpoint)}
       onConnectDesktop={() => store.runtimeAction('connect-desktop')}
       dshUpdate={state.dshUpdate}
-      dshUpdateProgress={state.dshUpdateProgress}
       onCheckDshUpdates={(force) => store.checkDshUpdates(force)}
       onInstallDshVersion={(version) => store.installDshVersion(version)}
       theme={themePreference}

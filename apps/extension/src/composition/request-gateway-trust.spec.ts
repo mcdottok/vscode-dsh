@@ -42,6 +42,7 @@ function buildGateway(isTrusted: boolean): {
   sent: Sent[]
   retries: number[]
   controls: string[]
+  invalidateRuntime: ReturnType<typeof vi.fn>
   permissionOwnership: ReturnType<typeof vi.fn<() => Promise<void>>>
 } {
   host.isTrusted = isTrusted
@@ -50,6 +51,7 @@ function buildGateway(isTrusted: boolean): {
   const sent: Sent[] = []
   const retries: number[] = []
   const controls: string[] = []
+  const invalidateRuntime = vi.fn()
   const permissionOwnership = vi.fn<() => Promise<void>>().mockResolvedValue(undefined)
   const interactions = new Rc6InteractionRepository({})
   interactions.remember({
@@ -87,6 +89,7 @@ function buildGateway(isTrusted: boolean): {
       workspaceState: { update: () => Promise.resolve() },
     },
     currentWorkspaceFolders: () => [{ uri: { fsPath: '/project' }, name: 'project', index: 0 }],
+    runtimeLocator: { invalidate: invalidateRuntime },
     reconnect: (signal?: AbortSignal) => {
       retries.push(signal === undefined ? 0 : 1)
       return Promise.resolve({ connected: true })
@@ -112,7 +115,7 @@ function buildGateway(isTrusted: boolean): {
       },
     },
   } as never)
-  return { gateway, sent, retries, controls, permissionOwnership }
+  return { gateway, sent, retries, controls, invalidateRuntime, permissionOwnership }
 }
 
 const envelope = (type: string, requestId: string): unknown => ({
@@ -175,6 +178,7 @@ describe('request gateway workspace trust refusal', () => {
     await context.gateway.router.handle(envelope('connection.retry', 'r2'))
 
     expect(context.retries).toEqual([1])
+    expect(context.invalidateRuntime).toHaveBeenCalledTimes(1)
     expect(context.sent[0]?.ok).toBe(true)
     expect(context.sent[0]?.error).toBeUndefined()
   })

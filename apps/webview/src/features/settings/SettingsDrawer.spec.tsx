@@ -806,11 +806,11 @@ describe('SettingsDrawer', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Connection' }))
 
     expect(await screen.findByText('DSH 0.1.0-rc.8 is available.')).toBeDefined()
-    fireEvent.click(screen.getByRole('button', { name: 'Check now' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Recheck DSH' }))
     await waitFor(() => expect(onCheckDshUpdates).toHaveBeenCalledWith(true))
     fireEvent.click(screen.getByRole('button', { name: /Version to install: 0\.1\.0-rc\.8/u }))
     fireEvent.click(screen.getByRole('option', { name: '0.1.0-rc.7' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Download and install' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Install in Terminal' }))
     await waitFor(() => expect(onInstallDshVersion).toHaveBeenCalledWith('0.1.0-rc.7'))
   })
 
@@ -837,45 +837,6 @@ describe('SettingsDrawer', () => {
     const installButton = screen.getByRole('button', { name: 'Already installed' })
     expect((installButton as HTMLButtonElement).disabled).toBe(true)
     expect(onInstallDshVersion).not.toHaveBeenCalled()
-  })
-
-  it('shows a determinate lifecycle stage while installation is pending', async () => {
-    const dshUpdate: DshUpdateSnapshot = {
-      status: 'ready',
-      currentVersion: '0.1.0-rc.6',
-      currentSource: 'npm-global',
-      globalVersion: '0.1.0-rc.6',
-      latestVersion: '0.1.0-rc.8',
-      availableVersions: ['0.1.0-rc.8', '0.1.0-rc.7', '0.1.0-rc.6'],
-      updateAvailable: true,
-      checkedAt: '2026-08-21T00:00:00.000Z',
-    }
-    let resolveInstall: ((snapshot: DshUpdateSnapshot) => void) | undefined
-    const onInstallDshVersion = vi.fn(
-      () =>
-        new Promise<DshUpdateSnapshot>((resolve) => {
-          resolveInstall = resolve
-        }),
-    )
-    renderDrawer({
-      dshUpdate,
-      dshUpdateProgress: { phase: 'downloading', version: '0.1.0-rc.8' },
-      onCheckDshUpdates: vi.fn().mockResolvedValue(dshUpdate),
-      onInstallDshVersion,
-    })
-    fireEvent.click(screen.getByRole('tab', { name: 'Connection' }))
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Download and install' }))
-    const progress = await screen.findByRole('progressbar', { name: 'DSH update progress' })
-    expect(progress.getAttribute('aria-valuenow')).toBe('2')
-    expect(screen.getByText('Stage 2/4')).toBeDefined()
-
-    resolveInstall?.(dshUpdate)
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Download and install' }).hasAttribute('disabled')).toBe(
-        false,
-      ),
-    )
   })
 
   it('shows the Host-side npm failure reason instead of hiding it behind a generic warning', async () => {

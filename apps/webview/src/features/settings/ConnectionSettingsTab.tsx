@@ -1,13 +1,7 @@
 import type { ReactElement } from 'react'
 import { SettingCard } from '../../components/common/SettingCard.js'
 import { SelectMenu } from '../../components/common/SelectMenu.js'
-import {
-  DSH_UPDATE_PROGRESS_TOTAL_STAGES,
-  connectionModeLabel,
-  dshUpdateFailureMessage,
-  dshUpdateProgressLabel,
-  dshUpdateProgressStage,
-} from './update-labels.js'
+import { connectionModeLabel, dshUpdateFailureMessage } from './update-labels.js'
 
 import type { GeneralSettingsTabProps } from './GeneralSettingsTab.js'
 
@@ -35,7 +29,7 @@ export function ConnectionSettingsTab(input: GeneralSettingsTabProps): ReactElem
     selectedDshVersionAlreadyInstalled,
     setSelectedDshVersion,
   } = input
-  const { onCheckDshUpdates, onInstallDshVersion, dshUpdate, dshUpdateProgress } = props
+  const { onCheckDshUpdates, onInstallDshVersion, dshUpdate } = props
   return (
     <div
       className="dsh-settings__body"
@@ -243,6 +237,20 @@ export function ConnectionSettingsTab(input: GeneralSettingsTabProps): ReactElem
               {dshUpdateBusy === 'check' ? t('settings.dshUpdateChecking') : t('settings.dshUpdateCheck')}
             </button>
           </div>
+          {dshUpdate === undefined ? null : (
+            <dl className="dsh-settings__runtime-update-facts">
+              {dshUpdate.currentVersion !== dshUpdate.globalVersion ? (
+                <>
+                  <dt>{t('settings.dshUpdateCurrent')}</dt>
+                  <dd>{dshUpdate.currentVersion ?? t('settings.dshUpdateNotInstalled')}</dd>
+                </>
+              ) : null}
+              <dt>{t('settings.dshUpdateGlobal')}</dt>
+              <dd>{dshUpdate.globalVersion ?? t('settings.dshUpdateNotInstalled')}</dd>
+              <dt>{t('settings.dshUpdateLatest')}</dt>
+              <dd>{dshUpdate.latestVersion ?? t('settings.dshUpdateUnavailable')}</dd>
+            </dl>
+          )}
           {dshUpdate === undefined ? (
             <p className="dsh-settings__empty" role="status">
               {t('settings.dshUpdateLoading')}
@@ -253,53 +261,6 @@ export function ConnectionSettingsTab(input: GeneralSettingsTabProps): ReactElem
             </p>
           ) : (
             <>
-              {dshUpdateBusy !== undefined ? (
-                <div className="dsh-settings__runtime-update-progress" role="status" aria-live="polite">
-                  <div className="dsh-settings__runtime-update-progress-head">
-                    <span>{dshUpdateProgressLabel(dshUpdateBusy, dshUpdateProgress, t)}</span>
-                    <span>
-                      {t('settings.dshUpdateProgressStage', {
-                        current: dshUpdateProgressStage(dshUpdateBusy, dshUpdateProgress),
-                        total: DSH_UPDATE_PROGRESS_TOTAL_STAGES,
-                      })}
-                    </span>
-                  </div>
-                  <div
-                    className="dsh-settings__runtime-update-progress-track"
-                    role="progressbar"
-                    aria-label={t('settings.dshUpdateProgressLabel')}
-                    aria-valuemin={0}
-                    aria-valuemax={DSH_UPDATE_PROGRESS_TOTAL_STAGES}
-                    aria-valuenow={dshUpdateProgressStage(dshUpdateBusy, dshUpdateProgress)}
-                    aria-valuetext={dshUpdateProgressLabel(dshUpdateBusy, dshUpdateProgress, t)}
-                  >
-                    {Array.from({ length: DSH_UPDATE_PROGRESS_TOTAL_STAGES }, (_, index) => {
-                      const stage = index + 1
-                      const current = dshUpdateProgressStage(dshUpdateBusy, dshUpdateProgress)
-                      return (
-                        <span
-                          className={`dsh-settings__runtime-update-progress-step${
-                            stage < current ? ' dsh-settings__runtime-update-progress-step--complete' : ''
-                          }${stage === current ? ' dsh-settings__runtime-update-progress-step--active' : ''}`}
-                          key={stage}
-                        />
-                      )
-                    })}
-                  </div>
-                </div>
-              ) : null}
-              <dl className="dsh-settings__runtime-update-facts">
-                {dshUpdate.currentVersion !== dshUpdate.globalVersion ? (
-                  <>
-                    <dt>{t('settings.dshUpdateCurrent')}</dt>
-                    <dd>{dshUpdate.currentVersion ?? t('settings.dshUpdateNotInstalled')}</dd>
-                  </>
-                ) : null}
-                <dt>{t('settings.dshUpdateGlobal')}</dt>
-                <dd>{dshUpdate.globalVersion ?? t('settings.dshUpdateNotInstalled')}</dd>
-                <dt>{t('settings.dshUpdateLatest')}</dt>
-                <dd>{dshUpdate.latestVersion ?? t('settings.dshUpdateUnavailable')}</dd>
-              </dl>
               {dshUpdate.updateAvailable ? (
                 <p className="dsh-settings__runtime-update-notice" role="status">
                   {t('settings.dshUpdateAvailable', {
@@ -354,12 +315,12 @@ export function ConnectionSettingsTab(input: GeneralSettingsTabProps): ReactElem
               {dshUpdate.restartRequired ? (
                 <p className="dsh-settings__note">{t('settings.dshUpdateRestart')}</p>
               ) : null}
-              {dshUpdateError === undefined ? null : (
-                <p className="dsh-settings__error" role="alert">
-                  {dshUpdateError}
-                </p>
-              )}
             </>
+          )}
+          {dshUpdateError === undefined ? null : (
+            <p className="dsh-settings__error" role="alert">
+              {dshUpdateError}
+            </p>
           )}
         </section>
       ) : null}

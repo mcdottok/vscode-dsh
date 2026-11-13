@@ -473,7 +473,6 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
           return
         }
         if (snapshot.status === 'unavailable') setDshUpdateError(dshUpdateFailureMessage(snapshot.failure, t))
-        return snapshot
       })
       .catch((reason: unknown) =>
         setDshUpdateError(reason instanceof Error ? reason.message : t('settings.dshUpdateFailed')),
