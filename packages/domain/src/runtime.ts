@@ -96,6 +96,8 @@ export interface ConnectedBackend {
   readonly endpoint: BackendEndpoint
   readonly ownership: ProcessOwnership
   readonly connectionSource?: RuntimeConnectionSource
+  /** Host verified this exact endpoint through authenticated local Desktop IPC. */
+  readonly localDesktopPairing?: true
   readonly capabilities: BackendCapabilities
   /** Opaque Host identity assigned once a connection is attached. */
   readonly backendInstanceId?: string

@@ -647,6 +647,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
       ...(useConfiguredEndpoint ? { credentialRevision: externalConnection?.revision ?? 0 } : {}),
       ...(customEndpoint === undefined ? {} : { endpoint: customEndpoint }),
       ...(isDesktopEndpoint ? { desktopEndpoint: true as const } : {}),
+      ...(usingPairedLaunch ? { localDesktopPairing: true as const } : {}),
       ...(allowedEndpoints === undefined ? {} : { allowedEndpoints }),
       ...(selectedRuntimeVersion === undefined || selectedRuntimeVersion === ''
         ? {}

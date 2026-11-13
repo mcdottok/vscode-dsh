@@ -16,7 +16,9 @@ describe('session workspace scope', () => {
     expect(hasLocalWorkspaceAuthority(remote)).toBe(false)
     expect(hasLocalWorkspaceAuthority({ ...remote, pid: 123 })).toBe(false)
     const local = { ...remote, endpoint: { host: '127.0.0.1', port: 3080, baseUrl: 'http://127.0.0.1:3080' } }
-    expect(hasLocalWorkspaceAuthority(local)).toBe(false)
+    expect(hasLocalWorkspaceAuthority({ ...local, connectionSource: 'desktop' })).toBe(false)
+    expect(hasLocalWorkspaceAuthority({ ...local, localDesktopPairing: true })).toBe(true)
+    expect(hasLocalWorkspaceAuthority({ ...remote, localDesktopPairing: true })).toBe(false)
     expect(hasLocalWorkspaceAuthority({ ...local, pid: 123 })).toBe(true)
     expect(hasLocalWorkspaceAuthority({ ...local, ownership: 'managed' })).toBe(true)
   })

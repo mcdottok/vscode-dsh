@@ -938,12 +938,16 @@ html[data-dsh-theme='system']:has(body.vscode-dark)
   overscroll-behavior: contain;
 }
 .dsh-project-preview > footer {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  display: grid;
   gap: 8px;
   padding: 10px 16px;
   border-top: var(--dsh-border);
+}
+.dsh-project-preview > footer > .dsh-button {
+  white-space: normal;
+}
+.dsh-project-preview > footer > small {
+  color: var(--dsh-muted);
 }
 .dsh-empty-workspace__actions {
   display: flex;

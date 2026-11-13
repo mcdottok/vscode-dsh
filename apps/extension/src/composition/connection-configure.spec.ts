@@ -425,6 +425,7 @@ describe('connection.configure reconnect', () => {
     expect(connect).toHaveBeenCalledWith(
       expect.objectContaining({
         endpoint: { host: '127.0.0.1', port: 43121, baseUrl: changed },
+        localDesktopPairing: true,
         autoStart: false,
       }),
       undefined,

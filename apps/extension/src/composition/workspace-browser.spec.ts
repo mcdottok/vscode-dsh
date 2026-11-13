@@ -22,7 +22,7 @@ interface BrowserFixture {
   readonly workspace: { path: string }
   readonly session: { cwd: string }
   readonly backend: {
-    connection: { endpoint: { host: string }; pid?: number }
+    connection: { endpoint: { host: string }; pid?: number; localDesktopPairing?: true }
     sessions: { open: Mock; list: Mock }
     workspaces: { listArchivedSessionIds: Mock }
   }
@@ -239,6 +239,9 @@ describe('workspace browser Host boundary', () => {
 
   it('opens only the registry path in a new window and stores a validated handoff', async () => {
     const f = fixture()
+    delete f.backend.connection.pid
+    f.backend.connection.localDesktopPairing = true
+    expect(await f.request({ action: 'list' })).toMatchObject({ items: [{ canOpen: true }] })
     await f.request({ action: 'open', workspaceId: 'w1', sessionId: 's1' })
     expect(native.stat).toHaveBeenCalledWith(f.workspace.path)
     expect(f.update).toHaveBeenCalledWith(WORKSPACE_HANDOFF, {
