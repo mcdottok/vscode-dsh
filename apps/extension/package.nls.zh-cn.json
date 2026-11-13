@@ -1,3 +1,4 @@
 {
-  "extension.description": "在 VS Code 中连接 DSH，支持代码对话、工具执行、变更审阅和桌面会话接续。由社区维护。"
+  "extension.description": "在 VS Code 中连接 DSH，支持代码对话、工具执行、变更审阅和桌面会话接续。由社区维护。",
+  "extension.workspaceTrust.description": "DSH 可以访问工作区文件并运行工具，因此需要信任工作区。"
 }

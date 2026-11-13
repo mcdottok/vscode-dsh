@@ -20,13 +20,27 @@
   ],
   "keywords": [
     "deepseek",
+    "deepseek-harness",
     "dsh",
+    "dsh desktop",
+    "dsh cli",
     "agent",
-    "coding assistant"
+    "coding agent",
+    "coding assistant",
+    "ai coding",
+    "code chat",
+    "code review",
+    "session resume"
   ],
   "extensionKind": [
     "workspace"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "%extension.workspaceTrust.description%"
+    }
+  },
   "main": "./dist/extension.cjs",
   "activationEvents": [
     "onStartupFinished",

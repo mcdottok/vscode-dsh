@@ -1,3 +1,4 @@
 {
-  "extension.description": "Connect to DSH from VS Code to chat about code, run tools, review changes, and continue Desktop sessions. Community-maintained."
+  "extension.description": "Connect to DSH from VS Code to chat about code, run tools, review changes, and continue Desktop sessions. Community-maintained.",
+  "extension.workspaceTrust.description": "Workspace trust is required because DSH can access workspace files and run tools."
 }
