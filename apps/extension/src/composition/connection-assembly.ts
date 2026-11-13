@@ -47,10 +47,6 @@ import { ConfiguredPortDiscoveryProvider } from '../backend/discovery/configured
 import { DefaultPortDiscoveryProvider } from '../backend/discovery/default-port-provider.js'
 import { CompositeInstanceDiscovery } from '../backend/discovery/instance-discovery.js'
 import { KnownInstanceDiscoveryProvider } from '../backend/discovery/known-instance-provider.js'
-import { LinuxProcessDiscoveryProvider } from '../backend/discovery/linux-process-provider.js'
-import { MacOsProcessDiscoveryProvider } from '../backend/discovery/macos-process-provider.js'
-import { WindowsProcessDiscoveryProvider } from '../backend/discovery/windows-process-provider.js'
-import { WindowsDesktopDiscoveryProvider } from '../backend/discovery/windows-desktop-provider.js'
 import { DshProcessSupervisor } from '../backend/process-supervisor.js'
 import { probeWebNoOpen } from '../backend/web-launch-probe.js'
 import type { RedactedDiagnostics } from '../backend/diagnostics.js'
@@ -184,12 +180,6 @@ export function createRuntimeAssembly(deps: RuntimeAssemblyDependencies): Runtim
     new KnownInstanceDiscoveryProvider(context.workspaceState),
     new DefaultPortDiscoveryProvider(),
     new CompanionRegistryDiscoveryProvider(),
-    new WindowsProcessDiscoveryProvider(),
-    new WindowsDesktopDiscoveryProvider(undefined, undefined, undefined, undefined, (entry) =>
-      diagnostics.log('info', 'desktop-discovery', { ...entry }),
-    ),
-    new LinuxProcessDiscoveryProvider(),
-    new MacOsProcessDiscoveryProvider(),
   ])
   const endpointCookies = new Map<string, string>()
   const network = new EndpointNetwork()
@@ -260,6 +250,8 @@ export function createRuntimeAssembly(deps: RuntimeAssemblyDependencies): Runtim
     readRuntimeVersion: async ({ endpoint, source }, signal) => {
       if (source !== 'configured' || !isLoopbackEndpoint(endpoint) || !externalConnection.cookie(endpoint))
         return undefined
+      const desktopVersion = await externalConnection.readDesktopRuntimeVersion(endpoint, signal)
+      if (desktopVersion !== undefined) return desktopVersion
       const deadline = AbortSignal.timeout(2_000)
       const transport = new AlphaLoopbackApiClient({ ...adapterOptions, endpoint })
       try {
@@ -411,7 +403,6 @@ type DesktopPreparationPhase =
   | 'pairing-record-check'
   | 'pairing-resolve'
   | 'paired-authorization'
-  | 'version-detection'
   | 'configuration-save'
   | 'recovery-refresh'
 
@@ -438,10 +429,6 @@ export interface ConnectionLifecycleDependencies {
   readonly currentWorkspaceFolders: () => readonly vscode.WorkspaceFolder[]
   readonly endpointLaunchUrls: Map<string, string>
   readonly externalConnection?: ExternalConnectionAccess
-  readonly discoverDesktopVersion?: (
-    endpoint: BackendEndpoint,
-    signal?: AbortSignal,
-  ) => Promise<string | undefined>
   readonly attach: (backend: DshBackend) => Promise<void>
   readonly publishState: PublishConnectionState
   readonly disposeAccountLifecycleHost: () => Promise<void>
@@ -476,7 +463,6 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
     configuration,
     coordinator,
     desktopPairing,
-    discoverDesktopVersion,
     diagnostics,
     currentWorkspaceFolders,
     endpointLaunchUrls,
@@ -507,7 +493,6 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
         (phase === 'pairing-record-check' && result === false)
       )
         status = 'no-record'
-      else if (phase === 'version-detection' && result === undefined) status = 'unknown-version'
       else if (result === false) status = 'not-enrolled'
       diagnostics.log('info', 'desktop-preparation', {
         ...fields,
@@ -571,7 +556,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
     let customEndpoint = useConfiguredEndpoint
       ? endpointFromServerUrl(current.connection.serverUrl)
       : undefined
-    let pairedVersion: string | undefined
+    let usingPairedLaunch = false
     const desktopOrigin =
       customEndpoint === undefined
         ? undefined
@@ -637,22 +622,13 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
           await tracePreparation('paired-authorization', attempt, signal, () =>
             externalConnection.authorizePairedDesktop(launch.endpoint, launch.token, signal),
           )
-        if (discoverDesktopVersion !== undefined)
-          pairedVersion = await tracePreparation('version-detection', attempt, signal, () =>
-            discoverDesktopVersion(launch.endpoint, signal),
-          )
-        if (pairedVersion === undefined && launch.endpoint.baseUrl === current.connection.serverUrl)
-          pairedVersion = current.connection.runtimeVersion
         signal?.throwIfAborted()
+        usingPairedLaunch = true
         customEndpoint = launch.endpoint
-        if (
-          launch.endpoint.baseUrl !== current.connection.serverUrl ||
-          pairedVersion !== current.connection.runtimeVersion
-        ) {
+        if (launch.endpoint.baseUrl !== origin || current.connection.runtimeVersion)
           await tracePreparation('configuration-save', attempt, signal, () =>
-            persistPairedDesktop(current.connection.serverUrl!, launch.endpoint, pairedVersion, signal),
+            persistPairedDesktop(origin, launch.endpoint, signal),
           )
-        }
       }
     }
     const allowedEndpoints =
@@ -663,10 +639,9 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
             baseUrl: `http://127.0.0.1:${port}`,
           }))
         : undefined
-    const selectedRuntimeVersion =
-      customEndpoint?.baseUrl !== current.connection.serverUrl
-        ? pairedVersion
-        : (pairedVersion ?? current.connection.runtimeVersion)
+    // Resolve the current Desktop version from the authenticated endpoint on
+    // each paired connection, even if a restart reused the same port.
+    const selectedRuntimeVersion = usingPairedLaunch ? undefined : current.connection.runtimeVersion
     const request: ConnectionRequest = {
       mode: useConfiguredEndpoint ? 'custom' : mode,
       ...(useConfiguredEndpoint ? { credentialRevision: externalConnection?.revision ?? 0 } : {}),
@@ -951,7 +926,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
           vscode.workspace.getConfiguration('dsh'),
           [
             ['connection.serverUrl', found.endpoint.baseUrl],
-            ['connection.runtimeVersion', found.runtimeVersion],
+            ['connection.runtimeVersion', ''],
             ['runtime.autoStart', false],
             ['connection.mode', 'custom'],
           ],
@@ -996,7 +971,6 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
   const persistPairedDesktopNow = async (
     origin: string,
     endpoint: BackendEndpoint,
-    version: string | undefined,
     signal?: AbortSignal,
   ): Promise<void> => {
     const revision = configurationRevision
@@ -1022,7 +996,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
         vscode.workspace.getConfiguration('dsh'),
         [
           ['connection.serverUrl', endpoint.baseUrl],
-          ['connection.runtimeVersion', version ?? ''],
+          ['connection.runtimeVersion', ''],
         ],
         assertCurrent,
       )
@@ -1052,7 +1026,6 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
   const persistPairedDesktop = (
     origin: string,
     endpoint: BackendEndpoint,
-    version: string | undefined,
     signal?: AbortSignal,
   ): Promise<void> => {
     const revision = configurationRevision
@@ -1060,7 +1033,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
       signal?.throwIfAborted()
       if (revision !== configurationRevision)
         throw new DOMException('Connection selection changed.', 'AbortError')
-      return persistPairedDesktopNow(origin, endpoint, version, signal)
+      return persistPairedDesktopNow(origin, endpoint, signal)
     }
     // An explicit configure operation already owns this queue and awaits connect.
     if (configuringTransport) return run()
@@ -1106,15 +1079,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
           reuseDesktopCredentials ? (savedEndpoint ?? '') : (endpoint ?? ''),
         )
         endpoint = launch.endpoint.baseUrl
-        const verifiedVersion = await deps.discoverDesktopVersion?.(launch.endpoint, signal).catch(() => {
-          signal?.throwIfAborted()
-          return undefined
-        })
-        signal?.throwIfAborted()
-        if (revision !== configurationRevision)
-          throw new DOMException('Connection settings changed.', 'AbortError')
-        const savedVersion = saved.serverUrl === launch.endpoint.baseUrl ? saved.runtimeVersion : undefined
-        const runtimeVersion = verifiedVersion ?? savedVersion ?? ''
+        const runtimeVersion = saved.serverUrl === launch.endpoint.baseUrl ? (saved.runtimeVersion ?? '') : ''
         if (!reuseDesktopCredentials) desktop = { launchToken: launch.token, runtimeVersion }
         else {
           // Reusing credentials must still retain or refresh this origin's exact wire identity.

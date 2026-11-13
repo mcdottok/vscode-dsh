@@ -71,6 +71,36 @@ afterEach(async () => {
 })
 
 describe('external connection credentials', () => {
+  it('reads the optional runtime version only from an authenticated loopback status response', async (): Promise<void> => {
+    const f = fixture()
+    const target = endpoint('http://127.0.0.1:3080')
+    await expect(f.access.readDesktopRuntimeVersion(target)).resolves.toBeUndefined()
+    expect(f.fetch).not.toHaveBeenCalled()
+
+    await f.access.authorize(target)
+    f.fetch.mockResolvedValueOnce(login(false))
+    await f.access.prepare(target, new AbortController().signal)
+    f.fetch.mockResolvedValueOnce(
+      Response.json({ available: true, enabled: true, runtimeVersion: '0.2.2-rc.2' }),
+    )
+    await expect(f.access.readDesktopRuntimeVersion(target)).resolves.toBe('0.2.2-rc.2')
+    expect(f.fetch).toHaveBeenLastCalledWith(
+      `${target.baseUrl}/api/vscode-desktop-connect`,
+      expect.objectContaining({ headers: { Cookie: cookie }, redirect: 'error' }),
+    )
+    f.fetch.mockResolvedValueOnce(Response.json({ available: true, enabled: true }))
+    await expect(f.access.readDesktopRuntimeVersion(target)).resolves.toBeUndefined()
+    f.fetch.mockResolvedValueOnce(
+      Response.json({
+        available: true,
+        enabled: true,
+        runtimeVersion: '0.2.2-rc.2',
+        extra: 'x'.repeat(1024),
+      }),
+    )
+    await expect(f.access.readDesktopRuntimeVersion(target)).resolves.toBeUndefined()
+  })
+
   it('checks saved approval by execution environment and full origin without network or credential writes', async (): Promise<void> => {
     const f = fixture()
     const target = endpoint('http://127.0.0.1:3080')

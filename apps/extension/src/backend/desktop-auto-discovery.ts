@@ -2,8 +2,7 @@ import { spawn } from 'node:child_process'
 import { open, readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import path from 'node:path'
-import type { BackendCandidate, BackendEndpoint } from '@dsh-vscode/domain'
-import { WindowsDesktopDiscoveryProvider } from './discovery/windows-desktop-provider.js'
+import type { BackendEndpoint } from '@dsh-vscode/domain'
 import { resolvePairedDesktop } from './desktop-pairing.js'
 import { parseDesktopLaunchUrl } from '../vscode/connect-desktop.js'
 
@@ -60,19 +59,15 @@ export interface AutomaticDesktopConnection {
   readonly url: string
   readonly key: string
   readonly endpoint: BackendEndpoint
-  readonly runtimeVersion: string
 }
 interface DiscoveryDependencies {
   readonly directory?: string
   readonly platform?: NodeJS.Platform
   readonly now?: () => number
-  readonly candidates?: (signal?: AbortSignal) => Promise<readonly BackendCandidate[]>
   readonly unprotect?: typeof unprotectDesktopBootstrap
   readonly resolve?: typeof resolvePairedDesktop
 }
 interface RecordEntry {
-  readonly pid: number
-  readonly createdAt: number
   readonly protectedKey: string
 }
 
@@ -131,9 +126,6 @@ export class DesktopAutoDiscovery {
           const now = this.now()
           if (
             value.version !== 1 ||
-            typeof value.pid !== 'number' ||
-            !Number.isSafeInteger(value.pid) ||
-            value.pid <= 0 ||
             typeof value.createdAt !== 'number' ||
             !Number.isSafeInteger(value.createdAt) ||
             value.createdAt > now + 5000 ||
@@ -145,7 +137,7 @@ export class DesktopAutoDiscovery {
             !/^[A-Za-z0-9+/=]{32,8192}$/u.test(value.protectedKey)
           )
             continue
-          result.push({ pid: value.pid, createdAt: value.createdAt, protectedKey: value.protectedKey })
+          result.push({ protectedKey: value.protectedKey })
         } catch {
           signal?.throwIfAborted()
         }
@@ -166,20 +158,9 @@ export class DesktopAutoDiscovery {
     const signal = AbortSignal.any([AbortSignal.timeout(10_000), ...(callerSignal ? [callerSignal] : [])])
     const records = await this.records(signal)
     if (!records.length) return undefined
-    const candidates = await (
-      this.dependencies.candidates ?? ((s) => new WindowsDesktopDiscoveryProvider().discover(s))
-    )(signal)
     const found = new Map<string, AutomaticDesktopConnection>()
     for (const record of records) {
       signal.throwIfAborted()
-      const verified = candidates.filter(
-        (item) =>
-          item.pid === record.pid &&
-          item.source === 'process-scan' &&
-          item.runtimeVersionEvidence === 'process-manifest' &&
-          item.executablePath !== undefined,
-      )
-      if (!verified.length) continue
       try {
         const text = await (this.dependencies.unprotect ?? unprotectDesktopBootstrap)(
           record.protectedKey,
@@ -189,28 +170,19 @@ export class DesktopAutoDiscovery {
         if (grant.version !== 1 || typeof grant.key !== 'string' || !/^[A-Za-z0-9_-]{43}$/u.test(grant.key))
           continue
         if (expectedKey !== undefined && grant.key !== expectedKey) continue
+        // The account-protected registration supplies the key. The authenticated
+        // pipe supplies the current endpoint, so stale PIDs cannot select a listener.
+        if (found.has(grant.key)) continue
         const url = await (this.dependencies.resolve ?? resolvePairedDesktop)(grant.key, signal)
         const launch = parseDesktopLaunchUrl(url)
-        const owner = verified.find((candidate) => candidate.endpoint.baseUrl === launch.endpoint.baseUrl)
-        // The returned address must still belong to the verified Desktop, not merely an advertised PID.
-        if (
-          !owner?.runtimeVersion ||
-          launch.endpoint.host !== '127.0.0.1' ||
-          !launch.token ||
-          new URL(url).protocol !== 'http:'
-        )
+        if (launch.endpoint.host !== '127.0.0.1' || !launch.token || new URL(url).protocol !== 'http:')
           continue
         signal.throwIfAborted()
-        const connection = {
-          url,
-          key: grant.key,
-          endpoint: launch.endpoint,
-          runtimeVersion: owner.runtimeVersion,
-        }
+        const connection = { url, key: grant.key, endpoint: launch.endpoint }
         if (expectedKey !== undefined) return connection
         found.set(grant.key, connection)
         // Without an existing pairing identity, selecting between Desktop profiles
-        // would silently switch conversations. Require a unique verified owner.
+        // would silently switch conversations. Require a unique authenticated pairing identity.
         if (found.size > 1) return undefined
       } catch {
         signal.throwIfAborted()

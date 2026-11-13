@@ -228,13 +228,13 @@ Plugin 安装前的二次 inspect、registry、Host 确认或 Adapter 本地验�
 
 设置页提供 DSH Desktop 与 DSH CLI 两条明确路径。Desktop 接受用户主动粘贴的完整 loopback 浏览器访问地址，作为一次性、只写的密码输入提交给 Host；Host 校验并分离 origin 与 token，仅向配置与工作区状态保存 origin，凭据进入 VS Code SecretStorage。Host 不把地址或凭据返回 Webview，输入提交和关闭后清空，不进入持久化界面状态或日志。原生命令入口仍可使用。
 
-已授权的本机自定义连接没有版本提示时，Host 可在选择适配器前调用只读的 `pluginManager/listBundles`。固定上游的[目录实现](https://github.com/deepseek-ai/deepseek-harness/blob/66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db/packages/boot/plugin-manager/src/index.ts)和[安装目标实现](https://github.com/deepseek-ai/deepseek-harness/blob/66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db/packages/boot/plugin-manager/src/official-install-target.ts)将运行中的内核版本写入官方目录条目的 `installTarget.version`。扩展只接受一致的有效版本作为本次探测的提示，仍由适配器验证协议，缺失、冲突或超时继续走既有兼容探测。连接插件可沿用现有的授权转发接口，无需为识别版本新增路由。
+已授权的本机自定义连接没有版本提示时，Host 可在选择适配器前调用只读的 `pluginManager/listBundles`。固定上游的[目录实现](https://github.com/deepseek-ai/deepseek-harness/blob/66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db/packages/boot/plugin-manager/src/index.ts)和[安装目标实现](https://github.com/deepseek-ai/deepseek-harness/blob/66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db/packages/boot/plugin-manager/src/official-install-target.ts)将运行中的内核版本写入官方目录条目的 `installTarget.version`。扩展只接受一致的有效版本作为本次探测的提示，仍由适配器验证协议，缺失、冲突或超时继续走既有兼容探测。新版 connect 在原有 owner-only `GET /api/vscode-desktop-connect` 状态响应中可选提供 `runtimeVersion`。它从宿主解析的 `@deepseek-ai/dsh-app-boot` 调用 `getDshRuntimeVersion()`，不打包该模块。扩展优先使用状态响应，旧 connect 或宿主版本不可读取时继续使用官方目录和原有协议探测。
 
 DSH CLI 选择显式写入 `new-isolated` 与 `runtime.autoStart: true`，通过已定位的全局包或所选可执行文件启动插件拥有的服务；清空活动连接的 Desktop 端点和版本覆盖，避免错误附加到桌面端。未受信任工作区不能启动本机服务。版本安装仅修改 DSH CLI，不升级 Desktop，安装后由用户点击启动连接。Desktop 端点在 Host 侧单独记忆，配对凭据继续保留；重载后切回 Desktop 可复用保存的连接，地址失效时走既有恢复。没有保存记录且输入为空时执行本机自动发现，失败明确提供手动连接建议，不启动或接入 npm 实例。设置写入队列释放后才重连，避免自动恢复被切换过程抑制或等待自身的队列；新的连接选择使旧发现与迟到恢复失效。
 
 ### 桌面端的自动恢复
 
-Windows 同机的桌面连接使用既有 connect owner-only 配对接口与加密命名管道，不增加上游 RPC。已保存的配对身份通过 SecretStorage 读取，只允许重新发现同一 key 对应的桌面端；新地址仍须与已验证进程、物理包身份及其监听端点一致。读取的地址和 token 只在 Host 内完成授权，恢复后同步保存新 origin、版本和配对绑定。没有配对信息的旧 loopback 地址先尝试原目标，失败后只有唯一经验证的本机桌面端可被接续；多 profile 不按新旧顺序猜测。
+Windows 同机的桌面连接使用既有 connect owner-only 配对接口与加密命名管道，不增加上游 RPC。已保存的配对身份通过 SecretStorage 读取，只允许重新发现同一 key 对应的桌面端；首次发现只从当前账户解密有效期内的配套插件登记，再通过配对密钥派生的命名管道取得认证启动地址。地址必须是带 token 的数字 IPv4 回环 HTTP 地址。Host 登录后优先从配套插件状态读取版本提示，再验证协议，恢复后保存新 origin 和配对绑定，清除旧配对地址遗留的版本提示。没有配对信息的旧 loopback 地址先尝试原目标，失败后只有唯一经验证的本机桌面端可被接续；多 profile 不按新旧顺序猜测。
 
 断线事件可立即启动恢复，原有观察器继续检查桌面端返回与地址变化。一次恢复最多五次尝试，总窗口有界；期间只展示连接进度，不将瞬时失败投影为终态错误。耗尽后发布真实失败与手动恢复入口；桌面端随后重新可用时仍可重新尝试，而不是在相同不可用状态下持续弹出失败界面。IPC 在 Coordinator 启动前失败也会记录到权威状态，避免停留在 idle 后再也不观察恢复。
 

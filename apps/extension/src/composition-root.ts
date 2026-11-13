@@ -7,7 +7,6 @@ import {
   AUTOMATIC_DESKTOP_ORIGIN,
 } from './backend/desktop-auto-discovery.js'
 import { connectDesktop } from './vscode/connect-desktop.js'
-import { WindowsDesktopDiscoveryProvider } from './backend/discovery/windows-desktop-provider.js'
 import type { DshRuntimeUpdateProgress, EditorContextOwner, SessionSummary } from '@dsh-vscode/domain'
 import {
   featureHostEnvelopeSchema,
@@ -354,21 +353,6 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
     },
     onDesktopRecoveryFailure: (code) =>
       diagnostics.connectionProgress({ phase: 'connect', status: 'failed', code }),
-    discoverDesktopVersion: async (endpoint, signal) => {
-      const candidates = await new WindowsDesktopDiscoveryProvider(
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        (entry) => diagnostics.log('info', 'desktop-discovery', { ...entry }),
-      ).discoverEndpoints([endpoint], signal)
-      const versions = new Set(
-        candidates
-          .filter((candidate) => candidate.runtimeVersionEvidence === 'process-manifest')
-          .map((candidate) => candidate.runtimeVersion),
-      )
-      return versions.size === 1 ? [...versions][0] : undefined
-    },
     context,
     configuration,
     coordinator,
@@ -620,14 +604,10 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
     connectDesktop: () =>
       connectDesktop({
         window: vscode.window,
-        discover: (endpoint) =>
-          new WindowsDesktopDiscoveryProvider(undefined, undefined, undefined, undefined, (entry) =>
-            diagnostics.log('info', 'desktop-discovery', { ...entry }),
-          ).discoverEndpoints([endpoint]),
-        connect: (endpoint, token, version) =>
+        connect: (endpoint, token) =>
           configureConnection('custom', endpoint.baseUrl, undefined, {
             launchToken: token,
-            runtimeVersion: version ?? '',
+            runtimeVersion: '',
           }),
       }),
     authorizeExternalConnection: async () => {

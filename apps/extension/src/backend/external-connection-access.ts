@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { AppError, isLoopbackEndpoint, type BackendEndpoint } from '@dsh-vscode/domain'
+import { isDshPackageVersion } from '@dsh-vscode/dsh-adapter'
 import { type EndpointNetwork, waitForSignal } from './endpoint-network.js'
 
 interface EndpointCredentials {
@@ -93,6 +94,58 @@ export class ExternalConnectionAccess {
     // Multiple editor surfaces must reuse this process grant without replacing a healthy transport.
     if (existing?.launchToken === token) return
     return this.authorizeInternal(endpoint, signal, token, true)
+  }
+
+  public async readDesktopRuntimeVersion(
+    endpoint: BackendEndpoint,
+    callerSignal?: AbortSignal,
+  ): Promise<string | undefined> {
+    callerSignal?.throwIfAborted()
+    if (!isLoopbackEndpoint(endpoint)) return undefined
+    const cookie = this.cookie(endpoint)
+    if (!cookie) return undefined
+    const signal = AbortSignal.any([
+      this.closed.signal,
+      this.revisionAbort.signal,
+      AbortSignal.timeout(1000),
+      ...(callerSignal === undefined ? [] : [callerSignal]),
+    ])
+    try {
+      const response = await this.dependencies.network.fetch(
+        `${endpoint.baseUrl}/api/vscode-desktop-connect`,
+        {
+          headers: { Cookie: cookie },
+          redirect: 'error',
+          signal,
+        },
+      )
+      if (response.status !== 200 || !response.headers.get('content-type')?.startsWith('application/json')) {
+        await releaseResponse(response)
+        return undefined
+      }
+      const body = await readDesktopStatus(response)
+      signal.throwIfAborted()
+      if (
+        typeof body !== 'object' ||
+        body === null ||
+        !('available' in body) ||
+        body.available !== true ||
+        !('enabled' in body) ||
+        body.enabled !== true ||
+        !('runtimeVersion' in body)
+      )
+        return undefined
+      const version = body.runtimeVersion
+      return typeof version === 'string' &&
+        version.length <= 128 &&
+        version === version.trim() &&
+        isDshPackageVersion(version)
+        ? version
+        : undefined
+    } catch {
+      callerSignal?.throwIfAborted()
+      return undefined
+    }
   }
 
   public async requestDesktopPairing(endpoint: BackendEndpoint, signal: AbortSignal): Promise<unknown> {
@@ -502,6 +555,26 @@ function parseSessionCookie(
     return { value, expiresAt }
   }
   return undefined
+}
+
+async function readDesktopStatus(response: Response): Promise<unknown> {
+  const reader = response.body?.getReader()
+  if (reader === undefined) return undefined
+  const decoder = new TextDecoder('utf-8', { fatal: true })
+  let size = 0
+  let text = ''
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) return JSON.parse(text + decoder.decode()) as unknown
+      size += value.byteLength
+      if (size > 1024) return undefined
+      text += decoder.decode(value, { stream: true })
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined)
+    reader.releaseLock()
+  }
 }
 
 async function releaseResponse(response: Response): Promise<void> {

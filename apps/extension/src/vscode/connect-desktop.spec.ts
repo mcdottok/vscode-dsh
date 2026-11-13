@@ -7,23 +7,12 @@ describe('connect to Desktop', () => {
     const connect = vi.fn(() => Promise.resolve(undefined))
     await connectDesktop({
       window: { showInputBox: input },
-      discover: (endpoint) =>
-        Promise.resolve([
-          {
-            endpoint,
-            source: 'process-scan',
-            confidence: 90,
-            runtimeVersion: '0.2.1-rc.2',
-            runtimeVersionEvidence: 'process-manifest',
-          },
-        ]),
       connect,
     })
     expect(input).toHaveBeenCalledWith(expect.objectContaining({ password: true }))
     expect(connect).toHaveBeenCalledExactlyOnceWith(
       { host: '127.0.0.1', port: 43120, baseUrl: 'http://127.0.0.1:43120' },
       'fixture-desktop-token',
-      '0.2.1-rc.2',
     )
   })
 
@@ -44,25 +33,21 @@ describe('connect to Desktop', () => {
     }
   })
 
-  it('cancelled native input performs no discovery, authorization or configuration', async () => {
-    const discover = vi.fn(() => Promise.resolve([]))
+  it('cancelled native input performs no authorization or configuration', async () => {
     const connect = vi.fn(() => Promise.resolve(undefined))
     await connectDesktop({
       window: { showInputBox: vi.fn(() => Promise.resolve(undefined)) },
-      discover,
       connect,
     })
-    expect(discover).not.toHaveBeenCalled()
     expect(connect).not.toHaveBeenCalled()
   })
 
-  it('does not guess a runtime version if OS discovery is unavailable', async () => {
+  it('accepts a loopback address without a launch token', async () => {
     const connect = vi.fn(() => Promise.resolve(undefined))
     await connectDesktop({
       window: { showInputBox: vi.fn(() => Promise.resolve('http://localhost:43120/')) },
-      discover: () => Promise.resolve([]),
       connect,
     })
-    expect(connect).toHaveBeenCalledWith(expect.objectContaining({ port: 43120 }), '', undefined)
+    expect(connect).toHaveBeenCalledWith(expect.objectContaining({ port: 43120 }), '')
   })
 })
