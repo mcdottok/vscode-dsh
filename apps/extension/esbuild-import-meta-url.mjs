@@ -13,6 +13,22 @@ import path from 'node:path'
 // esbuild evaluates `onLoad` filters as Go regular expressions and translates a
 // JavaScript `u` flag into `(?u)`, which Go rejects, so this one stays flagless.
 const UPSTREAM_MODULE = /[\\/]@deepseek-ai[\\/][^\\/]+[\\/]/
+const SCHEMASTERY_MODULE = /[\\/]@deepseek-ai[\\/]schemastery[\\/]lib[\\/]index\.(?:mjs|cjs|js)$/u
+const SERIALIZED_CALLBACK =
+  /if \(typeof schema\.callback === "string"\) try \{\s*schema\.callback = new Function\("return " \+ schema\.callback\)\(\);\s*\} catch \{\}/gu
+const DYNAMIC_CODE = /\b(?:new\s+Function|eval)\s*\(/u
+
+/** Preserve real function callbacks. Never rehydrate callbacks from source text in the Host. */
+export const hardenSchemastery = (source) => {
+  if ([...source.matchAll(SERIALIZED_CALLBACK)].length !== 1) {
+    throw new Error('esbuild: Schemastery callback implementation changed. Review it before bundling.')
+  }
+  return source.replace(
+    SERIALIZED_CALLBACK,
+    'if (typeof schema.callback === "string") throw new TypeError("Serialized schema callbacks are unsupported in the DSH extension Host");',
+  )
+}
+
 const IMPORT_META_USE = /import\.meta/u
 const MANIFEST_READ = /createRequire\(\s*import\.meta\.url\s*\)\s*\(\s*(['"])([^'"]+)\1\s*\)/gu
 const UNTRANSLATED_MANIFEST_READ = /import_meta\.url/u
@@ -58,8 +74,9 @@ export const createImportMetaUrlPlugin = () => ({
   setup: (build) => {
     build.onLoad({ filter: UPSTREAM_MODULE }, async (args) => {
       const source = await readFile(args.path, 'utf8')
-      if (!IMPORT_META_USE.test(source)) return undefined
-      const contents = await inlineManifestReads(source, args.path)
+      const hardened = SCHEMASTERY_MODULE.test(args.path) ? hardenSchemastery(source) : source
+      if (hardened === source && !IMPORT_META_USE.test(source)) return undefined
+      const contents = await inlineManifestReads(hardened, args.path)
       if (IMPORT_META_USE.test(contents)) {
         throw new Error(
           `esbuild-import-meta-url: ${args.path} still reads import.meta after its manifest reads were inlined. The CJS bundle has no import.meta, so this would throw during activation; teach this plugin the new shape.`,
@@ -75,7 +92,11 @@ export const createImportMetaUrlPlugin = () => ({
         (build.initialOptions.outfile === undefined
           ? undefined
           : await readFile(build.initialOptions.outfile, 'utf8'))
-      if (emitted !== undefined) assertBundleTranslatesImportMeta(emitted)
+      if (emitted === undefined) return
+      assertBundleTranslatesImportMeta(emitted)
+      if (DYNAMIC_CODE.test(emitted)) {
+        throw new Error('esbuild: the emitted Extension Host contains a dynamic code execution call.')
+      }
     })
   },
 })
