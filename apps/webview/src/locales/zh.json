@@ -877,7 +877,7 @@
   "app.dismissExtensionUpdate": "关闭扩展更新提醒",
   "app.downloadExtensionVsix": "下载 VSIX",
   "settings.extensionVersion": "扩展版本",
-  "settings.extensionUpdateHint": "扩展暂时被 VS Code 扩展商城下架，请前往 GitHub Releases 检查新版本和下载 VSIX 手动更新",
+  "settings.extensionUpdateHint": "扩展暂时从商城中下架，请从 GitHub 下载 VSIX，在 VS Code 中安装。",
   "settings.extensionCheckUpdates": "前往 Release",
   "settings.autoCheckUpdates": "自动检测更新",
   "settings.autoCheckUpdatesError": "无法保存自动检测更新设置。",
