@@ -157,7 +157,7 @@ export function ConnectionSettingsTab(input: GeneralSettingsTabProps): ReactElem
                 ) : null}
                 <div className="dsh-settings__connection-actions">
                   <button
-                    className="dsh-button dsh-button--primary dsh-settings__connection-submit"
+                    className="dsh-button dsh-button--secondary dsh-settings__connection-submit"
                     type="button"
                     disabled={connectionBusy || connectionChoice === 'unchanged'}
                     onClick={applyConnection}

@@ -145,10 +145,6 @@
   gap: 8px;
 }
 
-.dsh-app .dsh-settings .dsh-settings__connection-option--active {
-  background: color-mix(in srgb, var(--dsh-text) 4%, transparent);
-}
-
 .dsh-app .dsh-settings .dsh-settings__connection-option strong {
   font-size: var(--dsh-font-size-xs);
   font-weight: 400;
