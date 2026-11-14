@@ -33,13 +33,13 @@ See [runtime compatibility](docs/dsh-contract.md) and the [capability matrix](do
 
 Connect to DSH Desktop and open the same workspace and existing session in both apps to continue the conversation in either one.
 
-![View the session sync demo (GIF)](https://github.com/user-attachments/assets/963f4781-eb86-4d28-aeb0-21d65a696c26)
+![View the session sync demo (GIF)](docs/assets/stream%20sync.gif)
 
 ### Ask with code context
 
 Select code in the editor, attach it to your message, and ask about it in the DSH sidebar.
 
-![View the code context demo (GIF)](https://github.com/user-attachments/assets/61c960cf-df34-42fa-8ebd-d4060c143b59)
+![View the code context demo (GIF)](docs/assets/context.gif)
 
 ### Find and resume sessions
 

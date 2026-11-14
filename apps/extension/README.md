@@ -63,8 +63,6 @@ Click the **DSH** icon in the editor title bar to open chat, choose a model and 
 
 <img src="https://raw.githubusercontent.com/mcdottok/vscode-dsh/main/docs/assets/chat-entry.png" alt="Opening DSH chat from the editor title bar" width="560">
 
-[Download the full demo video (MP4, about 24 MB)](https://github.com/mcdottok/vscode-dsh/raw/refs/heads/main/docs/assets/demo.mp4)
-
 ## License and credits
 
 MIT. Based on [Jabofish/deepseek-harness-vscode](https://github.com/Jabofish/deepseek-harness-vscode), powered by [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). This project is independently maintained by the community.
