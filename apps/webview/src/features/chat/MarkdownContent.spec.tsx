@@ -154,6 +154,7 @@ describe('MarkdownContent', () => {
   })
 
   it('adds compact copy controls to fenced code and tables', async () => {
+    await warmHighlighter()
     const writeText = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('navigator', { clipboard: { writeText } })
     const { container } = render(
@@ -170,14 +171,12 @@ describe('MarkdownContent', () => {
       />,
     )
 
+    // Highlighting replaces the initial HTML and its copy portals.
+    await waitFor(() => expect(container.querySelector('pre.shiki')).not.toBeNull())
     const buttons = await screen.findAllByRole('button', { name: 'Copy' })
     expect(buttons).toHaveLength(2)
     fireEvent.click(buttons[0]!)
-    await waitFor(() =>
-      expect(writeText).toHaveBeenCalledWith(container.querySelector('pre')?.textContent ?? ''),
-    )
-    // Async syntax highlighting can remount the copy portals while the first
-    // clipboard promise settles. Click the currently mounted table control.
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('const value = 1\n'))
     const tableButton = container.querySelector<HTMLButtonElement>('.dsh-markdown__copy-region--table button')
     expect(tableButton).not.toBeNull()
     fireEvent.click(tableButton!)
