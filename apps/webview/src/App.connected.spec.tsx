@@ -1607,8 +1607,9 @@ describe('App connected rendering', () => {
     expect(screen.queryByText('DSH update available')).toBeNull()
   })
 
-  it('keeps the settings entry point available when the runtime is missing', () => {
+  it('opens settings for Desktop when the CLI is missing', () => {
     const setDrawer = vi.fn()
+    const runtimeAction = vi.fn()
     currentStore = {
       ...storeFor({
         ...connectedState(false),
@@ -1618,13 +1619,18 @@ describe('App connected rendering', () => {
         },
       }),
       setDrawer,
+      runtimeAction,
     }
 
     render(<App />)
 
-    expect(screen.getByRole('heading', { name: 'DSH was not found' })).toBeDefined()
-    fireEvent.click(screen.getByRole('button', { name: 'Open settings' }))
+    expect(screen.getByRole('heading', { name: 'DSH CLI was not found' })).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: 'Try connecting to DSH Desktop' }))
     expect(setDrawer).toHaveBeenCalledWith('settings')
+    expect(runtimeAction).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByText('More options'))
+    fireEvent.click(screen.getByRole('button', { name: 'Open settings' }))
+    expect(setDrawer).toHaveBeenCalledTimes(2)
   })
 
   it('keeps removed quick actions out of General settings', async () => {

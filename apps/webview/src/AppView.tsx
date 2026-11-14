@@ -169,6 +169,13 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
   const connectionFailureKey =
     connectionFailure === undefined ? undefined : `${connectionFailure.kind}:${connectionFailure.message}`
   const [previousConnectionFailure, setPreviousConnectionFailure] = useState(connectionFailureKey)
+  const [openConnectionTab, setOpenConnectionTab] = useState(false)
+  const settingsOpen = state.drawer === 'settings'
+  const [settingsWereOpen, setSettingsWereOpen] = useState(settingsOpen)
+  if (settingsWereOpen !== settingsOpen) {
+    setSettingsWereOpen(settingsOpen)
+    if (!settingsOpen) setOpenConnectionTab(false)
+  }
   if (previousConnectionFailure !== connectionFailureKey) {
     // A retry or a different failure must not inherit an earlier dismissal.
     setPreviousConnectionFailure(connectionFailureKey)
@@ -311,6 +318,7 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
         />
         <AppSettingsDrawer
           key={settingsDrawerVersionKey}
+          {...(openConnectionTab ? { initialTab: 'connection' } : {})}
           state={state}
           store={store}
           themePreference={themePreference}
@@ -347,6 +355,10 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
               busyAction={busyAction}
               onAction={runRuntimeAction}
               onRetry={retryConnection}
+              onOpenConnectionSettings={() => {
+                setOpenConnectionTab(true)
+                store.setDrawer('settings')
+              }}
               onOpenSettings={() => store.setDrawer('settings')}
               onReadDiagnostics={() => store.readDiagnostics()}
               onReconnectDiagnostics={() => store.reconnect()}

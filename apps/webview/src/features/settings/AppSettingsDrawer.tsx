@@ -20,6 +20,7 @@ function loadSettingsDrawer(): Promise<ComponentType<DrawerProps>> {
 }
 
 interface AppSettingsDrawerProps {
+  readonly initialTab?: DrawerProps['initialTab']
   readonly state: Pick<
     ReturnType<AppStore['getState']>,
     | 'drawer'
@@ -61,6 +62,7 @@ interface AppSettingsDrawerProps {
 }
 
 export function AppSettingsDrawer({
+  initialTab,
   state,
   store,
   themePreference,
@@ -106,6 +108,7 @@ export function AppSettingsDrawer({
   }
   return (
     <LoadedSettingsDrawer
+      {...(initialTab === undefined ? {} : { initialTab })}
       open={state.drawer === 'settings'}
       onOpenChange={(open) => store.setDrawer(open ? 'settings' : undefined)}
       connected={state.backend.kind === 'connected'}

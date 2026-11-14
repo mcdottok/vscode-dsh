@@ -5,6 +5,7 @@ import { useDismissibleLayer } from '../../components/common/useDismissibleLayer
 import { Icon } from '../../ui/Icon.js'
 import type { CustomProviderTemplate } from './CustomProviderCard.js'
 import { useI18n } from '../../i18n.js'
+import { publicProtocolErrorCode } from '../../app/protocol-client.js'
 import { useStableCallback } from '../../app/useStableCallback.js'
 import {
   deriveCustomProviderTemplate,
@@ -163,7 +164,7 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
         setSettingsState({ value })
         if (value !== undefined) {
           setConnectionChoice(
-            value.connection.mode === 'custom'
+            props.initialTab === 'connection' || value.connection.mode === 'custom'
               ? 'custom'
               : value.connection.mode === 'attach-only'
                 ? 'unchanged'
@@ -177,7 +178,7 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
     return () => {
       cancelled = true
     }
-  }, [open, onLoadSettings, settingsState])
+  }, [open, onLoadSettings, props.initialTab, settingsState])
 
   // The drawer stays mounted while closed; dropping the cached answer makes
   // the next open re-read extension settings, which can change elsewhere.
@@ -348,6 +349,10 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
       })
       .catch((reason: unknown) => {
         if (openEpochRef.current !== epoch) return
+        if (publicProtocolErrorCode(reason) === 'DSH_NOT_FOUND') {
+          setConnectionError(t('settings.connectionCliMissing'))
+          return
+        }
         setConnectionError(reason instanceof Error ? reason.message : t('settings.connectionApplyFailed'))
       })
       .finally(() => setConnectionBusy(false))
@@ -452,7 +457,15 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
     if (dshUpdateBusy !== undefined || onCheckDshUpdates === undefined) return
     setDshUpdateError(undefined)
     setDshUpdateBusy('check')
+    const epoch = openEpochRef.current
     void onCheckDshUpdates(true)
+      .then((snapshot) => {
+        if (openEpochRef.current !== epoch) return
+        if (snapshot?.currentVersion === undefined && snapshot?.globalVersion === undefined) return
+        setConnectionError((message) =>
+          message === t('settings.connectionCliMissing') ? undefined : message,
+        )
+      })
       .catch((reason: unknown) =>
         setDshUpdateError(reason instanceof Error ? reason.message : t('settings.dshUpdateFailed')),
       )
@@ -650,6 +663,7 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
           </div>
         </header>
         <SettingsTabs
+          {...(props.initialTab === undefined ? {} : { initialTab: props.initialTab })}
           panels={{
             connection: <ConnectionSettingsTab {...generalView} />,
             general: <GeneralSettingsTab {...generalView} />,

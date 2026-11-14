@@ -719,7 +719,7 @@ html[data-dsh-theme='system']:has(body.vscode-dark)
 /* Explicit connection sources share a compact, neutral selection rail. */
 .dsh-app .dsh-settings .dsh-settings__connection-options {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 .dsh-app .dsh-settings .dsh-settings__connection-option {
@@ -734,7 +734,11 @@ html[data-dsh-theme='system']:has(body.vscode-dark)
 }
 .dsh-app .dsh-settings .dsh-settings__connection-option--active {
   border-color: var(--dsh-focus);
-  background: color-mix(in srgb, var(--dsh-text) 3%, transparent);
+  background: color-mix(in srgb, var(--dsh-focus) 8%, var(--dsh-surface-soft));
+}
+.dsh-app .dsh-settings .dsh-settings__connection-option:focus-within {
+  outline: 1px solid var(--dsh-focus);
+  outline-offset: 2px;
 }
 .dsh-app .dsh-settings .dsh-settings__connection-option input {
   flex: 0 0 auto;
@@ -755,8 +759,101 @@ html[data-dsh-theme='system']:has(body.vscode-dark)
   width: 100%;
   min-width: 0;
 }
-@media (max-width: 420px) {
+.dsh-settings__connection-panel {
+  container: connection-settings / inline-size;
+}
+
+@container connection-settings (inline-size >= 24rem) {
   .dsh-app .dsh-settings .dsh-settings__connection-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.dsh-app .dsh-settings .dsh-button.dsh-settings__connection-submit {
+  min-block-size: 36px;
+  padding-inline: var(--dsh-space-4);
+  border-color: var(--dsh-primary);
+  background: var(--dsh-primary);
+  color: var(--dsh-primary-text);
+  font-weight: 600;
+}
+
+.dsh-app .dsh-settings .dsh-button.dsh-settings__connection-submit:hover:not(:disabled) {
+  background: var(--dsh-primary-hover);
+}
+
+.dsh-settings__connection-panel
+  :is(.dsh-settings__connection-manual, .dsh-settings__connect-about)
+  > summary {
+  min-block-size: 28px;
+  align-content: center;
+  padding-block: 0;
+  cursor: pointer;
+  color: var(--dsh-muted);
+  font-size: var(--dsh-font-size-xs);
+  line-height: 1.4;
+}
+
+.dsh-settings__connection-panel
+  :is(.dsh-settings__connection-manual, .dsh-settings__connect-about)
+  > summary:is(:hover, :focus-visible) {
+  color: var(--dsh-text);
+}
+
+.dsh-settings__connection-panel .dsh-settings__connection-notice {
+  margin: 0;
+}
+
+.dsh-settings__connect-about {
+  font-size: var(--dsh-font-size-xs);
+  overflow-wrap: anywhere;
+}
+
+.dsh-settings__connect-about > :is(p, ul) {
+  margin: var(--dsh-space-2) 0 0;
+}
+
+.dsh-settings__connect-about ul {
+  display: grid;
+  gap: var(--dsh-space-2);
+  padding-inline-start: 1.25em;
+}
+
+.dsh-settings__connect-about code {
+  display: block;
+  margin-block-start: var(--dsh-space-1);
+  padding: var(--dsh-space-1) var(--dsh-space-2);
+  border-radius: var(--dsh-radius-sm);
+  background: var(--dsh-code-bg);
+  color: var(--dsh-text);
+  white-space: pre-wrap;
+}
+
+.dsh-settings__connection-manual[open] > label {
+  margin-block-start: var(--dsh-space-2);
+}
+
+.dsh-settings__connection-panel .dsh-settings__runtime-update :is(h3, .dsh-settings__note) {
+  margin: 0;
+}
+
+.dsh-settings__connection-panel .dsh-settings__runtime-update-controls > button {
+  white-space: normal;
+}
+
+.dsh-app .dsh-settings .dsh-settings__connection-panel > .dsh-settings__runtime-update {
+  display: grid;
+  gap: var(--dsh-space-2);
+  padding: var(--dsh-space-3);
+  border: var(--dsh-border);
+  border-radius: var(--dsh-radius-md);
+  background: var(--dsh-surface-soft);
+}
+
+@container connection-settings (inline-size < 24rem) {
+  .dsh-settings__connection-panel
+    :is(.dsh-settings__connection-actions, .dsh-settings__runtime-update-controls) {
+    display: grid;
     grid-template-columns: minmax(0, 1fr);
   }
 }

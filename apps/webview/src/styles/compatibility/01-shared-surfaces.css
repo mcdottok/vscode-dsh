@@ -216,16 +216,15 @@
 }
 
 .dsh-runtime-missing__icon {
-  flex: 0 0 42px;
-  width: 42px;
-  height: 42px;
+  flex: none;
+  inline-size: 2.5rem;
+  block-size: 2.5rem;
   display: grid;
   place-items: center;
   border: var(--dsh-border);
   border-radius: 11px;
   color: var(--dsh-accent-line);
-  font-size: var(--dsh-font-size-xs);
-  letter-spacing: 0.08em;
+  background: var(--dsh-code-bg);
 }
 
 .dsh-jobs,

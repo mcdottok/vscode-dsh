@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react'
 import { SettingCard } from '../../components/common/SettingCard.js'
 import { SelectMenu } from '../../components/common/SelectMenu.js'
+import { Icon } from '../../ui/Icon.js'
 import { connectionModeLabel, dshUpdateFailureMessage } from './update-labels.js'
 
 import type { GeneralSettingsTabProps } from './GeneralSettingsTab.js'
@@ -32,7 +33,7 @@ export function ConnectionSettingsTab(input: GeneralSettingsTabProps): ReactElem
   const { onCheckDshUpdates, onInstallDshVersion, dshUpdate } = props
   return (
     <div
-      className="dsh-settings__body"
+      className="dsh-settings__body dsh-settings__connection-panel"
       id="dsh-settings-panel-connection"
       role="tabpanel"
       aria-labelledby="dsh-settings-tab-connection"
@@ -81,11 +82,7 @@ export function ConnectionSettingsTab(input: GeneralSettingsTabProps): ReactElem
                   </dd>
                 </dl>
               </details>
-              <SettingCard
-                ariaLabel={t('settings.connectionTitle')}
-                title={t('settings.connectionTitle')}
-                description={t('settings.connectionHint')}
-              >
+              <SettingCard ariaLabel={t('settings.connectionTitle')} title={t('settings.connectionTitle')}>
                 <div
                   className="dsh-settings__connection-options"
                   role="radiogroup"
@@ -136,30 +133,6 @@ export function ConnectionSettingsTab(input: GeneralSettingsTabProps): ReactElem
                   </label>
                 </div>
                 {connectionChoice === 'custom' ? (
-                  <label className="dsh-settings__connection-endpoint">
-                    <span>{t('settings.connectionEndpoint')}</span>
-                    <input
-                      type="password"
-                      autoComplete="off"
-                      spellCheck={false}
-                      maxLength={8192}
-                      disabled={connectionBusy}
-                      value={connectionEndpoint}
-                      placeholder={
-                        settings.connection.desktopEndpointConfigured ||
-                        settings.connection.customEndpointConfigured
-                          ? t('settings.connectionEndpointConfigured')
-                          : t('settings.connectionEndpointPlaceholder')
-                      }
-                      onChange={(event) => {
-                        setConnectionEndpoint(event.target.value)
-                        setConnectionError(undefined)
-                        setConnectionNotice(undefined)
-                      }}
-                    />
-                  </label>
-                ) : null}
-                {connectionChoice === 'custom' ? (
                   <>
                     <p className="dsh-settings__connection-notice">
                       {t('settings.connectionDesktopRequirement')}{' '}
@@ -175,28 +148,21 @@ export function ConnectionSettingsTab(input: GeneralSettingsTabProps): ReactElem
                   </>
                 ) : null}
                 {connectionChoice === 'auto' ? (
-                  <>
-                    <p className="dsh-settings__connection-notice">{t('settings.connectionLocalHelp')}</p>
-                    <p
-                      className="dsh-settings__connection-notice"
-                      role="note"
-                      aria-label={t('settings.connectionSessionNoticeTitle')}
-                    >
-                      <strong>{t('settings.connectionSessionNoticeTitle')}</strong>{' '}
-                      {t('settings.connectionSessionNotice')}
-                    </p>
-                  </>
+                  <p className="dsh-settings__connection-notice" role="note">
+                    {t('settings.connectionSessionNotice')}
+                  </p>
                 ) : null}
                 {connectionChoice === 'unchanged' ? (
                   <p className="dsh-settings__connection-notice">{t('settings.connectionUnchangedHint')}</p>
                 ) : null}
                 <div className="dsh-settings__connection-actions">
                   <button
-                    className="dsh-button dsh-button--primary dsh-button--compact"
+                    className="dsh-button dsh-button--primary dsh-settings__connection-submit"
                     type="button"
                     disabled={connectionBusy || connectionChoice === 'unchanged'}
                     onClick={applyConnection}
                   >
+                    <Icon name={connectionChoice === 'custom' ? 'open-in-editor' : 'terminal'} />
                     {connectionBusy
                       ? t('settings.connectionApplying')
                       : t(
@@ -206,6 +172,33 @@ export function ConnectionSettingsTab(input: GeneralSettingsTabProps): ReactElem
                         )}
                   </button>
                 </div>
+                {connectionChoice === 'custom' ? (
+                  <details className="dsh-settings__connection-manual">
+                    <summary>{t('settings.connectionManualAddress')}</summary>
+                    <label className="dsh-settings__connection-endpoint">
+                      <span>{t('settings.connectionEndpoint')}</span>
+                      <input
+                        type="password"
+                        autoComplete="off"
+                        spellCheck={false}
+                        maxLength={8192}
+                        disabled={connectionBusy}
+                        value={connectionEndpoint}
+                        placeholder={
+                          settings.connection.desktopEndpointConfigured ||
+                          settings.connection.customEndpointConfigured
+                            ? t('settings.connectionEndpointConfigured')
+                            : t('settings.connectionEndpointPlaceholder')
+                        }
+                        onChange={(event) => {
+                          setConnectionEndpoint(event.target.value)
+                          setConnectionError(undefined)
+                          setConnectionNotice(undefined)
+                        }}
+                      />
+                    </label>
+                  </details>
+                ) : null}
                 {connectionError === undefined ? null : (
                   <p className="dsh-settings__error" role="alert">
                     {connectionError}
@@ -216,6 +209,26 @@ export function ConnectionSettingsTab(input: GeneralSettingsTabProps): ReactElem
                     {connectionNotice}
                   </p>
                 )}
+                {connectionChoice === 'custom' ? (
+                  <details className="dsh-settings__connect-about">
+                    <summary>{t('settings.connectionCompanionAbout')}</summary>
+                    <p>{t('settings.connectionCompanionDescription')}</p>
+                    <ul>
+                      <li>
+                        {t('settings.connectionCompanionAdd')}
+                        <code>dsh-vscode-connect@latest</code>
+                      </li>
+                      <li>
+                        {t('settings.connectionCompanionCommand')}
+                        <code>dsh plugin --profile web add dsh-vscode-connect@latest</code>
+                      </li>
+                      <li>
+                        {t('settings.connectionCompanionMarket')} <strong>dsh-vscode-connect</strong>{' '}
+                        {t('settings.connectionCompanionAuthor')}
+                      </li>
+                    </ul>
+                  </details>
+                ) : null}
               </SettingCard>
             </>
           )
@@ -224,10 +237,7 @@ export function ConnectionSettingsTab(input: GeneralSettingsTabProps): ReactElem
       {connectionChoice === 'auto' && onCheckDshUpdates !== undefined && onInstallDshVersion !== undefined ? (
         <section className="dsh-settings__runtime-update" aria-label={t('settings.dshUpdateTitle')}>
           <div className="dsh-settings__runtime-update-head">
-            <div>
-              <h3>{t('settings.dshUpdateTitle')}</h3>
-              <p className="dsh-settings__note">{t('settings.connectionLocalInstallHint')}</p>
-            </div>
+            <h3>{t('settings.dshUpdateTitle')}</h3>
             <button
               className="dsh-button dsh-button--secondary dsh-button--compact dsh-settings__runtime-update-check"
               type="button"
@@ -279,7 +289,7 @@ export function ConnectionSettingsTab(input: GeneralSettingsTabProps): ReactElem
                 <span>{t('settings.dshUpdateVersion')}</span>
                 <SelectMenu
                   className="dsh-settings__runtime-update-version"
-                  icon="refresh"
+                  icon="box"
                   density="regular"
                   displayLabel
                   label={effectiveSelectedDshVersion ?? t('settings.dshUpdateUnavailable')}
@@ -312,6 +322,7 @@ export function ConnectionSettingsTab(input: GeneralSettingsTabProps): ReactElem
                       : t('settings.dshUpdateInstall')}
                 </button>
               </div>
+              <p className="dsh-settings__note">{t('settings.connectionLocalInstallHint')}</p>
               {dshUpdate.restartRequired ? (
                 <p className="dsh-settings__note">{t('settings.dshUpdateRestart')}</p>
               ) : null}

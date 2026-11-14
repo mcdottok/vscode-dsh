@@ -726,11 +726,11 @@ occupancy so the overflow is visible without opening the details. */
   background: var(--dsh-surface-raised);
 }
 
-.dsh-runtime-missing__intro,
-.dsh-runtime-missing__steps,
-.dsh-runtime-missing__actions {
+.dsh-runtime-missing {
+  container: runtime-install / inline-size;
   display: grid;
-  gap: var(--dsh-space-3);
+  gap: var(--dsh-space-4);
+  inline-size: min(100%, 36rem);
 }
 
 .dsh-runtime-missing__title-row {
@@ -745,21 +745,81 @@ occupancy so the overflow is visible without opening the details. */
   font-size: var(--dsh-font-size-lg);
 }
 
+.dsh-runtime-missing__title-row h1 {
+  text-wrap: balance;
+}
+
 .dsh-runtime-missing__description,
 .dsh-error-boundary p {
   color: var(--dsh-muted);
 }
 
-.dsh-runtime-missing__steps {
-  color: var(--dsh-muted);
+.dsh-runtime-missing__description {
+  margin: 0;
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
 }
 
 .dsh-runtime-missing__actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  gap: var(--dsh-space-2);
 }
 
-.dsh-runtime-missing details,
+.dsh-runtime-missing__actions .dsh-button,
+.dsh-runtime-missing__utilities .dsh-button {
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+@container runtime-install (min-width: 27rem) {
+  .dsh-runtime-missing__actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.dsh-runtime-missing__utilities {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dsh-space-1) var(--dsh-space-2);
+  padding-block-start: var(--dsh-space-2);
+  border-block-start: var(--dsh-border);
+}
+
+.dsh-runtime-missing__utilities > .dsh-button {
+  min-block-size: 24px;
+  padding: var(--dsh-space-1) var(--dsh-space-2);
+  font-size: var(--dsh-font-size-sm);
+}
+
+.dsh-runtime-missing details .dsh-runtime-missing__utilities {
+  border-block-start: 0;
+}
+
+.dsh-runtime-missing details {
+  font-size: var(--dsh-font-size-sm);
+  color: var(--dsh-muted);
+  overflow-wrap: anywhere;
+}
+
+.dsh-runtime-missing summary {
+  min-block-size: 24px;
+  align-content: center;
+  cursor: pointer;
+}
+
+.dsh-runtime-missing details ul {
+  margin-block: var(--dsh-space-2) 0;
+  padding-inline-start: var(--dsh-space-5);
+}
+
+@media (pointer: coarse) {
+  .dsh-runtime-missing :is(button, summary) {
+    min-block-size: 44px;
+  }
+}
+
 .dsh-error-boundary code,
 .dsh-diagnostics pre {
   max-width: 100%;

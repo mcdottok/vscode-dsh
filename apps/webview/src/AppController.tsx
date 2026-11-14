@@ -257,6 +257,7 @@ const useAppControllerImpl = () => {
     state.dshUpdate.globalVersion !== runtimeUpdateVersion &&
     dismissedRuntimeUpdateVersion !== runtimeUpdateVersion
   const runRuntimeAction = (action: 'install' | 'select' | 'copy-command' | 'open-docs'): void => {
+    if (busyAction !== undefined) return
     if (action === 'install' || action === 'select') setBusyAction(action)
     void store
       .runtimeAction(action)

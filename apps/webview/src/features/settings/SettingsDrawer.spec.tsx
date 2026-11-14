@@ -457,6 +457,7 @@ describe('SettingsDrawer', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Connection' }))
     const desktop = await screen.findByRole('radio', { name: /DSH Desktop/ })
     fireEvent.click(desktop)
+    fireEvent.click(screen.getByText('Enter a connection address manually'))
     const field = screen.getByLabelText('Desktop VS Code connection address')
     expect(field.getAttribute('type')).toBe('password')
     fireEvent.change(field, { target: { value: 'http://127.0.0.1:43120/?token=fixture-only' } })
@@ -590,6 +591,7 @@ describe('SettingsDrawer', () => {
 
     await screen.findByRole('heading', { name: 'Connection source' })
     fireEvent.click(screen.getByRole('radio', { name: /DSH Desktop/ }))
+    fireEvent.click(screen.getByText('Enter a connection address manually'))
     fireEvent.change(screen.getByLabelText('Desktop VS Code connection address'), {
       target: { value: 'http://127.0.0.1:4310' },
     })
@@ -603,11 +605,11 @@ describe('SettingsDrawer', () => {
 
   it('allows Desktop discovery without requiring a saved or pasted address', async () => {
     const onConfigureConnection = vi.fn().mockResolvedValue(undefined)
-    renderDrawer({ onConfigureConnection })
-    fireEvent.click(screen.getByRole('tab', { name: 'Connection' }))
-
+    renderDrawer({ onConfigureConnection, initialTab: 'connection' })
     await screen.findByRole('heading', { name: 'Connection source' })
-    fireEvent.click(screen.getByRole('radio', { name: /DSH Desktop/ }))
+    expect(screen.getByRole('tab', { name: 'Connection', selected: true })).toBeDefined()
+    expect(screen.getByRole('radio', { name: /DSH Desktop/ })).toHaveProperty('checked', true)
+    expect(screen.getByText('Enter a connection address manually').closest('details')?.open).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: 'Connect to Desktop' }))
 
     await waitFor(() => expect(onConfigureConnection).toHaveBeenCalledWith('desktop', undefined))
@@ -620,6 +622,7 @@ describe('SettingsDrawer', () => {
     renderDrawer({ onConfigureConnection, onConnectDesktop })
     fireEvent.click(screen.getByRole('tab', { name: 'Connection' }))
     fireEvent.click(await screen.findByRole('radio', { name: /DSH Desktop/ }))
+    fireEvent.click(screen.getByText('Enter a connection address manually'))
     const field = screen.getByLabelText('Desktop VS Code connection address')
     expect(field.getAttribute('type')).toBe('password')
     fireEvent.change(field, { target: { value: 'http://127.0.0.1:43120/?token=fixture-private-login' } })
@@ -643,9 +646,11 @@ describe('SettingsDrawer', () => {
     const view = renderDrawer(props)
     fireEvent.click(screen.getByRole('tab', { name: 'Connection' }))
     const field = await screen.findByLabelText('Desktop VS Code connection address')
+    fireEvent.click(screen.getByText('Enter a connection address manually'))
     fireEvent.change(field, { target: { value: 'http://127.0.0.1:43120/?token=fixture-draft' } })
     fireEvent.click(screen.getByRole('radio', { name: /DSH CLI/ }))
     fireEvent.click(screen.getByRole('radio', { name: /DSH Desktop/ }))
+    fireEvent.click(screen.getByText('Enter a connection address manually'))
     expect(screen.getByLabelText('Desktop VS Code connection address')).toHaveProperty('value', '')
 
     fireEvent.change(screen.getByLabelText('Desktop VS Code connection address'), {
