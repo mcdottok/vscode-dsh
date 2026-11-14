@@ -1,60 +1,45 @@
-# DSH Coding Agent
+<p align="center">
+  <img src="apps/extension/resources/dsh.png" alt="" width="96" height="96">
+</p>
 
-简体中文 | [English](README.en.md)
+<h1 align="center">DSH Coding Agent</h1>
 
-DSH Coding Agent 是由社区维护的 VS Code 扩展，可连接 DSH 运行时。你可以围绕当前项目对话、附加选区和文件、跟踪工具执行并审阅代码变更。扩展支持本机 DSH CLI，也可以连接桌面端并接续同一工作区与会话。
+<p align="center"><strong>在 VS Code 中使用 DeepSeek Harness</strong></p>
 
-## 安装与连接
+<p align="center">
+  <a href="https://github.com/mcdottok/vscode-dsh/releases">下载 VSIX</a> ·
+  <a href="#功能演示">功能演示</a> ·
+  <a href="#安装扩展">安装</a> ·
+  <a href="#连接-dsh">连接</a> ·
+  <a href="README.en.md">English</a>
+</p>
 
-1. 在 VS Code 扩展中搜索并安装 **DSH Coding Agent**，⚠️ **此方式暂时不可用，扩展被下架**，请等待后续重新上架
-2. 通过 GitHub Release 下载 `.vsix`，在 VS Code 扩展中执行 **扩展：从 VSIX 安装…** 即可安装本扩展。
+DSH Coding Agent 是一款社区维护的 VS Code 扩展。你可以在编辑器里围绕当前项目提问、跟踪工具执行并审阅变更，支持在 VS Code 和 [DeepSeek Harness Desktop](https://github.com/deepseek-ai/deepseek-harness) 之间接续同一个会话， 双端实时同步。
 
-打开并信任项目文件夹，再展开右侧的 **DSH**。可选择以下任一种方式连接 DSH。
+## 核心功能
 
-### 方式一：连接桌面端，接续同一会话
+| 功能         | 用法                                                         |
+| ------------ | ------------------------------------------------------------ |
+| 会话接续     | 在 vscode 和 DSH 中实时续接同一会话，方便阅览代码。          |
+| 编辑器上下文 | 附加代码选区、文件和图片，让 DSH 看见你正在讨论的内容。      |
+| 工具与审批   | 实时查看回复、思考和工具进度，处理提问与审批，审阅代码变更。 |
+| 模型与权限   | 在对话中选择当前 DSH 运行时提供的模型和权限。                |
 
-1. 在 DeepSeek Harness / DSH Desktop 的**插件市场**中搜索 **dsh-vscode-connect**（作者 **mcdottok**），安装并启用。也可通过 **插件 → 添加插件** 输入 `dsh-vscode-connect@latest` 安装。首次安装默认开启 **VS Code 连接** 入口，详情见 [dsh-vscode-connect](https://github.com/mcdottok/dsh-vscode-connect)。
-2. 保持桌面端运行。Windows 同机环境下，两个插件会自动发现并连接，无需复制地址或开启浏览器访问。
-3. 选择与桌面端相同的工作区和已有会话，即可从任一端继续开发。
+运行时支持范围见[兼容说明](docs/dsh-contract.md)和[能力矩阵](docs/capability-matrix.md)。
 
-曾手动关闭入口的用户，需要在桌面端 **设置 → 通用设置 → VS Code 连接** 中重新开启。已有手动连接配置优先使用。Windows 同机连接中断时会自动刷新桌面端地址和授权并重连；旧地址缺少配对信息时，仅在能唯一确认本机桌面端身份后尝试恢复。自动恢复失败才显示更新地址的步骤。
+## 功能演示
 
-其他平台、远程环境或自动连接不可用时，在桌面端的 **VS Code 连接** 入口复制地址，再到 VS Code 执行 **DSH: Connect to Desktop / 连接桌面端**。凭据由 VS Code SecretStorage 保存。
+### VS Code 与 DSH Desktop 双端同步
 
-### 方式二：使用 DSH CLI
+连接 DSH Desktop 后，在两端打开同一个工作区和已有会话，即可切换到另一端继续对话。
 
-此方式无需桌面端，也无需安装 connect 插件。安装 Node.js（版本要求及 DSH 兼容范围见[兼容说明](docs/dsh-contract.md)），然后运行：
-
-```sh
-npm install --global @deepseek-ai/dsh
-```
-
-打开扩展内的 **设置 → 连接来源**，选择 **DSH CLI**，确认检测到的 DSH CLI 或手动选择可执行文件，再点击 **启动并连接**。缺少 DSH 时可在面板中安装 npm 的 `latest` 版本，也可在设置中的 **DSH CLI 安装与版本** 选择指定版本。点击 **在终端中安装**，在集成终端按 Enter 执行，完成后点击 **重新检测 DSH**。扩展会启动独立服务；已有桌面会话请使用方式一接续。
-
-## 在编辑器中开发
-
-- 接续同一会话，实时查看回复、思考和工具进度。
-- 附加代码选区、图片和文件，处理提问与审批。
-- 选择 DSH 提供的模型和权限，审阅代码变更。
-- 在侧栏或编辑器标签页中聊天。
-
-扩展默认连接已有 DSH。高级功能取决于所连接的内核，具体见[兼容说明](docs/dsh-contract.md)和[能力矩阵](docs/capability-matrix.md)。
-
-## 开发
-
-见[构建说明](BUILD.md)、[贡献指南](CONTRIBUTING.md)和[开发者文档](docs/README.md)。此社区版本使用 `mcdottok.dsh-coding-agent` 标识。此前手动安装的 `mcdottok.vscode-dsh` 和 `dsh-local.vscode-dsh` 是独立扩展，升级前请先卸载旧版，再安装新版；可能需要重新配置连接。
-
-开发历程和版本变更见[更新日志](CHANGELOG.md)。
-
-尚未实现的方案见[后续计划](ROADMAP.md)。
-
-## 功能预览
+[查看双端同步演示（GIF）](https://github.com/user-attachments/assets/963f4781-eb86-4d28-aeb0-21d65a696c26)
 
 ### 结合代码上下文提问
 
-选中编辑器中的代码，将选区作为上下文附加到消息，在侧栏中直接讨论当前实现。
+选中编辑器中的代码，将选区附加到消息，在 DSH 侧栏中直接提问。
 
-![选中代码并附加到 DSH 对话](docs/assets/code-context.png)
+[查看代码上下文演示（GIF）](https://github.com/user-attachments/assets/61c960cf-df34-42fa-8ebd-d4060c143b59)
 
 ### 查找和接续会话
 
@@ -62,20 +47,57 @@ npm install --global @deepseek-ai/dsh
 
 <img src="docs/assets/session-list.png" alt="按工作区分组的会话列表与搜索入口" width="720">
 
-### 选择连接方式
+## 安装扩展
 
-连接 **DSH Desktop** 接续桌面端会话，或选择 **DSH CLI**，由扩展启动本机服务。
+目前请通过 GitHub Releases 安装。扩展暂时从 VS Code 商城下架。
 
-<img src="docs/assets/connection-settings.png" alt="DSH Desktop 与 DSH CLI 连接设置" width="720">
+1. 从 [GitHub Releases](https://github.com/mcdottok/vscode-dsh/releases) 下载 `.vsix`。
+2. 在 VS Code 中打开扩展视图，在 **…** 菜单中选择 **从 VSIX 安装…**，打开下载的文件。
+3. 打开并信任项目文件夹，在右侧展开 **DSH**。
 
-### 在编辑器中开始对话
+## 连接 DSH
 
-点击编辑器标题栏中的 **DSH** 图标打开聊天，选择模型与权限后即可描述任务。
+扩展支持两种连接方式。在 DSH 面板中打开 **设置 → 连接**，按你的使用场景选择。
 
-<img src="docs/assets/chat-entry.png" alt="从编辑器标题栏打开 DSH 聊天" width="560">
+- **DSH Desktop｜双端同步**：连接正在运行的桌面端，在 VS Code 和 DSH Desktop 之间接续同一个会话。需要在桌面端安装并启用 `dsh-vscode-connect`。
+- **DSH CLI｜独立运行**：由扩展使用本机安装的 DSH CLI 启动独立服务。适合直接在 VS Code 中开始开发，无需打开桌面端或安装连接插件。
 
-[下载完整演示视频（MP4，约 24 MB）](https://github.com/mcdottok/vscode-dsh/raw/refs/heads/main/docs/assets/demo.mp4)
+#### 方式一：连接 DSH Desktop
+
+1. 在桌面端的插件市场安装并启用 [dsh-vscode-connect](https://github.com/mcdottok/dsh-vscode-connect)（作者 **mcdottok**）。也可以打开 **插件 → 添加插件**，输入 `dsh-vscode-connect@latest`。
+2. 保持桌面端运行。在 VS Code 中选择 **DSH Desktop**，点击 **连接桌面端**，在 Windows 平台扩展会尝试自动发现桌面端并连接， 其他平台需首次手动填写连接地址。
+
+**需要手动连接时**，打开桌面端的 **设置 → 通用设置 → VS Code 连接**。该入口默认开启，曾关闭的话先重新开启。复制连接地址，在 VS Code 命令面板运行 **DSH: Connect to Desktop / 连接桌面端**，然后粘贴地址。
+
+已保存的手动地址优先使用，凭据由 VS Code SecretStorage 保存。Windows 同机连接中断时，扩展会尝试重连，失败后会提示更新地址。
+
+#### 方式二：使用 DSH CLI
+
+1. 安装 Node.js，版本要求见[兼容说明](docs/dsh-contract.md)。
+2. 在连接设置中选择 **DSH CLI**。扩展会检测已安装的 CLI，也可以手动选择可执行文件。
+3. 点击 **启动并连接**。
+
+**尚未安装 CLI 时**，点击 **在终端中安装**，按 Enter 执行安装命令。完成后点击 **重新检测 DSH**，再启动连接。默认安装 npm 的 `latest` 版本，也可以在 **DSH CLI 安装与版本** 中选择指定版本。
+
+也可以直接在终端安装：
+
+```sh
+npm install --global @deepseek-ai/dsh
+```
+
+## 开发与反馈
+
+- 本地开发见[构建说明](BUILD.md)、[贡献指南](CONTRIBUTING.md)和[开发者文档](docs/README.md)。
+- 反馈问题请提交 [Issue](https://github.com/mcdottok/vscode-dsh/issues)，附上使用的连接方式和复现步骤。
+- 版本变更与后续计划见[更新日志](CHANGELOG.md)和[路线图](ROADMAP.md)。
 
 ## 许可与致谢
 
-MIT。基于 [Jabofish/deepseek-harness-vscode](https://github.com/Jabofish/deepseek-harness-vscode)，由 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 提供运行内核。本项目由社区独立维护。
+本扩展由社区独立维护，采用 [MIT 许可证](LICENSE)。
+
+感谢以下开源项目：
+
+| 项目                                                                                    | 贡献                    |
+| --------------------------------------------------------------------------------------- | ----------------------- |
+| [Jabofish/deepseek-harness-vscode](https://github.com/Jabofish/deepseek-harness-vscode) | 早期的 VS Code 扩展实现 |
+| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)                     | 扩展连接的 DSH 运行时   |
