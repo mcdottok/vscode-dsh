@@ -86,9 +86,8 @@ function renderIcon(name: IconName): ReactElement {
     case 'new-chat':
       return (
         <>
-          <path d="M12 4H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-7" />
-          <path d="m17 3 4 4-10 10-5 1 1-5L17 3Z" />
-          <path d="m14 6 4 4" />
+          <path d="M3 21v-9a9 9 0 1 1 9 9H3Z" />
+          <path d="M12 8.5v7m-3.5-3.5h7" />
         </>
       )
     case 'add':
