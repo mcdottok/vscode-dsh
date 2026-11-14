@@ -151,6 +151,7 @@ export function GeneralSettingsTab(input: GeneralSettingsTabProps): ReactElement
                 target="_blank"
                 rel="noopener noreferrer"
               >
+                <Icon name="open-in-editor" />
                 {t('settings.extensionCheckUpdates')}
               </a>
               <label className="dsh-settings__update-checkbox">
@@ -177,7 +178,11 @@ export function GeneralSettingsTab(input: GeneralSettingsTabProps): ReactElement
           }
         />
       </SettingCard>
-      <SettingCard ariaLabel={t('settings.extensionPreferences')}>
+      <SettingCard
+        ariaLabel={t('settings.extensionPreferences')}
+        title={t('settings.extensionPreferences')}
+        className="dsh-settings__general-interface"
+      >
         <SettingRow
           title={t('settings.language.label')}
           control={
@@ -200,8 +205,6 @@ export function GeneralSettingsTab(input: GeneralSettingsTabProps): ReactElement
             </div>
           }
         />
-      </SettingCard>
-      <SettingCard ariaLabel={t('settings.appearance.label')}>
         <SettingRow
           title={t('settings.appearance.label')}
           control={
@@ -222,11 +225,6 @@ export function GeneralSettingsTab(input: GeneralSettingsTabProps): ReactElement
             </div>
           }
         />
-      </SettingCard>
-      <SettingCard
-        ariaLabel={t('settings.conversationAppearance')}
-        title={t('settings.conversationAppearance')}
-      >
         <SettingRow
           title={t('settings.conversationFontSize')}
           control={renderFontSizeControl(props.conversationFontSize, props.onConversationFontSizeChange, t)}
