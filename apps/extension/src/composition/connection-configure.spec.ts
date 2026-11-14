@@ -22,6 +22,7 @@ vi.mock('vscode', () => ({
                   : undefined,
       }),
       update: async (key: string, value: unknown): Promise<void> => {
+        harness.writes.push(key)
         if (key === 'connection.serverUrl')
           harness.configuration.connection.serverUrl = typeof value === 'string' ? value : ''
         if (key === 'connection.mode')
@@ -56,6 +57,7 @@ const harness = vi.hoisted(() => {
       readonly autoStart: boolean
     }>,
     transportListeners: [] as Array<(signal?: AbortSignal) => Promise<unknown>>,
+    writes: [] as string[],
     afterWrite: undefined as ((key: string) => Promise<void>) | undefined,
     update: vi.fn().mockResolvedValue(false),
   }
@@ -131,6 +133,7 @@ describe('connection.configure reconnect', () => {
     harness.isTrusted = true
     harness.connects.length = 0
     harness.transportListeners.length = 0
+    harness.writes.length = 0
     harness.configuration.connection.mode = 'auto'
     harness.configuration.connection.serverUrl = ''
     harness.configuration.connection.runtimeVersion = ''
@@ -147,6 +150,16 @@ describe('connection.configure reconnect', () => {
     expect(harness.configuration.connection.runtimeVersion).toBe('0.2.1-rc.2')
     await lifecycle().configureConnection('desktop', 'http://127.0.0.1:43121/?token=fixture-only')
     expect(harness.configuration.connection.runtimeVersion).toBe('')
+  })
+
+  it('skips writing settings that already match a manual Desktop selection', async () => {
+    const subject = lifecycle()
+    await subject.configureConnection('desktop', 'http://127.0.0.1:43120/?token=fixture')
+    harness.writes.length = 0
+
+    await subject.configureConnection('desktop', 'http://127.0.0.1:43120/?token=fixture')
+
+    expect(harness.writes).toEqual([])
   })
 
   it('keeps a same-origin version when the pasted Desktop command supplies no discovered version', async () => {
@@ -311,8 +324,23 @@ describe('connection.configure reconnect', () => {
       'Settings write failed',
     )
     await subject.configureConnection('auto', undefined)
+    harness.configuration.connection.serverUrl = 'http://127.0.0.1:4311'
     await subject.reconnectOnTransportChange()
-    expect(harness.connects.map((request) => request.mode)).toEqual(['auto', 'auto'])
+    expect(harness.connects.map((request) => request.mode)).toEqual(['auto', 'custom'])
+  })
+
+  it('reconnects each window once when shared settings change and ignores duplicate notifications', async () => {
+    const windows = [lifecycle(), lifecycle()]
+    await Promise.all(windows.map((window) => window.connect()))
+    await Promise.all(windows.map((window) => window.reconnectOnTransportChange()))
+    expect(harness.connects).toHaveLength(2)
+
+    harness.configuration.connection.serverUrl = 'http://127.0.0.1:4311'
+    await Promise.all(windows.map((window) => window.reconnectOnTransportChange()))
+    await Promise.all(windows.map((window) => window.reconnectOnTransportChange()))
+    expect(harness.connects).toHaveLength(4)
+    for (const request of harness.connects.slice(2))
+      expect(request).toMatchObject({ endpoint: { port: 4311 } })
   })
 
   it('does not write settings for an already-cancelled submission', async () => {
@@ -787,6 +815,7 @@ describe('connection.configure reconnect', () => {
   it('persists a paired restart address without pinning a version', async () => {
     const f = automaticFixture()
     await f.subject.connect()
+    harness.writes.length = 0
     f.resolve.mockResolvedValue('http://127.0.0.1:43121/?token=fixture-restarted')
     f.discover.mockClear()
     f.authorizePaired.mockClear()
@@ -805,6 +834,12 @@ describe('connection.configure reconnect', () => {
     )
     expect(f.discover).not.toHaveBeenCalled()
     expect(f.authorize).not.toHaveBeenCalled()
+    expect(harness.writes).toEqual(['connection.serverUrl'])
+
+    const connectionCount = f.connect.mock.calls.length
+    await f.subject.reconnectOnTransportChange()
+    expect(f.connect).toHaveBeenCalledTimes(connectionCount)
+    expect(harness.writes).toEqual(['connection.serverUrl'])
   })
 
   it.each([

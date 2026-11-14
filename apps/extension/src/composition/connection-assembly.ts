@@ -475,6 +475,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
   let resetRevision = 0
   let resettingConnection = false
   let automaticConnectionPaused = false
+  let transportSettingsSnapshot: string | undefined
   const tracePreparation = async <T>(
     phase: DesktopPreparationPhase,
     attempt: number | undefined,
@@ -521,6 +522,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
     const selectionRevision = configurationRevision
     automaticConnectionPaused = false
     const current = configuration.read()
+    transportSettingsSnapshot = JSON.stringify(current.connection)
     const development = usesDevelopmentRuntime(context)
     const automaticOrigin =
       deps.discoverAutomaticDesktop === undefined
@@ -879,6 +881,11 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
   ): Promise<void> => {
     for (const [key, value] of writes) {
       assertCurrent()
+      const inspected = settings.inspect<unknown>(key)
+      // Compare at the write target. Workspace overrides can mask the global value.
+      const globalValue = inspected?.globalValue
+      const current = globalValue === undefined ? inspected?.defaultValue : globalValue
+      if (Object.is(current, value)) continue
       await settings.update(key, value, vscode.ConfigurationTarget.Global)
       assertCurrent()
     }
@@ -1008,6 +1015,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
       if (deps.discoverAutomaticDesktop !== undefined)
         await context.globalState.update(AUTOMATIC_DESKTOP_ORIGIN, endpoint.baseUrl)
       assertCurrent()
+      transportSettingsSnapshot = JSON.stringify(configuration.read().connection)
     } catch (error) {
       if (revision === configurationRevision) {
         await writeTransportSettings(vscode.workspace.getConfiguration('dsh'), [
@@ -1045,8 +1053,12 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
     )
     return operation
   }
-  const reconnectOnTransportChange = (signal?: AbortSignal): Promise<unknown> => {
-    if (configuringTransport || automaticConnectionPaused) return Promise.resolve(undefined)
+  const reconnectOnTransportChange = async (signal?: AbortSignal): Promise<unknown> => {
+    if (configuringTransport || automaticConnectionPaused) return
+    // A global write can notify other windows even when their effective settings have not changed.
+    const next = JSON.stringify(configuration.read().connection)
+    if (next === transportSettingsSnapshot) return
+    transportSettingsSnapshot = next
     configurationRevision++
     return reconnect(signal, 'transport-change', true)
   }
@@ -1171,6 +1183,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
         if (revision !== configurationRevision)
           throw new DOMException('Connection settings changed.', 'AbortError')
         signal?.throwIfAborted()
+        transportSettingsSnapshot = JSON.stringify(configuration.read().connection)
       } finally {
         configuringTransport = false
       }
