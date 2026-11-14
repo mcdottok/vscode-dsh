@@ -51,7 +51,7 @@ function createHarness(
 }
 
 describe('runtime installer', () => {
-  it('focuses a fresh terminal and fills the pinned command without executing it', async () => {
+  it('focuses a fresh terminal and fills the latest install command without executing it', async () => {
     const harness = createHarness()
 
     await harness.installer.install()
@@ -117,13 +117,13 @@ describe('runtime installer', () => {
     expect(harness.update).not.toHaveBeenCalled()
   })
 
-  it('copies the pinned install command and opens the documentation link', async () => {
+  it('copies the latest install command and opens the documentation link', async () => {
     const harness = createHarness()
 
     await harness.installer.copyInstallCommand()
     await harness.installer.openDocumentation()
 
-    expect(INSTALL_COMMAND).toBe('npm install --global "@deepseek-ai/dsh@0.2.1-rc.2"')
+    expect(INSTALL_COMMAND).toBe('npm install --global "@deepseek-ai/dsh@latest"')
     expect(harness.writeText).toHaveBeenCalledWith(INSTALL_COMMAND)
     expect(harness.openExternal).toHaveBeenCalledWith({
       value: 'https://github.com/deepseek-ai/deepseek-harness',

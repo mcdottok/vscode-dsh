@@ -108,16 +108,14 @@ else {
 const publishedVersion = code.match(
   /LATEST_PUBLISHED_DSH_VERSION = '(\d+\.\d+\.\d+-(?:rc|alpha)\.\d+)'/u,
 )?.[1]
-const installerVersion = code.match(/DEFAULT_INSTALL_DSH_VERSION = '(\d+\.\d+\.\d+-(?:rc|alpha)\.\d+)'/u)?.[1]
+const installerTag = code.match(/DEFAULT_INSTALL_DSH_TAG = '([a-z-]+)'/u)?.[1]
 const documentedPublished = contract.match(
   /最新发布包为 `@deepseek-ai\/dsh@(\d+\.\d+\.\d+-(?:rc|alpha)\.\d+)`/u,
 )?.[1]
-const documentedInstaller = contract.match(
-  /引导安装默认包为 `@deepseek-ai\/dsh@(\d+\.\d+\.\d+-(?:rc|alpha)\.\d+)`/u,
-)?.[1]
+const documentedInstaller = contract.match(/引导安装默认包为 `@deepseek-ai\/dsh@([a-z-]+)`/u)?.[1]
 if (publishedVersion === undefined || documentedPublished !== publishedVersion)
   errors.push('docs/dsh-contract.md: latest published version differs from code')
-if (installerVersion === undefined || documentedInstaller !== installerVersion)
+if (installerTag === undefined || documentedInstaller !== installerTag)
   errors.push('docs/dsh-contract.md: installer default differs from code')
 
 const matrix = readFileSync(path.join(docsRoot, 'capability-matrix.md'), 'utf8')

@@ -1,6 +1,6 @@
 import type * as vscode from 'vscode'
 import { AppError } from '@dsh-vscode/domain'
-import { DEFAULT_INSTALL_DSH_VERSION, isDshPackageVersion } from '@dsh-vscode/dsh-adapter'
+import { isDshPackageVersion } from '@dsh-vscode/dsh-adapter'
 
 import { DSH_DOCUMENTATION_URL, dshInstallCommand, INSTALL_COMMAND } from '../constants.js'
 
@@ -15,8 +15,8 @@ export interface RuntimeInstallerDependencies {
 export class RuntimeInstaller {
   public constructor(private readonly dependencies: RuntimeInstallerDependencies) {}
 
-  public install(version: string = DEFAULT_INSTALL_DSH_VERSION): Promise<void> {
-    if (version !== version.trim() || !isDshPackageVersion(version))
+  public install(version?: string): Promise<void> {
+    if (version !== undefined && (version !== version.trim() || !isDshPackageVersion(version)))
       return Promise.reject(
         new AppError({
           code: 'INVALID_CONFIGURATION',
@@ -34,7 +34,7 @@ export class RuntimeInstaller {
       )
     const terminal = this.dependencies.window.createTerminal({ name: 'Install DSH CLI' })
     terminal.show(false)
-    terminal.sendText(dshInstallCommand(version), false)
+    terminal.sendText(version === undefined ? INSTALL_COMMAND : dshInstallCommand(version), false)
     return Promise.resolve()
   }
 

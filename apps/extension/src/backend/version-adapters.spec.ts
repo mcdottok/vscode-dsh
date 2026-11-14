@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  DEFAULT_INSTALL_DSH_VERSION,
+  DEFAULT_INSTALL_DSH_TAG,
   LATEST_PUBLISHED_DSH_VERSION,
   LATEST_SUPPORTED_DSH_VERSION,
   Rc202VersionAdapter,
@@ -97,6 +97,6 @@ describe('production version adapter registry', () => {
     // and the previously verified guided install default.
     expect(LATEST_PUBLISHED_DSH_VERSION).toBe('0.2.2-rc.2')
     expect(LATEST_SUPPORTED_DSH_VERSION).toBe('0.2.2-rc.2')
-    expect(DEFAULT_INSTALL_DSH_VERSION).toBe('0.2.1-rc.2')
+    expect(DEFAULT_INSTALL_DSH_TAG).toBe('latest')
   })
 })
