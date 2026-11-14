@@ -174,7 +174,10 @@ export function ConnectionSettingsTab(input: GeneralSettingsTabProps): ReactElem
                 </div>
                 {connectionChoice === 'custom' ? (
                   <details className="dsh-settings__connection-manual">
-                    <summary>{t('settings.connectionManualAddress')}</summary>
+                    <summary>
+                      <Icon name="chevron-down" />
+                      {t('settings.connectionManualAddress')}
+                    </summary>
                     <label className="dsh-settings__connection-endpoint">
                       <span>{t('settings.connectionEndpoint')}</span>
                       <input
