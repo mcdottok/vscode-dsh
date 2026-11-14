@@ -63,6 +63,8 @@ export interface ConnectionRequest {
   readonly endpoint?: BackendEndpoint
   /** The Host has an explicit Desktop selection for this exact endpoint. */
   readonly desktopEndpoint?: true
+  /** The Host obtained the requested endpoint through authenticated local Desktop IPC. */
+  readonly localDesktopPairing?: true
   /** Explicit local targets. Failure must never redirect to another endpoint or start an isolated instance. */
   readonly allowedEndpoints?: readonly BackendEndpoint[]
   /**

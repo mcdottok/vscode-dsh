@@ -4,8 +4,6 @@ import path from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vitest'
 import { DesktopAutoDiscovery, allowsAutomaticDesktop } from './desktop-auto-discovery.js'
-import type { BackendCandidate } from '@dsh-vscode/domain'
-
 const directories: string[] = []
 afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })))
@@ -13,15 +11,6 @@ afterEach(async () => {
 const now = 1_800_000_000_000
 const key = 'K'.repeat(43)
 const endpoint = { host: '127.0.0.1', port: 43120, baseUrl: 'http://127.0.0.1:43120' }
-const candidate: BackendCandidate = {
-  endpoint,
-  pid: 17,
-  source: 'process-scan',
-  runtimeVersion: '0.2.1-rc.2',
-  runtimeVersionEvidence: 'process-manifest',
-  executablePath: 'C:\\fixture\\DSH Desktop.exe',
-  confidence: 90,
-}
 async function fixture(overrides: Record<string, unknown> = {}): Promise<string> {
   const directory = await mkdtemp(path.join(tmpdir(), 'desktop-auto-fixture-'))
   directories.push(directory)
@@ -39,14 +28,13 @@ async function fixture(overrides: Record<string, unknown> = {}): Promise<string>
   return directory
 }
 
-it('bootstraps only after both native process identity and the authenticated returned listener agree', async () => {
+it('uses the account-protected grant and accepts only an authenticated numeric loopback address', async () => {
   const unprotect = vi.fn(() => Promise.resolve(JSON.stringify({ version: 1, key })))
   const resolve = vi.fn(() => Promise.resolve(endpoint.baseUrl + '/?token=fixture'))
   const discovery = new DesktopAutoDiscovery({
     directory: await fixture(),
     platform: 'win32',
     now: () => now,
-    candidates: () => Promise.resolve([candidate]),
     unprotect,
     resolve,
   })
@@ -55,29 +43,19 @@ it('bootstraps only after both native process identity and the authenticated ret
     url: endpoint.baseUrl + '/?token=fixture',
     key,
     endpoint,
-    runtimeVersion: '0.2.1-rc.2',
   })
   expect(unprotect).toHaveBeenCalledTimes(1)
-  resolve.mockResolvedValueOnce('http://127.0.0.1:43121/?token=fixture')
+  resolve.mockResolvedValueOnce('http://192.0.2.1:43121/?token=fixture')
   expect(await discovery.discover()).toBeUndefined()
 })
 
-it('ignores stale/foreign records and does not decrypt or contact unverified processes', async () => {
+it('ignores stale records before decrypting or contacting a pipe', async () => {
   const unprotect = vi.fn(() => Promise.resolve(JSON.stringify({ version: 1, key })))
   const resolve = vi.fn(() => Promise.resolve(endpoint.baseUrl + '/?token=fixture'))
   const directory = await fixture({ updatedAt: now - 20_000 })
   const stale = new DesktopAutoDiscovery({ directory, platform: 'win32', now: () => now, unprotect, resolve })
   expect(await stale.available()).toBe(false)
   expect(await stale.discover()).toBeUndefined()
-  const foreign = new DesktopAutoDiscovery({
-    directory: await fixture(),
-    platform: 'win32',
-    now: () => now,
-    candidates: () => Promise.resolve([{ ...candidate, pid: 18 }]),
-    unprotect,
-    resolve,
-  })
-  expect(await foreign.discover()).toBeUndefined()
   expect(unprotect).not.toHaveBeenCalled()
   expect(resolve).not.toHaveBeenCalled()
 })
@@ -89,7 +67,6 @@ it('contains corrupt or another-account grants, and honors cancellation', async 
     directory: await fixture(),
     platform: 'win32',
     now: () => now,
-    candidates: () => Promise.resolve([candidate]),
     unprotect,
     resolve,
   })
@@ -132,7 +109,6 @@ it('requires a unique verified profile unless constrained by the existing secret
     directory,
     platform: 'win32',
     now: () => now,
-    candidates: () => Promise.resolve([candidate, { ...candidate, pid: 18, endpoint: otherEndpoint }]),
     unprotect: (value) =>
       Promise.resolve(
         JSON.stringify({ version: 1, key: value === Buffer.alloc(48).toString('base64') ? key : otherKey }),

@@ -26,13 +26,16 @@ function settingsTabOrientation(): SettingsTabOrientation {
 }
 
 export interface SettingsTabsProps {
+  readonly initialTab?: SettingsTab
   readonly panels: Readonly<Record<SettingsTab, ReactElement>>
 }
 
 export function SettingsTabs(props: SettingsTabsProps): ReactElement {
   const { t } = useI18n()
   const focused = useConversationLayout()?.layout === 'focused'
-  const [tab, setTab] = useState<SettingsTab>(() => (focused ? previousSection() : 'general'))
+  const [tab, setTab] = useState<SettingsTab>(
+    () => props.initialTab ?? (focused ? previousSection() : 'general'),
+  )
   const [pluginsVisited, setPluginsVisited] = useState(tab === 'plugins')
   const selectTab = (next: SettingsTab): void => {
     setTab(next)

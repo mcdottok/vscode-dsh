@@ -5,6 +5,7 @@ import { useDismissibleLayer } from '../../components/common/useDismissibleLayer
 import { Icon } from '../../ui/Icon.js'
 import type { CustomProviderTemplate } from './CustomProviderCard.js'
 import { useI18n } from '../../i18n.js'
+import { publicProtocolErrorCode } from '../../app/protocol-client.js'
 import { useStableCallback } from '../../app/useStableCallback.js'
 import {
   deriveCustomProviderTemplate,
@@ -63,6 +64,8 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
     onOpenChange,
   } = props
   const [settingsState, setSettingsState] = useState<LoadedSettings | undefined>(undefined)
+  const [savingAutoCheckUpdates, setSavingAutoCheckUpdates] = useState(false)
+  const [autoCheckUpdatesError, setAutoCheckUpdatesError] = useState(false)
   const [dshState, setDshState] = useState<DshSettingsState>({ status: 'loading' })
   const [dshSettingsSnapshotFresh, setDshSettingsSnapshotFresh] = useState(false)
   const dshSettingsOpenedRef = useRef(false)
@@ -161,7 +164,7 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
         setSettingsState({ value })
         if (value !== undefined) {
           setConnectionChoice(
-            value.connection.mode === 'custom'
+            props.initialTab === 'connection' || value.connection.mode === 'custom'
               ? 'custom'
               : value.connection.mode === 'attach-only'
                 ? 'unchanged'
@@ -175,7 +178,7 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
     return () => {
       cancelled = true
     }
-  }, [open, onLoadSettings, settingsState])
+  }, [open, onLoadSettings, props.initialTab, settingsState])
 
   // The drawer stays mounted while closed; dropping the cached answer makes
   // the next open re-read extension settings, which can change elsewhere.
@@ -186,6 +189,7 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
     setWasOpen(open)
     if (!open) {
       setSettingsState(undefined)
+      setAutoCheckUpdatesError(false)
       // Clear the private draft before a closed drawer can reopen.
       setConnectionEndpoint('')
       // DSH settings can change outside this drawer while it is closed.
@@ -345,6 +349,10 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
       })
       .catch((reason: unknown) => {
         if (openEpochRef.current !== epoch) return
+        if (publicProtocolErrorCode(reason) === 'DSH_NOT_FOUND') {
+          setConnectionError(t('settings.connectionCliMissing'))
+          return
+        }
         setConnectionError(reason instanceof Error ? reason.message : t('settings.connectionApplyFailed'))
       })
       .finally(() => setConnectionBusy(false))
@@ -449,7 +457,15 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
     if (dshUpdateBusy !== undefined || onCheckDshUpdates === undefined) return
     setDshUpdateError(undefined)
     setDshUpdateBusy('check')
+    const epoch = openEpochRef.current
     void onCheckDshUpdates(true)
+      .then((snapshot) => {
+        if (openEpochRef.current !== epoch) return
+        if (snapshot?.currentVersion === undefined && snapshot?.globalVersion === undefined) return
+        setConnectionError((message) =>
+          message === t('settings.connectionCliMissing') ? undefined : message,
+        )
+      })
       .catch((reason: unknown) =>
         setDshUpdateError(reason instanceof Error ? reason.message : t('settings.dshUpdateFailed')),
       )
@@ -473,7 +489,6 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
           return
         }
         if (snapshot.status === 'unavailable') setDshUpdateError(dshUpdateFailureMessage(snapshot.failure, t))
-        return snapshot
       })
       .catch((reason: unknown) =>
         setDshUpdateError(reason instanceof Error ? reason.message : t('settings.dshUpdateFailed')),
@@ -510,10 +525,30 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
     removingProviderId === undefined
       ? undefined
       : props.providers.find((provider) => provider.id === removingProviderId)
+  const changeAutoCheckUpdates = (enabled: boolean): void => {
+    if (savingAutoCheckUpdates || props.onSetAutoCheckUpdates === undefined) return
+    const epoch = openEpochRef.current
+    setSavingAutoCheckUpdates(true)
+    setAutoCheckUpdatesError(false)
+    void props
+      .onSetAutoCheckUpdates(enabled)
+      .then((autoCheckUpdates) => {
+        setSettingsState((current) =>
+          current?.value === undefined ? current : { value: { ...current.value, autoCheckUpdates } },
+        )
+      })
+      .catch(() => {
+        if (openEpochRef.current === epoch) setAutoCheckUpdatesError(true)
+      })
+      .finally(() => setSavingAutoCheckUpdates(false))
+  }
   const generalView = {
     props,
     t,
     settingsState,
+    savingAutoCheckUpdates,
+    autoCheckUpdatesError,
+    changeAutoCheckUpdates,
     refreshAccountDetails,
     acknowledgeAccountBonus,
     openAccountUsage,
@@ -628,6 +663,7 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
           </div>
         </header>
         <SettingsTabs
+          {...(props.initialTab === undefined ? {} : { initialTab: props.initialTab })}
           panels={{
             connection: <ConnectionSettingsTab {...generalView} />,
             general: <GeneralSettingsTab {...generalView} />,

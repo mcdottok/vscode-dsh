@@ -10,23 +10,30 @@ describe('RuntimeMissingView', () => {
 
   it('explains the setup path and exposes install, selection, command, retry, and docs actions', () => {
     const onOpenSettings = vi.fn()
+    const onOpenConnectionSettings = vi.fn()
+    const onAction = vi.fn()
     render(
       <RuntimeMissingView
         searchedLocations={['/usr/bin/dsh', '/usr/bin/dsh']}
         busyAction={undefined}
-        onAction={vi.fn()}
+        onAction={onAction}
         onRetry={vi.fn()}
         onOpenSettings={onOpenSettings}
+        onOpenConnectionSettings={onOpenConnectionSettings}
       />,
     )
 
-    expect(screen.getByRole('heading', { name: 'DSH was not found' })).toBeDefined()
-    expect(screen.getByText(/environment where this VS Code workspace runs/)).toBeDefined()
-    expect(screen.getByText(/After a manual installation, choose Retry/)).toBeDefined()
-    expect(screen.getByRole('button', { name: 'Install DSH' })).toBeDefined()
-    expect(screen.getByRole('button', { name: 'Select DSH' })).toBeDefined()
+    expect(screen.getByRole('heading', { name: 'DSH CLI was not found' })).toBeDefined()
+    expect(screen.getByText(/workspace environment or in global install locations/)).toBeDefined()
+    expect(screen.getByText(/Press Enter in the terminal to install/)).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: 'Install DSH CLI' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Try connecting to DSH Desktop' }))
+    expect(onAction.mock.calls).toEqual([['install']])
+    expect(onOpenConnectionSettings).toHaveBeenCalledOnce()
+    expect(screen.getByRole('button', { name: 'Select an existing CLI' })).toBeDefined()
+    fireEvent.click(screen.getByText('More options'))
     expect(screen.getByRole('button', { name: 'Copy command' })).toBeDefined()
-    expect(screen.getByRole('button', { name: 'Retry' })).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Recheck CLI' })).toBeDefined()
     fireEvent.click(screen.getByRole('button', { name: 'Open settings' }))
     expect(onOpenSettings).toHaveBeenCalledTimes(1)
     expect(screen.getByRole('button', { name: 'Docs' })).toBeDefined()

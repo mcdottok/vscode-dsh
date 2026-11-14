@@ -392,7 +392,13 @@ export class DshConnectionCoordinator {
               : hasVerifiedRuntimeIdentity && processSources.size === 1
                 ? [...processSources][0]
                 : undefined
-          return this.attach(verified, undefined, signal, generation, source)
+          const connected =
+            request.localDesktopPairing === true &&
+            isLoopbackEndpoint(endpoint) &&
+            verified.endpoint.baseUrl === endpoint.baseUrl
+              ? { ...verified, localDesktopPairing: true as const }
+              : verified
+          return this.attach(connected, undefined, signal, generation, source)
         }
       } catch (error) {
         await this.dependencies.endpointPreparation?.release?.(endpoint)
@@ -916,6 +922,7 @@ function sameRequest(left: ConnectionRequest | undefined, right: ConnectionReque
     left.autoStart === right.autoStart &&
     left.runtimeVersion === right.runtimeVersion &&
     left.desktopEndpoint === right.desktopEndpoint &&
+    left.localDesktopPairing === right.localDesktopPairing &&
     left.credentialRevision === right.credentialRevision &&
     left.allowedEndpoints?.map((endpoint) => endpoint.baseUrl).join('\0') ===
       right.allowedEndpoints?.map((endpoint) => endpoint.baseUrl).join('\0') &&

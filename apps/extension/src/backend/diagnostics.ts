@@ -163,7 +163,6 @@ const DIAGNOSTIC_EVENTS = new Set([
   'reconnect-attempt',
   'desktop-pairing-change',
   'desktop-preparation',
-  'desktop-discovery',
   'connection-recovery-failed',
   'connection-stream-lost',
   'account-default-model-initialization-failed',

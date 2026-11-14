@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { runInNewContext } from 'node:vm'
 
 import { build } from 'esbuild'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -8,6 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   assertBundleTranslatesImportMeta,
   createImportMetaUrlPlugin,
+  hardenSchemastery,
 } from '../../esbuild-import-meta-url.mjs'
 
 const temporaryDirectories: string[] = []
@@ -112,5 +114,31 @@ describe('esbuild import.meta.url handling', () => {
   it('is wired into the extension build', () => {
     const buildScript = readFileSync(new URL('../../esbuild.mjs', import.meta.url), 'utf8')
     expect(buildScript).toContain('createImportMetaUrlPlugin')
+  })
+})
+
+describe('Schemastery in the Extension Host bundle', () => {
+  it('keeps function callbacks and rejects source strings before they can execute', () => {
+    const source = [
+      'function readCallback(schema) {',
+      '  if (typeof schema.callback === "string") try {',
+      '    schema.callback = new Function("return " + schema.callback)();',
+      '  } catch {}',
+      '  return schema.callback;',
+      '}',
+      'readCallback',
+    ].join('\n')
+    const sandbox = { executed: false }
+    const readCallback = runInNewContext(hardenSchemastery(source), sandbox) as (schema: {
+      callback: string | (() => number)
+    }) => unknown
+    const callback = (): number => 42
+    expect(readCallback({ callback })).toBe(callback)
+    expect(() => readCallback({ callback: '(globalThis.executed = true)' })).toThrow(/unsupported/u)
+    expect(sandbox.executed).toBe(false)
+  })
+
+  it('requires review when the upstream callback implementation changes', () => {
+    expect(() => hardenSchemastery('function Schema(options) {}')).toThrow(/implementation changed/u)
   })
 })

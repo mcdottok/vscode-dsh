@@ -37,7 +37,7 @@ DSH 版本身份及版本间契约差异位于 `packages/dsh-adapter/src/version
 
 ## 连接与进程
 
-未指定连接目标时，`auto` 优先针对上次成功的本机端点核对当前监听进程、命令行和包版本；记录中的 PID 只用于缩小查询，不能作为身份或所有权证据。成功即可附加，否则完成官方默认、经校验的 companion registry 和受限进程发现，全部不可用后才允许启动本机 DSH。手动设置服务地址时按单目标 `custom` 连接，显式附加端口列表则严格限制候选；失败不改连其他目标或自动启动，用户仍可改设置、重试或切回 auto。`attach-only` 不启动；`new-isolated` 只创建扩展持有的实例。候选有界并行校验，按优先级选定一个连接；不扫描任意端口范围。修改设置取消旧连接尝试，设置写入保持串行，旧结果不得回填新连接。
+未指定连接目标时，Windows 本机 Desktop 使用配套插件的账户加密登记和命名管道握手。其他本机候选依次来自上次成功的回环端点、DSH 默认回环端口和约定目录的 companion registry。Host 验证候选服务的协议，不枚举系统进程或监听端口。手动设置服务地址时按单目标 `custom` 连接，显式附加端口列表严格限制候选；失败不改连其他目标或自动启动。`attach-only` 不启动；`new-isolated` 只创建扩展持有的实例。修改设置取消旧连接尝试，设置写入保持串行，旧结果不得回填新连接。
 
 | 来源                                 | 所有权     | 断开或停用时                                       |
 | ------------------------------------ | ---------- | -------------------------------------------------- |
@@ -83,6 +83,7 @@ Job 输出的 `at`/`next` 是 UTF-8 字节偏移，首次数据帧可合法重�
 ## 安全规则
 
 - DSH 网络目标仅限经规范化校验的 HTTP(S) origin 和合法端口：本机发现默认只接受 `127.0.0.1`/`localhost`，`custom` 模式允许用户显式配置的远程地址；Webview 不直接联网、读文件或启动进程。
+- Extension Host 打包时拒绝 Schemastery 从字符串恢复回调，保留依赖代码定义的函数回调。设置的序列化 schema 仅作为数据读取。
 - Webview CSP 使用 nonce，禁止远程脚本、`unsafe-eval`、内联事件和任意 frame；模型 Markdown 禁止原始 HTML，链接只接受安全 scheme 并由 Host 打开。
 - Secret 经 VS Code 密码输入或 SecretStorage 交给 Extension Host 和本机 DSH；Webview 只见 configured/missing，Secret 不进入日志、状态、fixture 或剪贴板。
 - 日志以字段 allowlist 为准，对 prompt、body、response、工具输入输出、token、authorization、password、secret 和路径做递归脱敏；诊断只发布有界的版本、状态、来源类别、可重连标志及脱敏日志。完整 endpoint、PID、环境变量和堆栈不外传。

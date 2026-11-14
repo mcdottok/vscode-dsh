@@ -95,6 +95,13 @@ export const settingsRequestSchemas = [
   z.object({ type: z.literal('extensionSettings.read'), ...requestBase }).strict(),
   z
     .object({
+      type: z.literal('extensionSettings.setAutoCheckUpdates'),
+      ...requestBase,
+      payload: z.object({ enabled: z.boolean() }).strict(),
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal('settings.update'),
       ...requestBase,
       payload: z

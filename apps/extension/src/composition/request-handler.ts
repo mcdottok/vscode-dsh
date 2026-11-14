@@ -10,6 +10,7 @@ import { EditorChatSurfaceManager } from '../view/editor-chat-surface-manager.js
 import { WebviewMessageRouter } from '../view/message-router.js'
 import { publicWorkspaceSummary } from '../view/public-value.js'
 import { requestOptionalProviderApiKey, requestProviderSecret } from '../vscode/credential-input.js'
+import { VSIX_UPDATE_SETTING } from '../vscode/extension-updates.js'
 import { createAttachmentRequestHandler, isAttachmentRequest } from './attachment-request-handler.js'
 import {
   publicValue as projectPublicValue,
@@ -325,9 +326,14 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
     if (request.type === 'connection.retry') {
       openingConnection?.abort.abort()
       openingConnection = undefined
+      runtimeLocator.invalidate()
       return reconnect(signal)
     }
     if (request.type === 'view.openLink') return openMarkdownLink(request.payload.href)
+    if (request.type === 'extension.update.dismiss') {
+      await deps.extensionUpdates?.dismiss(request.payload.version)
+      return undefined
+    }
     if (request.type === 'view.showInFolder') return openMarkdownLink(request.payload.href, true)
     if (request.type === 'runtime.action') {
       if (request.payload.action === 'connect-desktop') {
@@ -343,9 +349,7 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
         return { requested: true }
       }
       await runtimeUseCases.execute(request.payload.action)
-      if (request.payload.action === 'install' || request.payload.action === 'select') {
-        // Install or select may move or replace the executable; the memoized
-        // lookup and its persisted hint must not outlive that change.
+      if (request.payload.action === 'select') {
         runtimeLocator.invalidate()
         return connect(signal)
       }
@@ -354,11 +358,8 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
     if (request.type === 'runtime.update.check')
       return publicValue(await runtimeUseCases.checkForUpdates(request.payload.force === true, signal))
     if (request.type === 'runtime.update.install') {
-      const snapshot = await runtimeUseCases.installVersion(request.payload.version, signal)
-      // The global install replaced the executable behind the same path; drop
-      // the memoized version so the next connection reports the new one.
-      runtimeLocator.invalidate()
-      return publicValue(snapshot)
+      if (!vscode.workspace.isTrusted) throw workspaceTrustRequired()
+      return publicValue(await runtimeUseCases.installVersion(request.payload.version, signal))
     }
     if (request.type === 'diagnostics.show') {
       diagnostics.show()
@@ -657,14 +658,20 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
       await vscode.commands.executeCommand('workbench.action.openGlobalKeybindings')
       return undefined
     }
+    if (request.type === 'extensionSettings.setAutoCheckUpdates') {
+      const settings = vscode.workspace.getConfiguration()
+      await settings.update(VSIX_UPDATE_SETTING, request.payload.enabled, vscode.ConfigurationTarget.Global)
+      return vscode.workspace.getConfiguration().get<boolean>(VSIX_UPDATE_SETTING, true)
+    }
     if (request.type === 'extensionSettings.read')
-      return publicValue(
-        publicExtensionSettings(
+      return publicValue({
+        ...publicExtensionSettings(
           configuration.read(),
           extensionVersion,
           typeof context.workspaceState.get<unknown>('dsh.desktop.lastEndpoint') === 'string',
         ),
-      )
+        autoCheckUpdates: vscode.workspace.getConfiguration().get<boolean>(VSIX_UPDATE_SETTING, true),
+      })
     if (request.type === 'settings.update')
       return settingsUseCases.update(
         request.payload.path,
@@ -899,6 +906,10 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
     await postEventTo(surfaceId, 'ui.surface.assigned', assigned, isCurrent)
     await postEventTo(surfaceId, 'ui.surface.handoff', { editorChats: surfaces.editorCount }, isCurrent)
   }
+  const replayExtensionUpdate = (surfaceId: string): void => {
+    const update = deps.extensionUpdates?.snapshot()
+    if (update != null) void postEventTo(surfaceId, 'extension.update', update).catch(() => undefined)
+  }
   const provider = new DshWebviewViewProvider({
     extensionUri: context.extensionUri,
     onMessage: (message) => router.handle(message, SIDEBAR_SURFACE_ID),
@@ -916,6 +927,7 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
     onBecameReady: () => {
       diagnostics.log('info', 'webview-ready', { requestType: 'app.ready', surfaceKind: 'sidebar' })
       deps.transcript.setVisible(SIDEBAR_SURFACE_ID, provider.visible)
+      replayExtensionUpdate(SIDEBAR_SURFACE_ID)
     },
     onViewDisposed: () => {
       openingConnection?.abort.abort()
@@ -934,6 +946,7 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
     onBecameReady: (surface) => {
       diagnostics.log('info', 'webview-ready', { requestType: 'app.ready', surfaceKind: surface.kind })
       deps.transcript.setVisible(surface.surfaceId, surface.visible)
+      replayExtensionUpdate(surface.surfaceId)
     },
     onDisposed: (surface) => onSurfaceWorkCancelled(surface.surfaceId),
     onVisibilityChanged: (surface) =>

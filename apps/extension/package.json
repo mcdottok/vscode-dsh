@@ -20,13 +20,27 @@
   ],
   "keywords": [
     "deepseek",
+    "deepseek-harness",
     "dsh",
+    "dsh desktop",
+    "dsh cli",
     "agent",
-    "coding assistant"
+    "coding agent",
+    "coding assistant",
+    "ai coding",
+    "code chat",
+    "code review",
+    "session resume"
   ],
   "extensionKind": [
     "workspace"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "%extension.workspaceTrust.description%"
+    }
+  },
   "main": "./dist/extension.cjs",
   "activationEvents": [
     "onStartupFinished",
@@ -112,7 +126,7 @@
       {
         "command": "dsh.openSidebar",
         "title": "DSH Coding Agent: Open Chat / 打开聊天",
-        "icon": "resources/dsh.svg"
+        "icon": "resources/dsh-open-chat.svg"
       },
       {
         "command": "dsh.connectDesktop",
@@ -398,6 +412,12 @@
     "configuration": {
       "title": "DSH Coding Agent",
       "properties": {
+        "dsh.extension.autoCheckUpdates": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "%extension.autoCheckUpdates.description%"
+        },
         "dsh.editor.enabled": {
           "type": "boolean",
           "default": true,

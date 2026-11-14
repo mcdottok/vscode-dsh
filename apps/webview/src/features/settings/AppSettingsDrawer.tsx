@@ -20,13 +20,13 @@ function loadSettingsDrawer(): Promise<ComponentType<DrawerProps>> {
 }
 
 interface AppSettingsDrawerProps {
+  readonly initialTab?: DrawerProps['initialTab']
   readonly state: Pick<
     ReturnType<AppStore['getState']>,
     | 'drawer'
     | 'backend'
     | 'connectedDshVersion'
     | 'dshUpdate'
-    | 'dshUpdateProgress'
     | 'providers'
     | 'models'
     | 'pluginInstallOperation'
@@ -62,6 +62,7 @@ interface AppSettingsDrawerProps {
 }
 
 export function AppSettingsDrawer({
+  initialTab,
   state,
   store,
   themePreference,
@@ -107,6 +108,7 @@ export function AppSettingsDrawer({
   }
   return (
     <LoadedSettingsDrawer
+      {...(initialTab === undefined ? {} : { initialTab })}
       open={state.drawer === 'settings'}
       onOpenChange={(open) => store.setDrawer(open ? 'settings' : undefined)}
       connected={state.backend.kind === 'connected'}
@@ -114,7 +116,6 @@ export function AppSettingsDrawer({
       onConfigureConnection={(mode, endpoint) => store.configureConnection(mode, endpoint)}
       onConnectDesktop={() => store.runtimeAction('connect-desktop')}
       dshUpdate={state.dshUpdate}
-      dshUpdateProgress={state.dshUpdateProgress}
       onCheckDshUpdates={(force) => store.checkDshUpdates(force)}
       onInstallDshVersion={(version) => store.installDshVersion(version)}
       theme={themePreference}
@@ -127,6 +128,9 @@ export function AppSettingsDrawer({
       providers={state.providers}
       models={state.models}
       onLoadSettings={() => store.readSettings()}
+      {...(store.setAutoCheckUpdates === undefined
+        ? {}
+        : { onSetAutoCheckUpdates: store.setAutoCheckUpdates })}
       onLoadDshSettings={readDshSettingsForUi}
       onOpenDshSettingsDocument={() => store.openDshSettingsDocument()}
       onOpenKeyboardShortcuts={() => store.openKeyboardShortcuts()}

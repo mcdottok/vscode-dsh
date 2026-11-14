@@ -7,7 +7,7 @@ import {
   AUTOMATIC_DESKTOP_ORIGIN,
 } from './backend/desktop-auto-discovery.js'
 import { connectDesktop } from './vscode/connect-desktop.js'
-import { WindowsDesktopDiscoveryProvider } from './backend/discovery/windows-desktop-provider.js'
+import { ExtensionUpdates, VSIX_UPDATE_SETTING } from './vscode/extension-updates.js'
 import type { DshRuntimeUpdateProgress, EditorContextOwner, SessionSummary } from '@dsh-vscode/domain'
 import {
   featureHostEnvelopeSchema,
@@ -354,21 +354,6 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
     },
     onDesktopRecoveryFailure: (code) =>
       diagnostics.connectionProgress({ phase: 'connect', status: 'failed', code }),
-    discoverDesktopVersion: async (endpoint, signal) => {
-      const candidates = await new WindowsDesktopDiscoveryProvider(
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        (entry) => diagnostics.log('info', 'desktop-discovery', { ...entry }),
-      ).discoverEndpoints([endpoint], signal)
-      const versions = new Set(
-        candidates
-          .filter((candidate) => candidate.runtimeVersionEvidence === 'process-manifest')
-          .map((candidate) => candidate.runtimeVersion),
-      )
-      return versions.size === 1 ? [...versions][0] : undefined
-    },
     context,
     configuration,
     coordinator,
@@ -526,7 +511,14 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
     promptTemplateUseCases,
     currentWorkspaceFolders,
   })
+  const extensionUpdates = new ExtensionUpdates({
+    installedVersion: extensionVersion,
+    state: context.globalState,
+    isEnabled: () => vscode.workspace.getConfiguration().get<boolean>(VSIX_UPDATE_SETTING, true),
+    publish: (update) => postEvent('extension.update', update),
+  })
   const gateway = createRequestGateway({
+    extensionUpdates,
     prepareEditorSession: (sessionId, signal) => commands.editorCompanion.prepareSession(sessionId, signal),
     transcript,
     resyncView: async () => {
@@ -620,14 +612,10 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
     connectDesktop: () =>
       connectDesktop({
         window: vscode.window,
-        discover: (endpoint) =>
-          new WindowsDesktopDiscoveryProvider(undefined, undefined, undefined, undefined, (entry) =>
-            diagnostics.log('info', 'desktop-discovery', { ...entry }),
-          ).discoverEndpoints([endpoint]),
-        connect: (endpoint, token, version) =>
+        connect: (endpoint, token) =>
           configureConnection('custom', endpoint.baseUrl, undefined, {
             launchToken: token,
-            runtimeVersion: version ?? '',
+            runtimeVersion: '',
           }),
       }),
     authorizeExternalConnection: async () => {
@@ -654,8 +642,21 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
   })
 
   const root: CompositionRoot = {
-    start: commands.start,
+    start: () => {
+      context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration((event) => {
+          if (event.affectsConfiguration(VSIX_UPDATE_SETTING))
+            void extensionUpdates.configurationChanged().catch(() => undefined)
+        }),
+        vscode.window.onDidChangeWindowState(({ focused }) => {
+          if (focused) void extensionUpdates.check()
+        }),
+      )
+      void extensionUpdates.check()
+      return commands.start()
+    },
     dispose: () => {
+      extensionUpdates.dispose()
       transcript.dispose()
       disposeHostEventPipeline()
       return commands.dispose()

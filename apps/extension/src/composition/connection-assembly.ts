@@ -47,10 +47,6 @@ import { ConfiguredPortDiscoveryProvider } from '../backend/discovery/configured
 import { DefaultPortDiscoveryProvider } from '../backend/discovery/default-port-provider.js'
 import { CompositeInstanceDiscovery } from '../backend/discovery/instance-discovery.js'
 import { KnownInstanceDiscoveryProvider } from '../backend/discovery/known-instance-provider.js'
-import { LinuxProcessDiscoveryProvider } from '../backend/discovery/linux-process-provider.js'
-import { MacOsProcessDiscoveryProvider } from '../backend/discovery/macos-process-provider.js'
-import { WindowsProcessDiscoveryProvider } from '../backend/discovery/windows-process-provider.js'
-import { WindowsDesktopDiscoveryProvider } from '../backend/discovery/windows-desktop-provider.js'
 import { DshProcessSupervisor } from '../backend/process-supervisor.js'
 import { probeWebNoOpen } from '../backend/web-launch-probe.js'
 import type { RedactedDiagnostics } from '../backend/diagnostics.js'
@@ -59,14 +55,8 @@ import { resolveNpmExecutable } from '../backend/runtime-paths.js'
 import { resolveWindowsShim } from '../backend/windows-shim.js'
 import type { VsCodeConfigurationSource } from '../config/configuration-source.js'
 import { normalizeServerUrl } from '../config/configuration-source.js'
-import { DSH_PACKAGE } from '../constants.js'
 import { RuntimeInstaller } from '../vscode/install-runtime.js'
-import {
-  DshRuntimeUpdater,
-  type ExecuteRuntimeCommand,
-  type RuntimeCommandResult,
-} from '../vscode/update-runtime.js'
-import { RUNTIME_INSTALL_MAX_BUFFER, RUNTIME_INSTALL_TIMEOUT_MS } from '../vscode/runtime-installation.js'
+import { DshRuntimeUpdater, type ExecuteRuntimeCommand } from '../vscode/update-runtime.js'
 import {
   endpointFromServerUrl,
   extensionRuntimePathEntries,
@@ -190,12 +180,6 @@ export function createRuntimeAssembly(deps: RuntimeAssemblyDependencies): Runtim
     new KnownInstanceDiscoveryProvider(context.workspaceState),
     new DefaultPortDiscoveryProvider(),
     new CompanionRegistryDiscoveryProvider(),
-    new WindowsProcessDiscoveryProvider(),
-    new WindowsDesktopDiscoveryProvider(undefined, undefined, undefined, undefined, (entry) =>
-      diagnostics.log('info', 'desktop-discovery', { ...entry }),
-    ),
-    new LinuxProcessDiscoveryProvider(),
-    new MacOsProcessDiscoveryProvider(),
   ])
   const endpointCookies = new Map<string, string>()
   const network = new EndpointNetwork()
@@ -266,6 +250,8 @@ export function createRuntimeAssembly(deps: RuntimeAssemblyDependencies): Runtim
     readRuntimeVersion: async ({ endpoint, source }, signal) => {
       if (source !== 'configured' || !isLoopbackEndpoint(endpoint) || !externalConnection.cookie(endpoint))
         return undefined
+      const desktopVersion = await externalConnection.readDesktopRuntimeVersion(endpoint, signal)
+      if (desktopVersion !== undefined) return desktopVersion
       const deadline = AbortSignal.timeout(2_000)
       const transport = new AlphaLoopbackApiClient({ ...adapterOptions, endpoint })
       try {
@@ -338,78 +324,32 @@ export function createRuntimeAssembly(deps: RuntimeAssemblyDependencies): Runtim
     onProgress: (progress) => diagnostics.connectionProgress(progress),
   })
   const backendService = new BackendService()
-  let runtimeInstall: { readonly key: string; readonly operation: Promise<RuntimeCommandResult> } | undefined
-  const executeRuntimeCommand: ExecuteRuntimeCommand = (executable, args, options) => {
-    const installing = args[0] === 'install'
-    const key = [executable, ...args].join('\0')
-    if (installing && runtimeInstall !== undefined) {
-      if (runtimeInstall.key === key) return runtimeInstall.operation
-      return Promise.reject(
-        new AppError({
-          code: 'BACKEND_BUSY',
-          message: 'A DSH installation is already running. Wait for it to finish before changing versions.',
-          retryable: true,
-          context: { operation: 'runtime.install', reason: 'install-in-progress' },
-        }),
-      )
-    }
-    if (options.signal?.aborted === true)
-      return Promise.reject(
-        new AppError({
-          code: 'REQUEST_CANCELLED',
-          message: 'The DSH installation was cancelled.',
-          retryable: true,
-        }),
-      )
-    const run = async (): Promise<RuntimeCommandResult> => {
-      const resolved =
-        platform() === 'windows'
-          ? resolveWindowsShim(
-              executable,
-              'windows',
-              readTextFile,
-              windowsShimOptions('windows', { ...process.env, ...(options.env ?? {}) }),
-            )
-          : undefined
-      const resolvedExecutable = resolved?.executable ?? executable
-      const result = await execFileAsync(resolvedExecutable, [...(resolved?.prefixArgs ?? []), ...args], {
-        timeout: options.timeout,
-        maxBuffer: options.maxBuffer,
-        encoding: 'utf8',
-        env: runtimeEnvironment(options.env, resolvedExecutable),
-        // Closing a chat must not interrupt npm while it is replacing shared files.
-        ...(!installing && options.signal !== undefined ? { signal: options.signal } : {}),
-      })
-      return { stdout: result.stdout, stderr: result.stderr }
-    }
-    const operation = run()
-    if (installing) {
-      runtimeInstall = { key, operation }
-      const release = (): void => {
-        if (runtimeInstall?.operation === operation) runtimeInstall = undefined
-      }
-      void operation.then(release, release)
-    }
-    return operation
+  const executeRuntimeCommand: ExecuteRuntimeCommand = async (executable, args, options) => {
+    options.signal?.throwIfAborted()
+    const resolved =
+      platform() === 'windows'
+        ? resolveWindowsShim(
+            executable,
+            'windows',
+            readTextFile,
+            windowsShimOptions('windows', { ...process.env, ...(options.env ?? {}) }),
+          )
+        : undefined
+    const resolvedExecutable = resolved?.executable ?? executable
+    const result = await execFileAsync(resolvedExecutable, [...(resolved?.prefixArgs ?? []), ...args], {
+      timeout: options.timeout,
+      maxBuffer: options.maxBuffer,
+      encoding: 'utf8',
+      env: runtimeEnvironment(options.env, resolvedExecutable),
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    })
+    return { stdout: result.stdout, stderr: result.stderr }
   }
   const runtimeInstaller = new RuntimeInstaller({
-    tasks: vscode.tasks,
     window: vscode.window,
     env: vscode.env,
     Uri: vscode.Uri,
     workspace: vscode.workspace,
-    runInstall: async () => {
-      const os = platform()
-      const npm = resolveNpmExecutable(os, extensionRuntimePathEntries(os, process.env))
-      await executeRuntimeCommand(npm, ['install', '--global', DSH_PACKAGE], {
-        timeout: RUNTIME_INSTALL_TIMEOUT_MS,
-        maxBuffer: RUNTIME_INSTALL_MAX_BUFFER,
-      })
-    },
-    verifyInstall: async () => {
-      runtimeLocator.invalidate()
-      return (await runtimeLocator.locate()).runtime?.supported === true
-    },
     verifyExecutable: async (executable) => (await runtimeLocator.inspectExecutable(executable)).supported,
   })
   const runtimeUpdater = new DshRuntimeUpdater({
@@ -420,6 +360,7 @@ export function createRuntimeAssembly(deps: RuntimeAssemblyDependencies): Runtim
     locateRuntime: async (signal) => (await runtimeLocator.locate(signal)).runtime,
     onProgress: (progress) => onRuntimeUpdateProgress(progress),
     execute: executeRuntimeCommand,
+    openInstallTerminal: (version) => runtimeInstaller.install(version),
     environment: () => runtimeEnvironment(),
   })
   const runtimeUseCases = new RuntimeUseCases({
@@ -427,7 +368,10 @@ export function createRuntimeAssembly(deps: RuntimeAssemblyDependencies): Runtim
     selectExecutable: () => runtimeInstaller.selectExecutable(),
     copyInstallCommand: () => Promise.resolve(runtimeInstaller.copyInstallCommand()),
     openDocumentation: () => Promise.resolve(runtimeInstaller.openDocumentation()).then(() => undefined),
-    checkForUpdates: (force, signal) => runtimeUpdater.checkForUpdates(force, signal),
+    checkForUpdates: (force, signal) => {
+      if (force) runtimeLocator.invalidate()
+      return runtimeUpdater.checkForUpdates(force, signal)
+    },
     installVersion: (version, signal) => runtimeUpdater.installVersion(version, signal),
   })
   return {
@@ -459,7 +403,6 @@ type DesktopPreparationPhase =
   | 'pairing-record-check'
   | 'pairing-resolve'
   | 'paired-authorization'
-  | 'version-detection'
   | 'configuration-save'
   | 'recovery-refresh'
 
@@ -486,10 +429,6 @@ export interface ConnectionLifecycleDependencies {
   readonly currentWorkspaceFolders: () => readonly vscode.WorkspaceFolder[]
   readonly endpointLaunchUrls: Map<string, string>
   readonly externalConnection?: ExternalConnectionAccess
-  readonly discoverDesktopVersion?: (
-    endpoint: BackendEndpoint,
-    signal?: AbortSignal,
-  ) => Promise<string | undefined>
   readonly attach: (backend: DshBackend) => Promise<void>
   readonly publishState: PublishConnectionState
   readonly disposeAccountLifecycleHost: () => Promise<void>
@@ -524,7 +463,6 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
     configuration,
     coordinator,
     desktopPairing,
-    discoverDesktopVersion,
     diagnostics,
     currentWorkspaceFolders,
     endpointLaunchUrls,
@@ -537,6 +475,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
   let resetRevision = 0
   let resettingConnection = false
   let automaticConnectionPaused = false
+  let transportSettingsSnapshot: string | undefined
   const tracePreparation = async <T>(
     phase: DesktopPreparationPhase,
     attempt: number | undefined,
@@ -555,7 +494,6 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
         (phase === 'pairing-record-check' && result === false)
       )
         status = 'no-record'
-      else if (phase === 'version-detection' && result === undefined) status = 'unknown-version'
       else if (result === false) status = 'not-enrolled'
       diagnostics.log('info', 'desktop-preparation', {
         ...fields,
@@ -584,6 +522,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
     const selectionRevision = configurationRevision
     automaticConnectionPaused = false
     const current = configuration.read()
+    transportSettingsSnapshot = JSON.stringify(current.connection)
     const development = usesDevelopmentRuntime(context)
     const automaticOrigin =
       deps.discoverAutomaticDesktop === undefined
@@ -619,7 +558,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
     let customEndpoint = useConfiguredEndpoint
       ? endpointFromServerUrl(current.connection.serverUrl)
       : undefined
-    let pairedVersion: string | undefined
+    let usingPairedLaunch = false
     const desktopOrigin =
       customEndpoint === undefined
         ? undefined
@@ -685,22 +624,13 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
           await tracePreparation('paired-authorization', attempt, signal, () =>
             externalConnection.authorizePairedDesktop(launch.endpoint, launch.token, signal),
           )
-        if (discoverDesktopVersion !== undefined)
-          pairedVersion = await tracePreparation('version-detection', attempt, signal, () =>
-            discoverDesktopVersion(launch.endpoint, signal),
-          )
-        if (pairedVersion === undefined && launch.endpoint.baseUrl === current.connection.serverUrl)
-          pairedVersion = current.connection.runtimeVersion
         signal?.throwIfAborted()
+        usingPairedLaunch = true
         customEndpoint = launch.endpoint
-        if (
-          launch.endpoint.baseUrl !== current.connection.serverUrl ||
-          pairedVersion !== current.connection.runtimeVersion
-        ) {
+        if (launch.endpoint.baseUrl !== origin || current.connection.runtimeVersion)
           await tracePreparation('configuration-save', attempt, signal, () =>
-            persistPairedDesktop(current.connection.serverUrl!, launch.endpoint, pairedVersion, signal),
+            persistPairedDesktop(origin, launch.endpoint, signal),
           )
-        }
       }
     }
     const allowedEndpoints =
@@ -711,15 +641,15 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
             baseUrl: `http://127.0.0.1:${port}`,
           }))
         : undefined
-    const selectedRuntimeVersion =
-      customEndpoint?.baseUrl !== current.connection.serverUrl
-        ? pairedVersion
-        : (pairedVersion ?? current.connection.runtimeVersion)
+    // Resolve the current Desktop version from the authenticated endpoint on
+    // each paired connection, even if a restart reused the same port.
+    const selectedRuntimeVersion = usingPairedLaunch ? undefined : current.connection.runtimeVersion
     const request: ConnectionRequest = {
       mode: useConfiguredEndpoint ? 'custom' : mode,
       ...(useConfiguredEndpoint ? { credentialRevision: externalConnection?.revision ?? 0 } : {}),
       ...(customEndpoint === undefined ? {} : { endpoint: customEndpoint }),
       ...(isDesktopEndpoint ? { desktopEndpoint: true as const } : {}),
+      ...(usingPairedLaunch ? { localDesktopPairing: true as const } : {}),
       ...(allowedEndpoints === undefined ? {} : { allowedEndpoints }),
       ...(selectedRuntimeVersion === undefined || selectedRuntimeVersion === ''
         ? {}
@@ -951,6 +881,11 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
   ): Promise<void> => {
     for (const [key, value] of writes) {
       assertCurrent()
+      const inspected = settings.inspect<unknown>(key)
+      // Compare at the write target. Workspace overrides can mask the global value.
+      const globalValue = inspected?.globalValue
+      const current = globalValue === undefined ? inspected?.defaultValue : globalValue
+      if (Object.is(current, value)) continue
       await settings.update(key, value, vscode.ConfigurationTarget.Global)
       assertCurrent()
     }
@@ -999,7 +934,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
           vscode.workspace.getConfiguration('dsh'),
           [
             ['connection.serverUrl', found.endpoint.baseUrl],
-            ['connection.runtimeVersion', found.runtimeVersion],
+            ['connection.runtimeVersion', ''],
             ['runtime.autoStart', false],
             ['connection.mode', 'custom'],
           ],
@@ -1044,7 +979,6 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
   const persistPairedDesktopNow = async (
     origin: string,
     endpoint: BackendEndpoint,
-    version: string | undefined,
     signal?: AbortSignal,
   ): Promise<void> => {
     const revision = configurationRevision
@@ -1070,7 +1004,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
         vscode.workspace.getConfiguration('dsh'),
         [
           ['connection.serverUrl', endpoint.baseUrl],
-          ['connection.runtimeVersion', version ?? ''],
+          ['connection.runtimeVersion', ''],
         ],
         assertCurrent,
       )
@@ -1081,6 +1015,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
       if (deps.discoverAutomaticDesktop !== undefined)
         await context.globalState.update(AUTOMATIC_DESKTOP_ORIGIN, endpoint.baseUrl)
       assertCurrent()
+      transportSettingsSnapshot = JSON.stringify(configuration.read().connection)
     } catch (error) {
       if (revision === configurationRevision) {
         await writeTransportSettings(vscode.workspace.getConfiguration('dsh'), [
@@ -1100,7 +1035,6 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
   const persistPairedDesktop = (
     origin: string,
     endpoint: BackendEndpoint,
-    version: string | undefined,
     signal?: AbortSignal,
   ): Promise<void> => {
     const revision = configurationRevision
@@ -1108,7 +1042,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
       signal?.throwIfAborted()
       if (revision !== configurationRevision)
         throw new DOMException('Connection selection changed.', 'AbortError')
-      return persistPairedDesktopNow(origin, endpoint, version, signal)
+      return persistPairedDesktopNow(origin, endpoint, signal)
     }
     // An explicit configure operation already owns this queue and awaits connect.
     if (configuringTransport) return run()
@@ -1119,8 +1053,12 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
     )
     return operation
   }
-  const reconnectOnTransportChange = (signal?: AbortSignal): Promise<unknown> => {
-    if (configuringTransport || automaticConnectionPaused) return Promise.resolve(undefined)
+  const reconnectOnTransportChange = async (signal?: AbortSignal): Promise<unknown> => {
+    if (configuringTransport || automaticConnectionPaused) return
+    // A global write can notify other windows even when their effective settings have not changed.
+    const next = JSON.stringify(configuration.read().connection)
+    if (next === transportSettingsSnapshot) return
+    transportSettingsSnapshot = next
     configurationRevision++
     return reconnect(signal, 'transport-change', true)
   }
@@ -1154,15 +1092,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
           reuseDesktopCredentials ? (savedEndpoint ?? '') : (endpoint ?? ''),
         )
         endpoint = launch.endpoint.baseUrl
-        const verifiedVersion = await deps.discoverDesktopVersion?.(launch.endpoint, signal).catch(() => {
-          signal?.throwIfAborted()
-          return undefined
-        })
-        signal?.throwIfAborted()
-        if (revision !== configurationRevision)
-          throw new DOMException('Connection settings changed.', 'AbortError')
-        const savedVersion = saved.serverUrl === launch.endpoint.baseUrl ? saved.runtimeVersion : undefined
-        const runtimeVersion = verifiedVersion ?? savedVersion ?? ''
+        const runtimeVersion = saved.serverUrl === launch.endpoint.baseUrl ? (saved.runtimeVersion ?? '') : ''
         if (!reuseDesktopCredentials) desktop = { launchToken: launch.token, runtimeVersion }
         else {
           // Reusing credentials must still retain or refresh this origin's exact wire identity.
@@ -1253,6 +1183,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
         if (revision !== configurationRevision)
           throw new DOMException('Connection settings changed.', 'AbortError')
         signal?.throwIfAborted()
+        transportSettingsSnapshot = JSON.stringify(configuration.read().connection)
       } finally {
         configuringTransport = false
       }

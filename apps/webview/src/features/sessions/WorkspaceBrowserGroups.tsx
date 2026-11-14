@@ -382,7 +382,7 @@ function ProjectPreview({
         </div>
         <footer>
           <button
-            className="dsh-button"
+            className={project.canOpen && !session.archived ? 'dsh-button dsh-button--primary' : 'dsh-button'}
             disabled={!project.canOpen || busy || session.archived}
             onClick={() => {
               setBusy(true)

@@ -145,10 +145,6 @@
   gap: 8px;
 }
 
-.dsh-app .dsh-settings .dsh-settings__connection-option--active {
-  background: color-mix(in srgb, var(--dsh-text) 4%, transparent);
-}
-
 .dsh-app .dsh-settings .dsh-settings__connection-option strong {
   font-size: var(--dsh-font-size-xs);
   font-weight: 400;
@@ -178,6 +174,43 @@
   color: var(--dsh-text);
   border-color: color-mix(in srgb, var(--dsh-text) 18%, transparent);
   background: var(--dsh-surface-hover);
+}
+
+.dsh-settings__update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+}
+
+.dsh-settings__update-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-block-size: 32px;
+  font-size: var(--dsh-font-size-xs);
+  font-weight: 400;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.dsh-settings__update-checkbox input[type='checkbox'] {
+  flex: none;
+  inline-size: 1.15em;
+  block-size: 1.15em;
+  margin: 0;
+  accent-color: var(--dsh-muted);
+  cursor: inherit;
+}
+
+.dsh-settings__update-checkbox input:focus-visible {
+  outline: 2px solid var(--dsh-focus-ring);
+  outline-offset: 2px;
+}
+
+.dsh-settings__update-checkbox:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .dsh-app .dsh-settings .dsh-settings__release-link {

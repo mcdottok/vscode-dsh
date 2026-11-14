@@ -262,6 +262,19 @@ function expectActiveTabControlsMountedPanel(): void {
 }
 
 describe('SettingsDrawer', () => {
+  it('lets the user turn off automatic VSIX update checks from the extension version card', async () => {
+    const onSetAutoCheckUpdates = vi.fn<(enabled: boolean) => Promise<boolean>>().mockResolvedValue(false)
+    renderDrawer({ onSetAutoCheckUpdates })
+    const checkbox = screen.getByRole<HTMLInputElement>('checkbox', {
+      name: 'Automatically check for updates',
+    })
+    await waitFor(() => expect(checkbox.disabled).toBe(false))
+    expect(checkbox.checked).toBe(true)
+    fireEvent.click(checkbox)
+    expect(onSetAutoCheckUpdates).toHaveBeenCalledWith(false)
+    await waitFor(() => expect(checkbox.checked).toBe(false))
+  })
+
   afterEach(() => {
     cleanup()
     window.localStorage.clear()
@@ -444,6 +457,7 @@ describe('SettingsDrawer', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Connection' }))
     const desktop = await screen.findByRole('radio', { name: /DSH Desktop/ })
     fireEvent.click(desktop)
+    fireEvent.click(screen.getByText('Enter a connection address manually'))
     const field = screen.getByLabelText('Desktop VS Code connection address')
     expect(field.getAttribute('type')).toBe('password')
     fireEvent.change(field, { target: { value: 'http://127.0.0.1:43120/?token=fixture-only' } })
@@ -551,15 +565,18 @@ describe('SettingsDrawer', () => {
     expect(within(panel).queryByRole('region', { name: 'Connection source' })).toBeNull()
     expect(within(panel).queryByText('Environment details')).toBeNull()
     expect(within(panel).queryByRole('region', { name: 'Editor integration' })).toBeNull()
-    const extensionPreferences = within(panel).getByRole('region', { name: 'Extension preferences' })
+    const version = within(panel).getByRole('region', { name: 'Extension version' })
+    const interfaceSettings = within(panel).getByRole('region', { name: 'Interface settings' })
     const preferences = within(panel).getByRole('region', { name: 'DSH preferences' })
-    const appearance = within(panel).getByRole('region', { name: 'Appearance' })
-    const conversationAppearance = within(panel).getByRole('region', { name: 'Conversation appearance' })
     const position = (element: Element): number => Array.from(panel.children).indexOf(element)
 
-    expect(position(appearance)).toBe(position(extensionPreferences) + 1)
-    expect(position(conversationAppearance)).toBe(position(appearance) + 1)
-    expect(position(conversationAppearance)).toBeLessThan(position(preferences))
+    expect(position(interfaceSettings)).toBe(position(version) + 1)
+    expect(position(preferences)).toBe(position(interfaceSettings) + 1)
+    expect(within(interfaceSettings).getByRole('group', { name: 'Interface language' })).toBeDefined()
+    expect(within(interfaceSettings).getByRole('group', { name: 'Appearance' })).toBeDefined()
+    expect(
+      within(interfaceSettings).getByRole('spinbutton', { name: 'Conversation font size' }),
+    ).toBeDefined()
     fireEvent.click(screen.getByRole('tab', { name: 'Connection' }))
     const connectionPanel = await screen.findByRole('tabpanel', { name: 'Connection' })
     const connection = await within(connectionPanel).findByRole('region', { name: 'Connection source' })
@@ -577,6 +594,7 @@ describe('SettingsDrawer', () => {
 
     await screen.findByRole('heading', { name: 'Connection source' })
     fireEvent.click(screen.getByRole('radio', { name: /DSH Desktop/ }))
+    fireEvent.click(screen.getByText('Enter a connection address manually'))
     fireEvent.change(screen.getByLabelText('Desktop VS Code connection address'), {
       target: { value: 'http://127.0.0.1:4310' },
     })
@@ -590,11 +608,11 @@ describe('SettingsDrawer', () => {
 
   it('allows Desktop discovery without requiring a saved or pasted address', async () => {
     const onConfigureConnection = vi.fn().mockResolvedValue(undefined)
-    renderDrawer({ onConfigureConnection })
-    fireEvent.click(screen.getByRole('tab', { name: 'Connection' }))
-
+    renderDrawer({ onConfigureConnection, initialTab: 'connection' })
     await screen.findByRole('heading', { name: 'Connection source' })
-    fireEvent.click(screen.getByRole('radio', { name: /DSH Desktop/ }))
+    expect(screen.getByRole('tab', { name: 'Connection', selected: true })).toBeDefined()
+    expect(screen.getByRole('radio', { name: /DSH Desktop/ })).toHaveProperty('checked', true)
+    expect(screen.getByText('Enter a connection address manually').closest('details')?.open).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: 'Connect to Desktop' }))
 
     await waitFor(() => expect(onConfigureConnection).toHaveBeenCalledWith('desktop', undefined))
@@ -607,6 +625,7 @@ describe('SettingsDrawer', () => {
     renderDrawer({ onConfigureConnection, onConnectDesktop })
     fireEvent.click(screen.getByRole('tab', { name: 'Connection' }))
     fireEvent.click(await screen.findByRole('radio', { name: /DSH Desktop/ }))
+    fireEvent.click(screen.getByText('Enter a connection address manually'))
     const field = screen.getByLabelText('Desktop VS Code connection address')
     expect(field.getAttribute('type')).toBe('password')
     fireEvent.change(field, { target: { value: 'http://127.0.0.1:43120/?token=fixture-private-login' } })
@@ -630,9 +649,11 @@ describe('SettingsDrawer', () => {
     const view = renderDrawer(props)
     fireEvent.click(screen.getByRole('tab', { name: 'Connection' }))
     const field = await screen.findByLabelText('Desktop VS Code connection address')
+    fireEvent.click(screen.getByText('Enter a connection address manually'))
     fireEvent.change(field, { target: { value: 'http://127.0.0.1:43120/?token=fixture-draft' } })
     fireEvent.click(screen.getByRole('radio', { name: /DSH CLI/ }))
     fireEvent.click(screen.getByRole('radio', { name: /DSH Desktop/ }))
+    fireEvent.click(screen.getByText('Enter a connection address manually'))
     expect(screen.getByLabelText('Desktop VS Code connection address')).toHaveProperty('value', '')
 
     fireEvent.change(screen.getByLabelText('Desktop VS Code connection address'), {
@@ -806,11 +827,11 @@ describe('SettingsDrawer', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Connection' }))
 
     expect(await screen.findByText('DSH 0.1.0-rc.8 is available.')).toBeDefined()
-    fireEvent.click(screen.getByRole('button', { name: 'Check now' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Recheck DSH' }))
     await waitFor(() => expect(onCheckDshUpdates).toHaveBeenCalledWith(true))
     fireEvent.click(screen.getByRole('button', { name: /Version to install: 0\.1\.0-rc\.8/u }))
     fireEvent.click(screen.getByRole('option', { name: '0.1.0-rc.7' }))
-    fireEvent.click(await screen.findByRole('button', { name: 'Download and install' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Install in Terminal' }))
     await waitFor(() => expect(onInstallDshVersion).toHaveBeenCalledWith('0.1.0-rc.7'))
   })
 
@@ -837,45 +858,6 @@ describe('SettingsDrawer', () => {
     const installButton = screen.getByRole('button', { name: 'Already installed' })
     expect((installButton as HTMLButtonElement).disabled).toBe(true)
     expect(onInstallDshVersion).not.toHaveBeenCalled()
-  })
-
-  it('shows a determinate lifecycle stage while installation is pending', async () => {
-    const dshUpdate: DshUpdateSnapshot = {
-      status: 'ready',
-      currentVersion: '0.1.0-rc.6',
-      currentSource: 'npm-global',
-      globalVersion: '0.1.0-rc.6',
-      latestVersion: '0.1.0-rc.8',
-      availableVersions: ['0.1.0-rc.8', '0.1.0-rc.7', '0.1.0-rc.6'],
-      updateAvailable: true,
-      checkedAt: '2026-08-21T00:00:00.000Z',
-    }
-    let resolveInstall: ((snapshot: DshUpdateSnapshot) => void) | undefined
-    const onInstallDshVersion = vi.fn(
-      () =>
-        new Promise<DshUpdateSnapshot>((resolve) => {
-          resolveInstall = resolve
-        }),
-    )
-    renderDrawer({
-      dshUpdate,
-      dshUpdateProgress: { phase: 'downloading', version: '0.1.0-rc.8' },
-      onCheckDshUpdates: vi.fn().mockResolvedValue(dshUpdate),
-      onInstallDshVersion,
-    })
-    fireEvent.click(screen.getByRole('tab', { name: 'Connection' }))
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Download and install' }))
-    const progress = await screen.findByRole('progressbar', { name: 'DSH update progress' })
-    expect(progress.getAttribute('aria-valuenow')).toBe('2')
-    expect(screen.getByText('Stage 2/4')).toBeDefined()
-
-    resolveInstall?.(dshUpdate)
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Download and install' }).hasAttribute('disabled')).toBe(
-        false,
-      ),
-    )
   })
 
   it('shows the Host-side npm failure reason instead of hiding it behind a generic warning', async () => {
@@ -932,8 +914,8 @@ describe('SettingsDrawer', () => {
   it('renders the rc2 General preferences with their upstream defaults', async () => {
     renderDrawer({ onLoadDshSettings: vi.fn().mockResolvedValue(rc2GeneralSettingsFixture()) })
 
-    const transcript = await screen.findByRole('group', { name: 'Workflow display' })
-    const performance = screen.getByRole('group', { name: 'Performance and usage' })
+    const transcript = await screen.findByRole('group', { name: 'Tool details' })
+    const performance = screen.getByRole('group', { name: 'Usage statistics' })
     expect(within(transcript).getByRole('button', { name: 'Standard', pressed: true })).toBeDefined()
     expect(within(performance).getByRole('button', { name: 'Detailed', pressed: true })).toBeDefined()
     expect(screen.queryByRole('switch', { name: 'Developer Tools' })).toBeNull()
@@ -1069,7 +1051,7 @@ describe('SettingsDrawer', () => {
       onUpdateDshSetting,
     })
 
-    const transcript = await screen.findByRole('group', { name: 'Workflow display' })
+    const transcript = await screen.findByRole('group', { name: 'Tool details' })
     expect(within(transcript).getAllByRole('button')).toHaveLength(4)
     expect(within(transcript).getByRole('button', { name: 'Detailed', pressed: true })).toBeDefined()
     expect(within(transcript).queryByRole('button', { name: 'expanded' })).toBeNull()
@@ -1099,7 +1081,7 @@ describe('SettingsDrawer', () => {
     })
     renderDrawer({ onLoadDshSettings, onUpdateDshSetting, onConversationFontSizeChange })
 
-    const transcript = await screen.findByRole('group', { name: 'Workflow display' })
+    const transcript = await screen.findByRole('group', { name: 'Tool details' })
     fireEvent.click(within(transcript).getByRole('button', { name: 'Compact' }))
     await waitFor(() =>
       expect(onUpdateDshSetting).toHaveBeenCalledWith('ui-chat.transcriptView', 'compact', 4),
@@ -1110,7 +1092,7 @@ describe('SettingsDrawer', () => {
     )
 
     fireEvent.click(
-      within(screen.getByRole('group', { name: 'Performance and usage' })).getByRole('button', {
+      within(screen.getByRole('group', { name: 'Usage statistics' })).getByRole('button', {
         name: 'Compact',
       }),
     )
@@ -1120,7 +1102,7 @@ describe('SettingsDrawer', () => {
     await waitFor(() => expect(onLoadDshSettings).toHaveBeenCalledTimes(3))
     await waitFor(() =>
       expect(
-        within(screen.getByRole('group', { name: 'Performance and usage' })).getByRole('button', {
+        within(screen.getByRole('group', { name: 'Usage statistics' })).getByRole('button', {
           name: 'Compact',
           pressed: true,
         }),
@@ -1155,7 +1137,7 @@ describe('SettingsDrawer', () => {
     const onUpdateDshSetting = vi.fn().mockResolvedValue(undefined)
     renderDrawer({ onLoadDshSettings, onUpdateDshSetting })
 
-    const transcript = await screen.findByRole('group', { name: 'Workflow display' })
+    const transcript = await screen.findByRole('group', { name: 'Tool details' })
     fireEvent.click(within(transcript).getByRole('button', { name: 'Compact' }))
     await waitFor(() =>
       expect(onUpdateDshSetting).toHaveBeenCalledWith('ui-chat.transcriptView', 'compact', 4),
@@ -1188,7 +1170,7 @@ describe('SettingsDrawer', () => {
     const onLoadDshSettings = vi.fn().mockResolvedValueOnce(initial).mockResolvedValueOnce(updated)
     const view = renderDrawer({ onLoadDshSettings })
 
-    const transcript = await screen.findByRole('group', { name: 'Workflow display' })
+    const transcript = await screen.findByRole('group', { name: 'Tool details' })
     expect(within(transcript).getByRole('button', { name: 'Standard', pressed: true })).toBeDefined()
 
     view.rerender(drawerElement({ open: false, onLoadDshSettings }))
@@ -1196,7 +1178,7 @@ describe('SettingsDrawer', () => {
 
     await waitFor(() => expect(onLoadDshSettings).toHaveBeenCalledTimes(2))
     expect(
-      within(screen.getByRole('group', { name: 'Workflow display' })).getByRole('button', {
+      within(screen.getByRole('group', { name: 'Tool details' })).getByRole('button', {
         name: 'Verbose',
         pressed: true,
       }),
@@ -1207,8 +1189,8 @@ describe('SettingsDrawer', () => {
     renderDrawer({ onLoadDshSettings: vi.fn().mockResolvedValue(dshSettingsFixture()) })
 
     await screen.findByRole('group', { name: 'Appearance' })
-    expect(screen.queryByRole('group', { name: 'Workflow display' })).toBeNull()
-    expect(screen.queryByRole('group', { name: 'Performance and usage' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Tool details' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Usage statistics' })).toBeNull()
     expect(screen.queryByRole('switch', { name: 'Developer Tools' })).toBeNull()
     expect(screen.getByRole('spinbutton', { name: 'Conversation font size' })).toBeDefined()
   })
@@ -1219,8 +1201,8 @@ describe('SettingsDrawer', () => {
     })
 
     await waitFor(() => expect(screen.getByText(/DSH settings are read-only/i)).toBeDefined())
-    expect(screen.queryByRole('group', { name: 'Workflow display' })).toBeNull()
-    expect(screen.queryByRole('group', { name: 'Performance and usage' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Tool details' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Usage statistics' })).toBeNull()
     expect(screen.queryByRole('switch', { name: 'Developer Tools' })).toBeNull()
     expect(screen.getByRole('spinbutton', { name: 'Conversation font size' })).toHaveProperty(
       'disabled',
@@ -1237,13 +1219,13 @@ describe('SettingsDrawer', () => {
     expect(screen.getByText(/loading DSH settings/i)).toBeDefined()
     expect(screen.queryByRole('switch', { name: 'Developer Tools' })).toBeNull()
     act(() => resolveSettings?.(rc2GeneralSettingsFixture()))
-    expect(await screen.findByRole('group', { name: 'Workflow display' })).toBeDefined()
+    expect(await screen.findByRole('group', { name: 'Tool details' })).toBeDefined()
     expect(screen.queryByRole('switch', { name: 'Developer Tools' })).toBeNull()
 
     cleanup()
     renderDrawer({ onLoadDshSettings: vi.fn().mockRejectedValue(new Error('offline')) })
     expect(await screen.findByText(/Could not load DSH preferences/)).toBeDefined()
-    expect(screen.queryByRole('group', { name: 'Workflow display' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Tool details' })).toBeNull()
     expect(screen.queryByRole('switch', { name: 'Developer Tools' })).toBeNull()
   })
 
@@ -1254,7 +1236,7 @@ describe('SettingsDrawer', () => {
       onUpdateDshSetting,
     })
 
-    const transcript = await screen.findByRole('group', { name: 'Workflow display' })
+    const transcript = await screen.findByRole('group', { name: 'Tool details' })
     fireEvent.click(within(transcript).getByRole('button', { name: 'Compact' }))
     await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('settings-conflict'))
     expect(within(transcript).getByRole('button', { name: 'Standard', pressed: true })).toBeDefined()
@@ -1314,7 +1296,9 @@ describe('SettingsDrawer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Full Access' }))
     const confirm = screen.getByRole<HTMLButtonElement>('button', { name: 'Confirm full access' })
     expect(confirm.disabled).toBe(true)
-    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(
+      screen.getByRole('checkbox', { name: 'I understand that Full access removes permission prompts.' }),
+    )
     fireEvent.click(screen.getByRole('button', { name: 'Confirm full access' }))
     await waitFor(() =>
       expect(onUpdateDshSetting).toHaveBeenCalledWith('permission.defaultPreset', 'danger-full-access', 1),

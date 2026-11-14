@@ -22,6 +22,7 @@ vi.mock('vscode', () => ({
                   : undefined,
       }),
       update: async (key: string, value: unknown): Promise<void> => {
+        harness.writes.push(key)
         if (key === 'connection.serverUrl')
           harness.configuration.connection.serverUrl = typeof value === 'string' ? value : ''
         if (key === 'connection.mode')
@@ -56,9 +57,9 @@ const harness = vi.hoisted(() => {
       readonly autoStart: boolean
     }>,
     transportListeners: [] as Array<(signal?: AbortSignal) => Promise<unknown>>,
+    writes: [] as string[],
     afterWrite: undefined as ((key: string) => Promise<void>) | undefined,
     update: vi.fn().mockResolvedValue(false),
-    desktopVersion: vi.fn<() => Promise<string | undefined>>().mockResolvedValue(undefined),
   }
   return state
 })
@@ -99,7 +100,6 @@ function lifecycle(
       workspaceState: { update: () => Promise.resolve(undefined), get: () => undefined },
     },
     configuration: { read: () => harness.configuration },
-    discoverDesktopVersion: harness.desktopVersion,
     coordinator: {
       connect: (
         request: {
@@ -133,32 +133,33 @@ describe('connection.configure reconnect', () => {
     harness.isTrusted = true
     harness.connects.length = 0
     harness.transportListeners.length = 0
+    harness.writes.length = 0
     harness.configuration.connection.mode = 'auto'
     harness.configuration.connection.serverUrl = ''
     harness.configuration.connection.runtimeVersion = ''
-    harness.desktopVersion.mockReset().mockResolvedValue(undefined)
     harness.afterWrite = undefined
     harness.configuration.runtime.autoStart = false
     harness.update.mockReset().mockResolvedValue(false)
   })
 
-  it('persists a verified Desktop version before connecting instead of selecting an old fallback', async () => {
-    harness.desktopVersion.mockResolvedValue('0.2.1-rc.2')
-    await lifecycle().configureConnection('desktop', 'http://127.0.0.1:43120/?token=fixture-only')
-    expect(harness.configuration.connection.runtimeVersion).toBe('0.2.1-rc.2')
-    expect(harness.configuration.connection.serverUrl).toBe('http://127.0.0.1:43120')
-    expect(harness.connects.at(-1)).toMatchObject({ mode: 'custom', runtimeVersion: '0.2.1-rc.2' })
-  })
-
-  it('preserves an exact same-origin version if optional OS discovery is unavailable', async () => {
+  it('preserves an exact same-origin version for a saved manual Desktop address', async () => {
     harness.configuration.connection.mode = 'custom'
     harness.configuration.connection.serverUrl = 'http://127.0.0.1:43120'
     harness.configuration.connection.runtimeVersion = '0.2.1-rc.2'
-    harness.desktopVersion.mockRejectedValue(new Error('Optional discovery unavailable'))
     await lifecycle().configureConnection('desktop', 'http://127.0.0.1:43120/?token=fixture-only')
     expect(harness.configuration.connection.runtimeVersion).toBe('0.2.1-rc.2')
     await lifecycle().configureConnection('desktop', 'http://127.0.0.1:43121/?token=fixture-only')
     expect(harness.configuration.connection.runtimeVersion).toBe('')
+  })
+
+  it('skips writing settings that already match a manual Desktop selection', async () => {
+    const subject = lifecycle()
+    await subject.configureConnection('desktop', 'http://127.0.0.1:43120/?token=fixture')
+    harness.writes.length = 0
+
+    await subject.configureConnection('desktop', 'http://127.0.0.1:43120/?token=fixture')
+
+    expect(harness.writes).toEqual([])
   })
 
   it('keeps a same-origin version when the pasted Desktop command supplies no discovered version', async () => {
@@ -178,18 +179,6 @@ describe('connection.configure reconnect', () => {
       runtimeVersion: '',
     })
     expect(harness.configuration.connection.runtimeVersion).toBe('')
-  })
-
-  it('cannot overwrite a newer choice when Desktop identity discovery completes late', async () => {
-    const pending = deferred<string | undefined>()
-    harness.desktopVersion.mockReturnValue(pending.promise)
-    const subject = lifecycle()
-    const previous = subject.configureConnection('desktop', 'http://127.0.0.1:43120/?token=fixture-only')
-    const cancelled = expect(previous).rejects.toMatchObject({ name: 'AbortError' })
-    await subject.configureConnection('custom', 'http://127.0.0.1:43121')
-    pending.resolve('0.2.1-rc.2')
-    await cancelled
-    expect(harness.configuration.connection.serverUrl).toBe('http://127.0.0.1:43121')
   })
 
   it('automatically switches a stale discovered companion to a fresh owned runtime, falling back to chat on failure', async () => {
@@ -335,8 +324,23 @@ describe('connection.configure reconnect', () => {
       'Settings write failed',
     )
     await subject.configureConnection('auto', undefined)
+    harness.configuration.connection.serverUrl = 'http://127.0.0.1:4311'
     await subject.reconnectOnTransportChange()
-    expect(harness.connects.map((request) => request.mode)).toEqual(['auto', 'auto'])
+    expect(harness.connects.map((request) => request.mode)).toEqual(['auto', 'custom'])
+  })
+
+  it('reconnects each window once when shared settings change and ignores duplicate notifications', async () => {
+    const windows = [lifecycle(), lifecycle()]
+    await Promise.all(windows.map((window) => window.connect()))
+    await Promise.all(windows.map((window) => window.reconnectOnTransportChange()))
+    expect(harness.connects).toHaveLength(2)
+
+    harness.configuration.connection.serverUrl = 'http://127.0.0.1:4311'
+    await Promise.all(windows.map((window) => window.reconnectOnTransportChange()))
+    await Promise.all(windows.map((window) => window.reconnectOnTransportChange()))
+    expect(harness.connects).toHaveLength(4)
+    for (const request of harness.connects.slice(2))
+      expect(request).toMatchObject({ endpoint: { port: 4311 } })
   })
 
   it('does not write settings for an already-cancelled submission', async () => {
@@ -413,7 +417,7 @@ describe('connection.configure reconnect', () => {
     await cancelled
   })
 
-  it('uses the paired restart address and its exact version before preparing credentials', async () => {
+  it('uses the paired restart address and lets the probe resolve the current version', async () => {
     const original = 'http://127.0.0.1:43120'
     const changed = 'http://127.0.0.1:43121'
     const authorize = vi.fn().mockResolvedValue(undefined)
@@ -432,7 +436,6 @@ describe('connection.configure reconnect', () => {
       },
       desktopPairing: { resolve, has: () => Promise.resolve(true) },
       externalConnection: { authorizePairedDesktop: authorize, revision: 3 },
-      discoverDesktopVersion: () => Promise.resolve('0.2.1-rc.2'),
       coordinator: { connect },
       currentWorkspaceFolders: () => [],
       endpointLaunchUrls: new Map(),
@@ -450,11 +453,12 @@ describe('connection.configure reconnect', () => {
     expect(connect).toHaveBeenCalledWith(
       expect.objectContaining({
         endpoint: { host: '127.0.0.1', port: 43121, baseUrl: changed },
-        runtimeVersion: '0.2.1-rc.2',
+        localDesktopPairing: true,
         autoStart: false,
       }),
       undefined,
     )
+    expect(connect.mock.calls[0]?.[0]).not.toHaveProperty('runtimeVersion')
     resolve.mockRejectedValueOnce(new Error('Paired Desktop unavailable'))
     await expect(subject.connect()).rejects.toThrow('unavailable')
     expect(authorize).toHaveBeenCalledTimes(1)
@@ -531,7 +535,6 @@ describe('connection.configure reconnect', () => {
       context: { workspaceState: storage(workspace), globalState: storage(global) },
       configuration: { read: () => harness.configuration },
       discoverAutomaticDesktop: discover,
-      discoverDesktopVersion: harness.desktopVersion,
       onDesktopRecoveryState: recovery,
       diagnostics: { log },
       desktopPairing: {
@@ -735,7 +738,7 @@ describe('connection.configure reconnect', () => {
     expect(harness.configuration.connection).toMatchObject({
       mode: 'custom',
       serverUrl: 'http://127.0.0.1:43120',
-      runtimeVersion: '0.2.1-rc.2',
+      runtimeVersion: '',
     })
     expect(f.global.get('dsh.desktop.automaticOrigin.v1')).toBe('http://127.0.0.1:43120')
     expect(f.workspace.get('dsh.desktop.lastEndpoint')).toBe('http://127.0.0.1:43120')
@@ -809,17 +812,17 @@ describe('connection.configure reconnect', () => {
     }
   })
 
-  it('persists a paired restart address and newly detected version without prompting', async () => {
+  it('persists a paired restart address without pinning a version', async () => {
     const f = automaticFixture()
     await f.subject.connect()
+    harness.writes.length = 0
     f.resolve.mockResolvedValue('http://127.0.0.1:43121/?token=fixture-restarted')
-    harness.desktopVersion.mockResolvedValue('0.2.1-rc.3')
     f.discover.mockClear()
     f.authorizePaired.mockClear()
     await f.subject.reconnect()
     expect(harness.configuration.connection).toMatchObject({
       serverUrl: 'http://127.0.0.1:43121',
-      runtimeVersion: '0.2.1-rc.3',
+      runtimeVersion: '',
     })
     expect(f.workspace.get('dsh.desktop.lastEndpoint')).toBe('http://127.0.0.1:43121')
     expect(f.global.get('dsh.desktop.automaticOrigin.v1')).toBe('http://127.0.0.1:43121')
@@ -831,6 +834,12 @@ describe('connection.configure reconnect', () => {
     )
     expect(f.discover).not.toHaveBeenCalled()
     expect(f.authorize).not.toHaveBeenCalled()
+    expect(harness.writes).toEqual(['connection.serverUrl'])
+
+    const connectionCount = f.connect.mock.calls.length
+    await f.subject.reconnectOnTransportChange()
+    expect(f.connect).toHaveBeenCalledTimes(connectionCount)
+    expect(harness.writes).toEqual(['connection.serverUrl'])
   })
 
   it.each([
@@ -1016,12 +1025,11 @@ describe('connection.configure reconnect', () => {
     const f = automaticFixture()
     await f.subject.connect()
     f.resolve.mockResolvedValue('http://127.0.0.1:43121/?token=fixture-restarted')
-    harness.desktopVersion.mockResolvedValue('0.2.1-rc.3')
     f.savePair.mockRejectedValueOnce(new Error('Secure storage unavailable'))
     await expect(f.subject.reconnect()).rejects.toThrow('could not be recovered automatically')
     expect(harness.configuration.connection).toMatchObject({
       serverUrl: 'http://127.0.0.1:43120',
-      runtimeVersion: '0.2.1-rc.2',
+      runtimeVersion: '',
     })
     expect(f.workspace.get('dsh.desktop.lastEndpoint')).toBe('http://127.0.0.1:43120')
     expect(f.global.get('dsh.desktop.automaticOrigin.v1')).toBe('http://127.0.0.1:43120')

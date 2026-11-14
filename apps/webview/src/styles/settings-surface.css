@@ -235,6 +235,105 @@ html[data-dsh-theme='dark']:has(body:is(.vscode-dark, .vscode-high-contrast)) .d
   padding: 14px 16px 20px;
 }
 
+/* General settings use a flat list with dividers between sections. */
+.dsh-app .dsh-settings #dsh-settings-panel-general {
+  gap: 14px;
+}
+
+.dsh-app .dsh-settings #dsh-settings-panel-general > .dsh-setting-card {
+  padding: 0;
+  border: 0;
+}
+
+.dsh-app .dsh-settings #dsh-settings-panel-general > .dsh-setting-card + .dsh-setting-card {
+  padding-block-start: 14px;
+  border-block-start: 1px solid var(--stg-line);
+}
+
+#dsh-settings-panel-general .dsh-settings__general-interface {
+  container: general-interface / inline-size;
+}
+
+.dsh-app .dsh-settings #dsh-settings-panel-general .dsh-setting-row__title {
+  font-weight: 600;
+}
+
+.dsh-app .dsh-settings #dsh-settings-panel-general .dsh-settings__general-interface .dsh-setting-row__title {
+  font-weight: 400;
+}
+
+.dsh-app .dsh-settings #dsh-settings-panel-general .dsh-setting-card__title {
+  font-size: var(--dsh-font-size-sm);
+}
+
+.dsh-app
+  .dsh-settings
+  #dsh-settings-panel-general
+  .dsh-settings__general-interface
+  > .dsh-setting-card__body {
+  gap: 0;
+  padding-block-start: 4px;
+}
+
+.dsh-app .dsh-settings #dsh-settings-panel-general .dsh-setting-row {
+  padding-block: 6px;
+}
+
+.dsh-app .dsh-settings #dsh-settings-panel-general .dsh-setting-row__layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+#dsh-settings-panel-general .dsh-setting-row__control {
+  justify-content: flex-start;
+}
+
+#dsh-settings-panel-general .dsh-settings__segment {
+  justify-content: flex-start;
+}
+
+.dsh-app .dsh-settings #dsh-settings-panel-general .dsh-settings__segment-item {
+  padding-inline: 10px;
+  border-color: var(--stg-line-strong);
+}
+
+#dsh-settings-panel-general .dsh-settings__segment-item:hover:not(:disabled):not([aria-pressed='true']) {
+  color: var(--dsh-text);
+  background: var(--stg-hover);
+}
+
+.dsh-app .dsh-settings #dsh-settings-panel-general .dsh-settings__segment-item[aria-pressed='true'] {
+  border-color: var(--stg-accent);
+  background: var(--stg-blue-soft);
+}
+
+#dsh-settings-panel-general .dsh-settings__segment-item:focus-visible {
+  outline: 2px solid var(--dsh-focus-ring);
+  outline-offset: 2px;
+}
+
+@container general-interface (inline-size >= 23rem) {
+  .dsh-app
+    .dsh-settings
+    #dsh-settings-panel-general
+    .dsh-settings__general-interface
+    .dsh-setting-row__layout {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  #dsh-settings-panel-general .dsh-settings__general-interface .dsh-setting-row__control {
+    justify-content: flex-end;
+  }
+}
+
+@media (forced-colors: active) {
+  .dsh-app .dsh-settings #dsh-settings-panel-general .dsh-settings__segment-item[aria-pressed='true'] {
+    forced-color-adjust: none;
+    border-color: Highlight;
+    background: Highlight;
+    color: HighlightText;
+  }
+}
+
 /* ---------------------------------------------------------------- Models -- */
 
 #dsh-settings-panel-models .dsh-settings__toolbar {

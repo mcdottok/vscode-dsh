@@ -104,6 +104,24 @@ describe('DshConnectionCoordinator', () => {
     await coordinator.disconnect()
   })
 
+  it('carries local Desktop pairing evidence into the verified backend without a PID', async () => {
+    const connection = fakeConnectedBackend()
+    const coordinator = new DshConnectionCoordinator(
+      dependencies({ probe: { probe: async () => connection } }),
+    )
+    const request = {
+      mode: 'custom',
+      autoStart: false,
+      endpoint: connection.endpoint,
+      desktopEndpoint: true,
+    } as const
+    expect((await coordinator.connect(request)).backend.connection.localDesktopPairing).toBeUndefined()
+    const paired = await coordinator.connect({ ...request, localDesktopPairing: true })
+    expect(paired.backend.connection.localDesktopPairing).toBe(true)
+    expect(paired.backend.connection.pid).toBeUndefined()
+    await coordinator.disconnect()
+  })
+
   it('records native preparation failure before discovery without overwriting an active or connected operation', async () => {
     const discovery = deferred<readonly BackendCandidate[]>()
     const coordinator = new DshConnectionCoordinator(

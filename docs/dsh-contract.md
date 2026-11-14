@@ -4,9 +4,9 @@
 
 ## 上游来源与安装默认
 
-官方 Desktop 的 `0.2.1-rc.2` 安装包与同名 tag 使用同一 Host 启动契约：`apps/desktop-host/src/index.ts` 通过 `--host 127.0.0.1 --port 0` 启动，再调用 `connection.authenticatedUrl` 向 Electron 提交地址。连接配套复用该版本 `connection.fetch.register` 的已认证 owner-only 精确路由，界面使用 `settings.general.item` 与 `plugins.bundle.config`。Windows 发现从 `app.asar` 内有界读取 shell/core manifest，要求官方包身份和精确版本相同；Electron Host 使用 `original-fs` 读取物理归档，避免默认文件接口把 ASAR 当成虚拟目录。元数据仍须经 Adapter Probe 验证，不代表进程所有权。现场双端验收独立记录。
+官方 Desktop 的 `0.2.1-rc.2` 安装包与同名 tag 使用同一 Host 启动契约：`apps/desktop-host/src/index.ts` 通过 `--host 127.0.0.1 --port 0` 启动，再调用 `connection.authenticatedUrl` 向 Electron 提交地址。连接配套复用该版本 `connection.fetch.register` 的已认证 owner-only 精确路由，界面使用 `settings.general.item` 与 `plugins.bundle.config`。Windows 同机发现通过配套插件登记和命名管道配对，运行时身份仍由 Adapter Probe 验证。现场双端验收独立记录。
 
-最新发布包为 `@deepseek-ai/dsh@0.2.2-rc.3`，其会话主链路已建立独立适配，其他能力仍有下述限制。扩展引导安装默认包为 `@deepseek-ai/dsh@0.2.1-rc.2`（保持上次交付的已验证精确版本），固定源码与隔离运行证据见[交付检查](../reviews/dsh-rc212-release-review.md)。发布版本与安装默认分别由 `LATEST_PUBLISHED_DSH_VERSION`、`DEFAULT_INSTALL_DSH_VERSION` 维护；新增适配不自动切换默认，安装和更新均使用经过验证的精确版本，不跟随浮动 dist-tag。默认版本不代表所有能力完成，timed 提问等验收缺口仍见能力矩阵。
+最新发布包为 `@deepseek-ai/dsh@0.2.2-rc.3`，其会话主链路已建立独立适配，其他能力仍有下述限制。扩展引导安装默认包为 `@deepseek-ai/dsh@latest`，由 npm 在执行命令时解析。设置中的指定版本安装使用用户选择的精确版本。发布版本与安装标签分别由 `LATEST_PUBLISHED_DSH_VERSION`、`DEFAULT_INSTALL_DSH_TAG` 维护，连接时按实际安装版本探测协议。
 
 历史 Host API 的固定基线是提交 [`47f943859bef60e4160492346772ded9b24f765a`](https://github.com/deepseek-ai/deepseek-harness/tree/47f943859bef60e4160492346772ded9b24f765a)：[RPC map](https://github.com/deepseek-ai/deepseek-harness/blob/47f943859bef60e4160492346772ded9b24f765a/packages/host/apiproxy/src/api/rpc-map.ts)、[events](https://github.com/deepseek-ai/deepseek-harness/blob/47f943859bef60e4160492346772ded9b24f765a/packages/host/apiproxy/src/api/events.ts)、[tool catalog](https://github.com/deepseek-ai/deepseek-harness/tree/47f943859bef60e4160492346772ded9b24f765a/packages/core/tools)。它只证明该 Host API 家族；较新的 Connection/Gateway、typed Remote 和 Session Controller 必须从**目标版本自己的 tag/commit 和实际存在的接口文件**核对。尤其 `0.1.5-rc.2` 与 `0.1.5-rc.3` 的 wire 比较不能引用上述已不存在的旧 RPC 文件；两者被适配器消费的 Session Controller、typed Remote、Connection/Gateway 与工具运行时源码相同，仍保留各自精确身份。
 
@@ -231,13 +231,13 @@ Plugin 安装前的二次 inspect、registry、Host 确认或 Adapter 本地验�
 
 设置页提供 DSH Desktop 与 DSH CLI 两条明确路径。Desktop 接受用户主动粘贴的完整 loopback 浏览器访问地址，作为一次性、只写的密码输入提交给 Host；Host 校验并分离 origin 与 token，仅向配置与工作区状态保存 origin，凭据进入 VS Code SecretStorage。Host 不把地址或凭据返回 Webview，输入提交和关闭后清空，不进入持久化界面状态或日志。原生命令入口仍可使用。
 
-已授权的本机自定义连接没有版本提示时，Host 可在选择适配器前调用只读的 `pluginManager/listBundles`。固定上游的[目录实现](https://github.com/deepseek-ai/deepseek-harness/blob/66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db/packages/boot/plugin-manager/src/index.ts)和[安装目标实现](https://github.com/deepseek-ai/deepseek-harness/blob/66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db/packages/boot/plugin-manager/src/official-install-target.ts)将运行中的内核版本写入官方目录条目的 `installTarget.version`。扩展只接受一致的有效版本作为本次探测的提示，仍由适配器验证协议，缺失、冲突或超时继续走既有兼容探测。连接插件可沿用现有的授权转发接口，无需为识别版本新增路由。
+已授权的本机自定义连接没有版本提示时，Host 可在选择适配器前调用只读的 `pluginManager/listBundles`。固定上游的[目录实现](https://github.com/deepseek-ai/deepseek-harness/blob/66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db/packages/boot/plugin-manager/src/index.ts)和[安装目标实现](https://github.com/deepseek-ai/deepseek-harness/blob/66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db/packages/boot/plugin-manager/src/official-install-target.ts)将运行中的内核版本写入官方目录条目的 `installTarget.version`。扩展只接受一致的有效版本作为本次探测的提示，仍由适配器验证协议，缺失、冲突或超时继续走既有兼容探测。新版 connect 在原有 owner-only `GET /api/vscode-desktop-connect` 状态响应中可选提供 `runtimeVersion`。它从宿主解析的 `@deepseek-ai/dsh-app-boot` 调用 `getDshRuntimeVersion()`，不打包该模块。扩展优先使用状态响应，旧 connect 或宿主版本不可读取时继续使用官方目录和原有协议探测。
 
 DSH CLI 选择显式写入 `new-isolated` 与 `runtime.autoStart: true`，通过已定位的全局包或所选可执行文件启动插件拥有的服务；清空活动连接的 Desktop 端点和版本覆盖，避免错误附加到桌面端。未受信任工作区不能启动本机服务。版本安装仅修改 DSH CLI，不升级 Desktop，安装后由用户点击启动连接。Desktop 端点在 Host 侧单独记忆，配对凭据继续保留；重载后切回 Desktop 可复用保存的连接，地址失效时走既有恢复。没有保存记录且输入为空时执行本机自动发现，失败明确提供手动连接建议，不启动或接入 npm 实例。设置写入队列释放后才重连，避免自动恢复被切换过程抑制或等待自身的队列；新的连接选择使旧发现与迟到恢复失效。
 
 ### 桌面端的自动恢复
 
-Windows 同机的桌面连接使用既有 connect owner-only 配对接口与加密命名管道，不增加上游 RPC。已保存的配对身份通过 SecretStorage 读取，只允许重新发现同一 key 对应的桌面端；新地址仍须与已验证进程、物理包身份及其监听端点一致。读取的地址和 token 只在 Host 内完成授权，恢复后同步保存新 origin、版本和配对绑定。没有配对信息的旧 loopback 地址先尝试原目标，失败后只有唯一经验证的本机桌面端可被接续；多 profile 不按新旧顺序猜测。
+Windows 同机的桌面连接使用既有 connect owner-only 配对接口与加密命名管道，不增加上游 RPC。已保存的配对身份通过 SecretStorage 读取，只允许重新发现同一 key 对应的桌面端；首次发现只从当前账户解密有效期内的配套插件登记，再通过配对密钥派生的命名管道取得认证启动地址。地址必须是带 token 的数字 IPv4 回环 HTTP 地址。Host 登录后优先从配套插件状态读取版本提示，再验证协议，恢复后保存新 origin 和配对绑定，清除旧配对地址遗留的版本提示。没有配对信息的旧 loopback 地址先尝试原目标，失败后只有唯一经验证的本机桌面端可被接续；多 profile 不按新旧顺序猜测。
 
 断线事件可立即启动恢复，原有观察器继续检查桌面端返回与地址变化。一次恢复最多五次尝试，总窗口有界；期间只展示连接进度，不将瞬时失败投影为终态错误。耗尽后发布真实失败与手动恢复入口；桌面端随后重新可用时仍可重新尝试，而不是在相同不可用状态下持续弹出失败界面。IPC 在 Coordinator 启动前失败也会记录到权威状态，避免停留在 idle 后再也不观察恢复。
 
@@ -251,7 +251,7 @@ Windows 同机的桌面连接使用既有 connect owner-only 配对接口与加�
 
 本地分支通过独立 `workspace.browser` 请求提供 registry 目录、单工作区会话目录和分页正文预览。Host 重新核对 registry 工作区与会话归属，只调用已有 `SessionRepository.history`，不调用 open、跟随订阅、消息发送或配置操作。响应仅包含名称、ID、状态位和已过滤的用户/助手正文；工作目录与执行上下文不进入 Webview。预览不支持工具执行、附件读取或编辑器上下文注入。
 
-继续任务由 Host 从 registry 取出目录，在已证明为本机文件系统且目录有效的连接上通过 VS Code 原生新窗口打开项目。五分钟内的接力记录只保存在 Host Memento，包含目录、会话 ID 和时间；仅新启动并打开匹配目录的 Host 可消费，恢复会话仍经过现有 current-workspace 校验。其他已经打开的窗口不消费新的接力请求，远程目录不被当成本机路径打开。
+继续任务由 Host 从 registry 取出目录，在已证明为本机文件系统且目录有效的连接上通过 VS Code 原生新窗口打开项目。Windows 配对连接以本次命名管道握手返回的精确端点作为同机证据。五分钟内的接力记录只保存在 Host Memento，包含目录、会话 ID 和时间；仅新启动并打开匹配目录的 Host 可消费，恢复会话仍经过现有 current-workspace 校验。其他已经打开的窗口不消费新的接力请求，远程目录不被当成本机路径打开。
 
 没有文件夹的窗口默认不创建 Temporary Workspace，显示项目选择和浏览入口；明确点击临时对话后才建立该工作区。空窗口状态栏提供 DSH 入口，启动激活只注册入口，不会因此启动 DSH 服务。跨窗口接力与远程环境仍待用户现场验证，不标为 DONE。
 

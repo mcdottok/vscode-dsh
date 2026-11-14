@@ -1,11 +1,5 @@
 import type * as vscode from 'vscode'
-import {
-  AppError,
-  isLoopbackEndpoint,
-  parseServerOrigin,
-  type BackendCandidate,
-  type BackendEndpoint,
-} from '@dsh-vscode/domain'
+import { AppError, isLoopbackEndpoint, parseServerOrigin, type BackendEndpoint } from '@dsh-vscode/domain'
 
 /** Validate explicit Desktop launch input without echoing its credentials. */
 export function parseDesktopLaunchUrl(value: string): { endpoint: BackendEndpoint; token: string } {
@@ -43,8 +37,7 @@ export function parseDesktopLaunchUrl(value: string): { endpoint: BackendEndpoin
 
 export interface ConnectDesktopDependencies {
   readonly window: Pick<typeof vscode.window, 'showInputBox'>
-  readonly discover: (endpoint: BackendEndpoint) => Promise<readonly BackendCandidate[]>
-  readonly connect: (endpoint: BackendEndpoint, token: string, version?: string) => Promise<unknown>
+  readonly connect: (endpoint: BackendEndpoint, token: string) => Promise<unknown>
 }
 
 export async function connectDesktop(dependencies: ConnectDesktopDependencies): Promise<void> {
@@ -65,10 +58,5 @@ export async function connectDesktop(dependencies: ConnectDesktopDependencies): 
   })
   if (input === undefined) return
   const { endpoint, token } = parseDesktopLaunchUrl(input)
-  const candidates = await dependencies.discover(endpoint)
-  const version = candidates.find(
-    (candidate) =>
-      candidate.endpoint.port === endpoint.port && candidate.runtimeVersionEvidence === 'process-manifest',
-  )?.runtimeVersion
-  await dependencies.connect(endpoint, token, version)
+  await dependencies.connect(endpoint, token)
 }

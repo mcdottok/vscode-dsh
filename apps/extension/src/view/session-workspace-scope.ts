@@ -1,11 +1,12 @@
 import { isLoopbackEndpoint, type ConnectedBackend, type SessionSummary } from '@dsh-vscode/domain'
 
-/** An endpoint's filesystem is local only when a current local process proves its identity. */
+/** Loopback needs independent Host evidence before DSH paths can be treated as local. */
 export function hasLocalWorkspaceAuthority(backend: ConnectedBackend | undefined): boolean {
   return (
     backend !== undefined &&
     isLoopbackEndpoint(backend.endpoint) &&
     (backend.ownership === 'managed' ||
+      backend.localDesktopPairing === true ||
       (backend.pid !== undefined && Number.isSafeInteger(backend.pid) && backend.pid > 0))
   )
 }

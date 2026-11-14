@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  DEFAULT_INSTALL_DSH_VERSION,
+  DEFAULT_INSTALL_DSH_TAG,
   LATEST_PUBLISHED_DSH_VERSION,
   LATEST_SUPPORTED_DSH_VERSION,
   Rc202VersionAdapter,
@@ -96,10 +96,9 @@ describe('production version adapter registry', () => {
     expect(adapters.filter((adapter) => adapter.supportedVersion === '0.2.1-alpha.1')).toHaveLength(1)
     expect(adapters.filter((adapter) => adapter.supportedVersion === '0.2.0-rc.2')).toHaveLength(1)
     expect(adapters.filter((adapter) => adapter.supportedVersion === '0.2.0-rc.1')).toHaveLength(1)
-    // The newest published release is separate from the newest exact adapter
-    // and the previously verified guided install default.
+    // Published releases, exact adapter support, and the installer tag are tracked separately.
     expect(LATEST_PUBLISHED_DSH_VERSION).toBe('0.2.2-rc.3')
     expect(LATEST_SUPPORTED_DSH_VERSION).toBe('0.2.2-rc.3')
-    expect(DEFAULT_INSTALL_DSH_VERSION).toBe('0.2.1-rc.2')
+    expect(DEFAULT_INSTALL_DSH_TAG).toBe('latest')
   })
 })

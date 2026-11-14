@@ -25,6 +25,7 @@ export interface SettingsActionHost {
 export type SettingsActionMethods = Pick<
   AppActions,
   | 'readSettings'
+  | 'setAutoCheckUpdates'
   | 'readDshSettings'
   | 'openDshSettingsDocument'
   | 'openKeyboardShortcuts'
@@ -53,6 +54,15 @@ export function createSettingsActions(host: SettingsActionHost): SettingsActionM
       return parseExtensionSettings(
         await client.request<unknown>({ type: 'extensionSettings.read', requestId: requestId() }),
       )
+    },
+    setAutoCheckUpdates: async (enabled) => {
+      const value = await client.request<unknown>({
+        type: 'extensionSettings.setAutoCheckUpdates',
+        requestId: requestId(),
+        payload: { enabled },
+      })
+      if (typeof value !== 'boolean') throw new Error(translate('settings.autoCheckUpdatesError'))
+      return value
     },
     readDshSettings: async () => {
       const snapshot = parseDshSettingsSnapshot(

@@ -1043,6 +1043,15 @@ export function createAppStore(client = new ProtocolClient(getVsCodeApi())): App
     },
     checkDshUpdates,
     installDshVersion,
+    dismissExtensionUpdate: async (version) => {
+      if (state.extensionUpdate?.version !== version) return
+      setState({ ...state, extensionUpdate: undefined })
+      await client.request<unknown>({
+        type: 'extension.update.dismiss',
+        requestId: requestId(),
+        payload: { version },
+      })
+    },
     loadPluginInventory: async () =>
       parsePluginInventory(
         await client.request<unknown>({ type: 'plugin.inventory', requestId: requestId() }),

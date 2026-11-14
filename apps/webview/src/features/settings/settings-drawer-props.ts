@@ -4,7 +4,6 @@ import type {
   AgentPresetRoster,
   CustomProviderCreateResult,
   CustomProviderDraft,
-  DshRuntimeUpdateProgress,
   DshUpdateSnapshot,
   DiscoveredModel,
   ExtensionSettingsSummary,
@@ -28,6 +27,7 @@ import type { ConversationFontSize, ThemePreference } from '../../app/ui-prefere
 import type { Locale } from '../../i18n.js'
 export interface SettingsDrawerProps {
   readonly open: boolean
+  readonly initialTab?: 'connection'
   readonly onOpenChange: (open: boolean) => void
   readonly connected: boolean
   readonly connectedDshVersion: string | undefined
@@ -37,7 +37,6 @@ export interface SettingsDrawerProps {
   ) => Promise<void>
   readonly onConnectDesktop?: () => Promise<void>
   readonly dshUpdate?: DshUpdateSnapshot | undefined
-  readonly dshUpdateProgress?: DshRuntimeUpdateProgress | undefined
   readonly onCheckDshUpdates?: (force?: boolean) => Promise<DshUpdateSnapshot | undefined>
   readonly onInstallDshVersion?: (version: string) => Promise<DshUpdateSnapshot | undefined>
   readonly theme: ThemePreference
@@ -52,6 +51,7 @@ export interface SettingsDrawerProps {
   readonly providers: readonly ModelProvider[]
   readonly models: readonly ModelDescriptor[]
   readonly onLoadSettings: () => Promise<ExtensionSettingsSummary | undefined>
+  readonly onSetAutoCheckUpdates?: (enabled: boolean) => Promise<boolean>
   readonly onLoadDshSettings: () => Promise<DshSettingsSnapshot | undefined>
   readonly onOpenDshSettingsDocument: () => Promise<void>
   readonly onOpenKeyboardShortcuts: () => Promise<void>
