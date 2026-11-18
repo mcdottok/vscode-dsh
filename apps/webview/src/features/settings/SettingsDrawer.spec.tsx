@@ -876,6 +876,36 @@ describe('SettingsDrawer', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Connection' }))
 
     expect(await screen.findByText(/Could not run npm in the extension environment/i)).toBeDefined()
+    expect(screen.getByText('not detected')).toBeDefined()
+    expect(screen.queryByText(/you can still use start and connect/i)).toBeNull()
+  })
+
+  it('keeps a detected CLI visible and actionable when the online check fails', async () => {
+    const dshUpdate: DshUpdateSnapshot = {
+      status: 'unavailable',
+      currentVersion: '0.2.2-rc.5',
+      currentSource: 'path',
+      availableVersions: [],
+      updateAvailable: false,
+      checkedAt: '2026-08-21T00:00:00.000Z',
+      failure: 'registry-unavailable',
+    }
+    const onConfigureConnection = vi.fn().mockResolvedValue(undefined)
+    renderDrawer({
+      dshUpdate,
+      onCheckDshUpdates: vi.fn().mockResolvedValue(dshUpdate),
+      onInstallDshVersion: vi.fn().mockResolvedValue(dshUpdate),
+      onConfigureConnection,
+    })
+    fireEvent.click(screen.getByRole('tab', { name: 'Connection' }))
+
+    const update = await screen.findByRole('region', { name: 'DSH CLI installation and version' })
+    expect(within(update).getByText('Local DSH CLI')).toBeDefined()
+    expect(within(update).getByText('0.2.2-rc.5')).toBeDefined()
+    expect(within(update).getByRole('status').textContent).toContain('Could not reach the npm registry')
+    expect(within(update).queryByRole('button', { name: /Version to install/u })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Start and connect' }))
+    await waitFor(() => expect(onConfigureConnection).toHaveBeenCalledWith('local', undefined))
   })
 
   it('opens the host-owned settings document when the host advertises one', async () => {

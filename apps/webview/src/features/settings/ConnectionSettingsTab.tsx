@@ -252,35 +252,42 @@ export function ConnectionSettingsTab(input: GeneralSettingsTabProps): ReactElem
           </div>
           {dshUpdate === undefined ? null : (
             <dl className="dsh-settings__runtime-update-facts">
-              {dshUpdate.currentVersion !== dshUpdate.globalVersion ? (
+              <dt>{t('settings.dshUpdateCurrent')}</dt>
+              <dd>{dshUpdate.currentVersion ?? t('settings.dshUpdateNotDetected')}</dd>
+              {dshUpdate.globalVersion !== undefined &&
+              dshUpdate.globalVersion !== dshUpdate.currentVersion ? (
                 <>
-                  <dt>{t('settings.dshUpdateCurrent')}</dt>
-                  <dd>{dshUpdate.currentVersion ?? t('settings.dshUpdateNotInstalled')}</dd>
+                  <dt>{t('settings.dshUpdateGlobal')}</dt>
+                  <dd>{dshUpdate.globalVersion}</dd>
                 </>
               ) : null}
-              <dt>{t('settings.dshUpdateGlobal')}</dt>
-              <dd>{dshUpdate.globalVersion ?? t('settings.dshUpdateNotInstalled')}</dd>
-              <dt>{t('settings.dshUpdateLatest')}</dt>
-              <dd>{dshUpdate.latestVersion ?? t('settings.dshUpdateUnavailable')}</dd>
+              {dshUpdate.latestVersion !== undefined ? (
+                <>
+                  <dt>{t('settings.dshUpdateLatest')}</dt>
+                  <dd>{dshUpdate.latestVersion}</dd>
+                </>
+              ) : null}
             </dl>
           )}
           {dshUpdate === undefined ? (
-            <p className="dsh-settings__empty" role="status">
-              {t('settings.dshUpdateLoading')}
-            </p>
-          ) : dshUpdate.status === 'unavailable' ? (
-            <p className="dsh-settings__error" role="alert">
-              {dshUpdateFailureMessage(dshUpdate.failure, t)}
-            </p>
-          ) : (
+            <p className="dsh-settings__empty">{t('settings.dshUpdateLoading')}</p>
+          ) : null}
+          <div role="status">
+            {dshUpdate?.status === 'unavailable' ? (
+              <>
+                <p className="dsh-settings__error">{dshUpdateFailureMessage(dshUpdate.failure, t)}</p>
+                {dshUpdate.currentVersion === undefined ? null : (
+                  <p className="dsh-settings__note">{t('settings.dshUpdateCanConnect')}</p>
+                )}
+              </>
+            ) : dshUpdate?.updateAvailable ? (
+              <p className="dsh-settings__runtime-update-notice">
+                {t('settings.dshUpdateAvailable', { version: dshUpdate.latestVersion ?? '—' })}
+              </p>
+            ) : null}
+          </div>
+          {dshUpdate?.status === 'ready' ? (
             <>
-              {dshUpdate.updateAvailable ? (
-                <p className="dsh-settings__runtime-update-notice" role="status">
-                  {t('settings.dshUpdateAvailable', {
-                    version: dshUpdate.latestVersion ?? '—',
-                  })}
-                </p>
-              ) : null}
               {selectedDshVersionAlreadyInstalled && effectiveSelectedDshVersion !== undefined ? (
                 <p className="dsh-settings__runtime-update-notice" role="status">
                   {t('settings.dshUpdateAlreadyInstalled', {
@@ -330,7 +337,7 @@ export function ConnectionSettingsTab(input: GeneralSettingsTabProps): ReactElem
                 <p className="dsh-settings__note">{t('settings.dshUpdateRestart')}</p>
               ) : null}
             </>
-          )}
+          ) : null}
           {dshUpdateError === undefined ? null : (
             <p className="dsh-settings__error" role="alert">
               {dshUpdateError}

@@ -110,6 +110,47 @@ describe('DshRuntimeUpdater', () => {
     expect(calls.some((args) => args[0] === 'dsh')).toBe(false)
   })
 
+  it('selects npm from the detected runtime once for both version queries', async () => {
+    const current = { ...runtime(), executable: '/home/test/node/bin/dsh' }
+    const calls: string[] = []
+    const updater = new DshRuntimeUpdater({
+      locateRuntime: () => Promise.resolve(current),
+      npmExecutable: (detected) => {
+        expect(detected).toBe(current)
+        return '/home/test/node/bin/npm'
+      },
+      execute: (executable, args) => {
+        calls.push(`${executable} ${args[0]}`)
+        return Promise.resolve({ stdout: args[0] === 'view' ? metadata : '{}', stderr: '' })
+      },
+      openInstallTerminal: () => Promise.resolve(),
+    })
+
+    expect(await updater.checkForUpdates()).toMatchObject({
+      status: 'ready',
+      currentVersion: current.version,
+    })
+    expect(calls).toEqual(['/home/test/node/bin/npm view', '/home/test/node/bin/npm list'])
+  })
+
+  it('still reports a detected CLI when there is no native npm', async () => {
+    const current = runtime()
+    const updater = new DshRuntimeUpdater({
+      locateRuntime: () => Promise.resolve(current),
+      npmExecutable: () => undefined,
+      execute: () => {
+        throw new Error('no npm should run')
+      },
+      openInstallTerminal: () => Promise.resolve(),
+    })
+
+    expect(await updater.checkForUpdates()).toMatchObject({
+      status: 'unavailable',
+      currentVersion: current.version,
+      failure: 'npm-not-found',
+    })
+  })
+
   it('opens the selected version in the terminal and reads the result only on recheck', async () => {
     const requestedVersions: string[] = []
     let installed = '0.1.0-rc.6'

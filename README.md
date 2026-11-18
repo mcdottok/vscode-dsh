@@ -85,6 +85,12 @@ DSH Coding Agent 是一款社区维护的 VS Code 扩展。你可以在编辑器
 npm install --global @deepseek-ai/dsh
 ```
 
+**在 Remote WSL 中使用 CLI**
+
+1. 在 VS Code 的 WSL 窗口安装 DSH Coding Agent，在同一个 Linux 发行版中安装 Node.js 和 DSH CLI。用集成终端运行 `node -p process.platform` 和 `dsh --version`，确认平台为 `linux` 且能看到 CLI 版本。
+2. 在 DSH 面板选择 **DSH CLI → 重新检测 DSH → 启动并连接**。扩展会检查 WSL 中 `nvm` 的默认 Node.js 环境。若仍未检测到 CLI，在 WSL 终端运行 `command -v dsh`，将输出填入 VS Code 的 **远程 [WSL]** 设置 `dsh.runtime.executablePath`。
+3. 配置模型后，新建会话并请 DSH 读取工作区中的一个测试文件，核对返回的内容。面板已显示本地 CLI 版本时，在线版本查询失败也可以继续点 **启动并连接**。
+
 ## 开发与反馈
 
 - 本地开发见[构建说明](BUILD.md)、[贡献指南](CONTRIBUTING.md)和[开发者文档](docs/README.md)。

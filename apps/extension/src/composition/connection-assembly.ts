@@ -24,6 +24,7 @@ import {
   type AppErrorCode,
   type BackendEndpoint,
   type DshBackend,
+  type DshRuntime,
   type DshRuntimeUpdateProgress,
   isLoopbackEndpoint,
   parseServerOrigin,
@@ -52,6 +53,7 @@ import { probeWebNoOpen } from '../backend/web-launch-probe.js'
 import type { RedactedDiagnostics } from '../backend/diagnostics.js'
 import { DshRuntimeLocator, readStoredRuntimePath } from '../backend/runtime-locator.js'
 import { resolveNpmExecutable } from '../backend/runtime-paths.js'
+import { wslRuntimePaths } from '../backend/wsl-runtime-paths.js'
 import { resolveWindowsShim } from '../backend/windows-shim.js'
 import type { VsCodeConfigurationSource } from '../config/configuration-source.js'
 import { normalizeServerUrl } from '../config/configuration-source.js'
@@ -107,15 +109,26 @@ export interface RuntimeAssembly {
 /** Locate the runtime, discover endpoints, and own the connection machinery. */
 export function createRuntimeAssembly(deps: RuntimeAssemblyDependencies): RuntimeAssembly {
   const { context, configuration, diagnostics, currentWorkspaceFolder, onRuntimeUpdateProgress } = deps
+  const os = platform()
+  const isWsl = os === 'linux' && vscode.env?.remoteName === 'wsl'
+  const pathEntries = (): readonly string[] => extensionRuntimePathEntries(os, process.env)
+  const wslPaths = (): ReturnType<typeof wslRuntimePaths> => wslRuntimePaths(process.env, pathEntries())
+  const npmExecutable = (runtime?: DshRuntime): string | undefined =>
+    isWsl ? wslPaths().npmExecutable(runtime?.executable) : resolveNpmExecutable(os, pathEntries())
   const runtimeLocator = new DshRuntimeLocator({
-    os: platform(),
+    os,
     configuredPath: () => configuration.read().runtime.executablePath,
-    pathEntries: () => extensionRuntimePathEntries(platform(), process.env),
-    lastKnownRuntimePath: () =>
-      readStoredRuntimePath(context.globalState.get<unknown>(RUNTIME_PATH_STATE_KEY)),
-    rememberRuntimePath: (hint) => {
-      void context.globalState.update(RUNTIME_PATH_STATE_KEY, hint)
-    },
+    pathEntries: () => (isWsl ? wslPaths().entries : pathEntries()),
+    // Recheck nvm's default instead of preferring a previous WSL executable.
+    ...(isWsl
+      ? {}
+      : {
+          lastKnownRuntimePath: () =>
+            readStoredRuntimePath(context.globalState.get<unknown>(RUNTIME_PATH_STATE_KEY)),
+          rememberRuntimePath: (hint) => {
+            void context.globalState.update(RUNTIME_PATH_STATE_KEY, hint)
+          },
+        }),
     logProbeFailure: (failure) =>
       diagnostics.log('warn', 'runtime-probe-failed', {
         name: failure.name,
@@ -123,8 +136,8 @@ export function createRuntimeAssembly(deps: RuntimeAssemblyDependencies): Runtim
         message: failure.message,
       }),
     npmGlobalPrefix: async (signal) => {
-      const os = platform()
-      const npm = resolveNpmExecutable(os, extensionRuntimePathEntries(os, process.env))
+      const npm = npmExecutable()
+      if (npm === undefined) return undefined
       const resolved =
         os === 'windows'
           ? resolveWindowsShim(npm, os, readTextFile, windowsShimOptions(os, process.env))
@@ -353,10 +366,7 @@ export function createRuntimeAssembly(deps: RuntimeAssemblyDependencies): Runtim
     verifyExecutable: async (executable) => (await runtimeLocator.inspectExecutable(executable)).supported,
   })
   const runtimeUpdater = new DshRuntimeUpdater({
-    npmExecutable: () => {
-      const os = platform()
-      return resolveNpmExecutable(os, extensionRuntimePathEntries(os, process.env))
-    },
+    npmExecutable,
     locateRuntime: async (signal) => (await runtimeLocator.locate(signal)).runtime,
     onProgress: (progress) => onRuntimeUpdateProgress(progress),
     execute: executeRuntimeCommand,

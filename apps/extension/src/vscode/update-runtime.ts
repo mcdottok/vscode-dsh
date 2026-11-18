@@ -29,7 +29,7 @@ export type ExecuteRuntimeCommand = (
 ) => Promise<RuntimeCommandResult>
 
 export interface DshRuntimeUpdaterDependencies {
-  readonly npmExecutable: () => string
+  readonly npmExecutable: (runtime: DshRuntime | undefined) => string | undefined
   readonly locateRuntime: (signal?: AbortSignal) => Promise<DshRuntime | undefined>
   readonly execute: ExecuteRuntimeCommand
   /** Safe, phase-only progress; never include npm output, paths, or secrets. */
@@ -92,20 +92,26 @@ export class DshRuntimeUpdater {
   private async checkOnce(signal?: AbortSignal): Promise<DshUpdateSnapshot> {
     this.emitProgress({ phase: 'checking' })
     const checkedAt = this.timestamp()
-    const [runtimeResult, metadataResult, globalResult] = await Promise.allSettled([
-      this.dependencies.locateRuntime(signal),
-      this.readMetadata(signal),
-      this.readGlobalVersion(signal),
-    ])
+    const runtime = await this.dependencies.locateRuntime(signal).catch((error: unknown) => {
+      if (isCancellation(error, signal)) throw cancelledError(signal?.reason ?? error)
+      return undefined
+    })
+    if (signal?.aborted) throw cancelledError(signal.reason)
+    const npm = this.dependencies.npmExecutable(runtime)
+    const [metadataResult, globalResult] =
+      npm === undefined
+        ? []
+        : await Promise.allSettled([this.readMetadata(npm, signal), this.readGlobalVersion(npm, signal)])
     if (
-      signal?.aborted === true ||
-      [runtimeResult, metadataResult, globalResult].some((result) => isRejectedCancellation(result, signal))
+      signal?.aborted ||
+      [metadataResult, globalResult].some(
+        (result) => result !== undefined && isRejectedCancellation(result, signal),
+      )
     )
       throw cancelledError(signal?.reason)
 
-    const runtime = runtimeResult.status === 'fulfilled' ? runtimeResult.value : undefined
-    const globalVersion = globalResult.status === 'fulfilled' ? globalResult.value : undefined
-    if (metadataResult.status !== 'fulfilled') {
+    const globalVersion = globalResult?.status === 'fulfilled' ? globalResult.value : undefined
+    if (metadataResult?.status !== 'fulfilled') {
       const snapshot: DshUpdateSnapshot = {
         status: 'unavailable',
         ...(runtime === undefined ? {} : { currentVersion: runtime.version, currentSource: runtime.source }),
@@ -113,7 +119,7 @@ export class DshRuntimeUpdater {
         availableVersions: [],
         updateAvailable: false,
         checkedAt,
-        failure: failureFor(metadataResult.reason),
+        failure: metadataResult === undefined ? 'npm-not-found' : failureFor(metadataResult.reason),
       }
       this.cached = snapshot
       this.emitProgress({ phase: 'failed' })
@@ -134,19 +140,19 @@ export class DshRuntimeUpdater {
     }
   }
 
-  private async readMetadata(signal?: AbortSignal): Promise<RegistryMetadata> {
+  private async readMetadata(npm: string, signal?: AbortSignal): Promise<RegistryMetadata> {
     const result = await this.dependencies.execute(
-      this.dependencies.npmExecutable(),
+      npm,
       ['view', DSH_PACKAGE_NAME, '--json'],
       this.commandOptions(UPDATE_CHECK_TIMEOUT_MS, signal),
     )
     return parseNpmMetadata(result.stdout)
   }
 
-  private async readGlobalVersion(signal?: AbortSignal): Promise<string | undefined> {
+  private async readGlobalVersion(npm: string, signal?: AbortSignal): Promise<string | undefined> {
     try {
       const result = await this.dependencies.execute(
-        this.dependencies.npmExecutable(),
+        npm,
         ['list', '--global', DSH_PACKAGE_NAME, '--depth=0', '--json'],
         this.commandOptions(UPDATE_CHECK_TIMEOUT_MS, signal),
       )

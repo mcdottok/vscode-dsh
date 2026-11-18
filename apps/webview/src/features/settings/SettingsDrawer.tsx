@@ -461,7 +461,7 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
     void onCheckDshUpdates(true)
       .then((snapshot) => {
         if (openEpochRef.current !== epoch) return
-        if (snapshot?.currentVersion === undefined && snapshot?.globalVersion === undefined) return
+        if (snapshot?.currentVersion === undefined) return
         setConnectionError((message) =>
           message === t('settings.connectionCliMissing') ? undefined : message,
         )
