@@ -4,7 +4,7 @@ import { canConnect, LIVE_TIMEOUT_MS, startManagedRuntime } from './harness.js'
 
 // A disposable DSH home/workspace and synthetic prompt, without a real account.
 const version = process.env.DSH_LIVE_RUNTIME_VERSION ?? ''
-const supportedVersions = ['0.2.2-rc.1', '0.2.2-rc.2', '0.2.2-rc.3']
+const supportedVersions = ['0.2.2-rc.1', '0.2.2-rc.2', '0.2.2-rc.3', '0.2.2-rc.4', '0.2.2-rc.5']
 describe.skipIf(process.env.DSH_LIVE_SMOKE !== '1' || !supportedVersions.includes(version))(
   'live DSH 0.2.2 message history',
   () => {

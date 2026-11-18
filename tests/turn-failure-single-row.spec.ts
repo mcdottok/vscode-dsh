@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { normalizeEnvelope } from '../packages/dsh-adapter/src/stream-envelopes.js'
+import { expandHistoryRecords } from '../packages/dsh-adapter/src/versions/alpha/session-wire.js'
+import { rc222SessionProfile } from '../packages/dsh-adapter/src/versions/rc222/session-wire.js'
 import { rc6Mapper } from '../packages/dsh-adapter/src/versions/rc6/mapper.js'
 import { reduceTimelineBatch } from '../packages/timeline/src/reducer.js'
 import type { TimelineState } from '../packages/timeline/src/nodes.js'
@@ -63,5 +66,43 @@ describe('one failed turn shows one row', () => {
     ])
 
     expect(state.nodes.map((node) => node.kind)).toEqual(['turn-terminal'])
+  })
+
+  it('preserves rc.4 refusal usage and the terminal failure in V4 history', () => {
+    // dsh-v0.2.2-rc.4 / 3f321d32bfe382212a8ed8785c1d47a5a300aa23,
+    // snapshots/session/deepseek-content-refusal/session.v4.jsonl.
+    const failure = {
+      message: 'DeepSeek refused to answer under its content safety review',
+      code: 'CONTENT_REFUSED',
+    }
+    const usage = { inputTokens: 12, outputTokens: 5, totalTokens: 17 }
+    const attempt = {
+      type: 'assistant/attempt',
+      seq: 0,
+      time: 1,
+      data: {
+        turn: 1,
+        step: 1,
+        stream: [
+          { type: 'chunk', time: 0, chunk: { type: 'usage', usage } },
+          { type: 'chunk', time: 0, chunk: { type: 'finish', reason: { kind: 'error', failure } } },
+        ],
+      },
+    }
+    const turnEnd = {
+      type: 'turn/end',
+      seq: 1,
+      time: 2,
+      data: { turn: 1, reason: { kind: 'error', error: failure } },
+    }
+    const records = [attempt, turnEnd].map((event) => ({ type: 'event', event }))
+    const events = expandHistoryRecords(records, 's1', 'v4', false, rc222SessionProfile).map((event) =>
+      normalizeEnvelope({ type: 'session/event', sessionId: 's1', event }),
+    )
+
+    expect(events).toMatchObject([
+      { type: 'assistant.attempt', sessionId: 's1', turn: 1, step: 1, usage },
+      { type: 'turn.ended', sessionId: 's1', turn: 1, reason: 'error', failure },
+    ])
   })
 })

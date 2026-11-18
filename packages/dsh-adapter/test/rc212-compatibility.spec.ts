@@ -4,6 +4,8 @@ import { Rc212VersionAdapter } from '../src/versions/rc212/adapter.js'
 import { Rc213VersionAdapter } from '../src/versions/rc213/adapter.js'
 import { Rc215VersionAdapter } from '../src/versions/rc215/adapter.js'
 import { Rc223VersionAdapter } from '../src/versions/rc223/adapter.js'
+import { Rc224VersionAdapter } from '../src/versions/rc224/adapter.js'
+import { Rc225VersionAdapter } from '../src/versions/rc225/adapter.js'
 import { acceptsRc212CompatibilityVersion } from '../src/versions/rc212/compatibility.js'
 import { VersionedBackendProbe } from '../src/probe.js'
 import { candidate, transportOptions } from './support/contract-harness.js'
@@ -79,25 +81,31 @@ describe('rc.2 protocol family compatibility', () => {
   )
 
   it.each([
-    ['0.2.2-rc.3', 'exact'],
-    ['0.2.2-rc.4', 'best-effort'],
-    ['0.2.2', 'best-effort'],
-  ])('selects the rc223 wire for %s and reports %s', async (version, mode) => {
+    ['0.2.2-rc.3', 'exact', 'rc223', '0.2.2-rc.3'],
+    ['0.2.2-rc.4', 'exact', 'rc224', '0.2.2-rc.4'],
+    ['0.2.2-rc.5', 'exact', 'rc225', '0.2.2-rc.5'],
+    ['0.2.2-rc.6', 'best-effort', 'rc223', '0.2.2-rc.3'],
+    ['0.2.2', 'best-effort', 'rc223', '0.2.2-rc.3'],
+  ])('selects %s in %s mode using %s', async (version, mode, protocolVersion, adapterVersion) => {
     const fixture = new ProbeFixtureTransport()
-    class FixtureAdapter extends Rc223VersionAdapter {
-      public override createTransport(): ProbeFixtureTransport {
-        return fixture
-      }
-    }
     const older = new ProbeFixtureTransport()
-    const adapter = new FixtureAdapter(transportOptions(globalThis.fetch))
-    const result = await new VersionedBackendProbe([adapterFor(older), adapter]).probe(candidate(version))
+    const adapters = [Rc225VersionAdapter, Rc224VersionAdapter, Rc223VersionAdapter].map((Adapter) => {
+      class FixtureAdapter extends Adapter {
+        public override createTransport(): ProbeFixtureTransport {
+          return fixture
+        }
+      }
+      return new FixtureAdapter(transportOptions(globalThis.fetch))
+    })
+    const result = await new VersionedBackendProbe([adapterFor(older), ...adapters]).probe(candidate(version))
     expect(result?.capabilities).toMatchObject({
       dshVersion: version,
-      protocolVersion: 'rc223',
-      adapterId: 'dsh-0.2.2-rc.3',
+      protocolVersion,
+      adapterId: `dsh-${adapterVersion}`,
       compatibilityMode: mode,
+      featureProfile: { source: mode === 'exact' ? 'pinned-adapter' : 'compatibility-fallback' },
     })
+    if (mode === 'exact') expect(result?.capabilities.compatibilityWarning).toBeUndefined()
     expect(fixture.methods).toEqual(['session.list', 'workspace.list'])
     expect(fixture.closeCalls).toBe(1)
     expect(older.methods).toEqual([])

@@ -11,6 +11,8 @@ import {
   Rc221VersionAdapter,
   Rc222VersionAdapter,
   Rc223VersionAdapter,
+  Rc224VersionAdapter,
+  Rc225VersionAdapter,
   VersionedBackendProbe,
 } from '@dsh-vscode/dsh-adapter'
 
@@ -66,17 +68,24 @@ describe('production version adapter registry', () => {
 
     expect(marker).toBeInstanceOf(Rc202VersionAdapter)
     expect(marker?.fallback).toBe(false)
-    expect(adapters[0]).toBeInstanceOf(Rc223VersionAdapter)
-    expect(adapters[0]?.fallback).toBe(false)
-    expect(adapters[1]).toBeInstanceOf(Rc222VersionAdapter)
-    expect(adapters[1]?.fallback).toBe(false)
-    expect(adapters[2]).toBeInstanceOf(Rc221VersionAdapter)
-    expect(adapters[2]?.fallback).toBe(false)
-    expect(adapters[3]).toBeInstanceOf(Rc215VersionAdapter)
-    expect(adapters[4]).toBeInstanceOf(Rc213VersionAdapter)
-    expect(adapters[5]).toBeInstanceOf(Rc212VersionAdapter)
+    const newestAdapters = [
+      Rc225VersionAdapter,
+      Rc224VersionAdapter,
+      Rc223VersionAdapter,
+      Rc222VersionAdapter,
+      Rc221VersionAdapter,
+      Rc215VersionAdapter,
+      Rc213VersionAdapter,
+      Rc212VersionAdapter,
+    ]
+    for (const [index, Adapter] of newestAdapters.entries()) {
+      expect(adapters[index]?.constructor).toBe(Adapter)
+      expect(adapters[index]?.fallback).toBe(false)
+    }
     expect(new Set(adapters.map((adapter) => adapter.supportedVersion)).size).toBe(adapters.length)
-    expect(adapters.slice(0, 15).map((adapter) => adapter.supportedVersion)).toEqual([
+    expect(adapters.slice(0, 17).map((adapter) => adapter.supportedVersion)).toEqual([
+      '0.2.2-rc.5',
+      '0.2.2-rc.4',
       '0.2.2-rc.3',
       '0.2.2-rc.2',
       '0.2.2-rc.1',
@@ -97,8 +106,8 @@ describe('production version adapter registry', () => {
     expect(adapters.filter((adapter) => adapter.supportedVersion === '0.2.0-rc.2')).toHaveLength(1)
     expect(adapters.filter((adapter) => adapter.supportedVersion === '0.2.0-rc.1')).toHaveLength(1)
     // Published releases, exact adapter support, and the installer tag are tracked separately.
-    expect(LATEST_PUBLISHED_DSH_VERSION).toBe('0.2.2-rc.3')
-    expect(LATEST_SUPPORTED_DSH_VERSION).toBe('0.2.2-rc.3')
+    expect(LATEST_PUBLISHED_DSH_VERSION).toBe('0.2.2-rc.5')
+    expect(LATEST_SUPPORTED_DSH_VERSION).toBe('0.2.2-rc.5')
     expect(DEFAULT_INSTALL_DSH_TAG).toBe('latest')
   })
 })

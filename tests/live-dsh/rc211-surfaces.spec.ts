@@ -17,6 +17,8 @@ const releases = [
   '0.2.2-rc.1',
   '0.2.2-rc.2',
   '0.2.2-rc.3',
+  '0.2.2-rc.4',
+  '0.2.2-rc.5',
 ]
 
 describe.skipIf(process.env.DSH_LIVE_SMOKE !== '1' || !releases.includes(version))(
@@ -119,6 +121,28 @@ describe.skipIf(process.env.DSH_LIVE_SMOKE !== '1' || !releases.includes(version
             const restored = await settings.readSnapshot()
             expect(restored.values['web']).toEqual(initial.values['web'])
             expect(restored.values['web-deepseek-api']).toEqual(initial.values['web-deepseek-api'])
+          } else if (version === '0.2.2-rc.4' || version === '0.2.2-rc.5') {
+            const settings = backend.settings
+            const initial = await settings.readSnapshot()
+            const web = initial.schema.namespaces.find((entry) => entry.ns === 'web')!
+            expect(initial.schema.fields.find((field) => field.path === 'web.searchProvider')).toMatchObject({
+              type: 'string',
+              required: false,
+              restartRequired: false,
+            })
+            expect(web.userFields).not.toContain('searchProvider')
+            if (version === '0.2.2-rc.5')
+              expect(initial.values['web']).not.toHaveProperty('searchProvider', expect.anything())
+            await settings.mutate(
+              'web',
+              [{ op: 'set', path: ['searchProvider'], value: 'deepseek-official' }],
+              web.revision,
+            )
+            const changed = await settings.readSnapshot()
+            expect(changed.values['web']).toMatchObject({ searchProvider: 'deepseek-official' })
+            const revision = changed.schema.namespaces.find((entry) => entry.ns === 'web')!.revision
+            await settings.mutate('web', [{ op: 'unset', path: ['searchProvider'] }], revision)
+            expect((await settings.readSnapshot()).values['web']).toEqual(initial.values['web'])
           }
           expect(backend.connection.capabilities.adapterId).toBe(`dsh-${version}`)
           expect(backend.connection.capabilities.compatibilityMode).toBe('exact')

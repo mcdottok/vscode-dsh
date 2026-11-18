@@ -6,7 +6,7 @@
 
 官方 Desktop 的 `0.2.1-rc.2` 安装包与同名 tag 使用同一 Host 启动契约：`apps/desktop-host/src/index.ts` 通过 `--host 127.0.0.1 --port 0` 启动，再调用 `connection.authenticatedUrl` 向 Electron 提交地址。连接配套复用该版本 `connection.fetch.register` 的已认证 owner-only 精确路由，界面使用 `settings.general.item` 与 `plugins.bundle.config`。Windows 同机发现通过配套插件登记和命名管道配对，运行时身份仍由 Adapter Probe 验证。现场双端验收独立记录。
 
-最新发布包为 `@deepseek-ai/dsh@0.2.2-rc.3`，其会话主链路已建立独立适配，其他能力仍有下述限制。扩展引导安装默认包为 `@deepseek-ai/dsh@latest`，由 npm 在执行命令时解析。设置中的指定版本安装使用用户选择的精确版本。发布版本与安装标签分别由 `LATEST_PUBLISHED_DSH_VERSION`、`DEFAULT_INSTALL_DSH_TAG` 维护，连接时按实际安装版本探测协议。
+最新发布包为 `@deepseek-ai/dsh@0.2.2-rc.5`，其会话主链路已建立独立适配，其他能力仍有下述限制。扩展引导安装默认包为 `@deepseek-ai/dsh@latest`，由 npm 在执行命令时解析。设置中的指定版本安装使用用户选择的精确版本。发布版本与安装标签分别由 `LATEST_PUBLISHED_DSH_VERSION`、`DEFAULT_INSTALL_DSH_TAG` 维护，连接时按实际安装版本探测协议。
 
 历史 Host API 的固定基线是提交 [`47f943859bef60e4160492346772ded9b24f765a`](https://github.com/deepseek-ai/deepseek-harness/tree/47f943859bef60e4160492346772ded9b24f765a)：[RPC map](https://github.com/deepseek-ai/deepseek-harness/blob/47f943859bef60e4160492346772ded9b24f765a/packages/host/apiproxy/src/api/rpc-map.ts)、[events](https://github.com/deepseek-ai/deepseek-harness/blob/47f943859bef60e4160492346772ded9b24f765a/packages/host/apiproxy/src/api/events.ts)、[tool catalog](https://github.com/deepseek-ai/deepseek-harness/tree/47f943859bef60e4160492346772ded9b24f765a/packages/core/tools)。它只证明该 Host API 家族；较新的 Connection/Gateway、typed Remote 和 Session Controller 必须从**目标版本自己的 tag/commit 和实际存在的接口文件**核对。尤其 `0.1.5-rc.2` 与 `0.1.5-rc.3` 的 wire 比较不能引用上述已不存在的旧 RPC 文件；两者被适配器消费的 Session Controller、typed Remote、Connection/Gateway 与工具运行时源码相同，仍保留各自精确身份。
 
@@ -21,6 +21,10 @@
 `0.2.2-rc.1` 的固定来源是 [tag `dsh-v0.2.2-rc.1`](https://github.com/deepseek-ai/deepseek-harness/tree/66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db)，本机 CLI 要求 Node.js 24.9 或更高。`session/control` 的增量从单个 `key/value` 改为同一事件序号下的 `changes: [{key, val}]`；`rc221` 先完整校验批次，再依原序投影为内部状态及 Inbox 队列，旧版本仍用原契约。历史图片读取改用完整引用；由于上游不再检查引用与 Session 的对应关系，扩展只使用 Host 从该 Session 实际观察到的引用，缓存有界并在 Session 移除时清理。插件目录和操作结果新增 `unsupported-platform` 状态，按平台不支持展示，原始诊断留在 Host。Windows 隔离运行已检查启动、连接、设置读写、插件目录、会话创建和打开、归档、空队列、会话标题实时更新、文本消息及图片发送与历史读取和端口释放；未使用真实账号，未验证实际模型回复。Schedule 改为宿主级任务契约，扩展暂不暴露旧 Schedule 接口。插件安装/更新、其他新增功能和现场 VS Code 交互尚未完成全面验证，不能据精确版本身份声称全部兼容。
 
 `0.2.2-rc.3` 的固定来源是 [tag `dsh-v0.2.2-rc.3`](https://github.com/deepseek-ai/deepseek-harness/tree/38a6a5c965aa99ab525161efb7cc5cf1fe62fced)。[与 rc.2 的源码比较](https://github.com/deepseek-ai/deepseek-harness/compare/ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c...38a6a5c965aa99ab525161efb7cc5cf1fe62fced)显示主要变更为实验性会话导入插件、客户端入口和 Windows 安装更新。扩展消费的 Gateway、会话发送与控制、Workspace、子代理 Remote 和 V4 格式保留 rc.2 契约。rc223 复用该实现，另有精确版本身份及有界兼容入口。Windows 隔离 CLI 实测通过会话控制、消息实时推送及历史读取，均保留发送请求标识。真实 VS Code 发送与清稿仍待验收。
+
+`0.2.2-rc.4` 的固定来源是 [tag `dsh-v0.2.2-rc.4`](https://github.com/deepseek-ai/deepseek-harness/tree/3f321d32bfe382212a8ed8785c1d47a5a300aa23)。[相对 rc.3](https://github.com/deepseek-ai/deepseek-harness/compare/38a6a5c965aa99ab525161efb7cc5cf1fe62fced...3f321d32bfe382212a8ed8785c1d47a5a300aa23)，上游修复 LiveShare 桌面启动，并在模型拒答时以现有 V4 `assistant/attempt` 保留用量、通过 `turn/end` 报告 `CONTENT_REFUSED`。回归测试使用上游 V4 样例，确认扩展保留用量和失败原因。Gateway、会话与 Workspace 接口复用 rc.3。真实 CLI 和 Desktop 待验收。
+
+`0.2.2-rc.5` 的固定来源是 [tag `dsh-v0.2.2-rc.5`](https://github.com/deepseek-ai/deepseek-harness/tree/9c2670d3bce5275e0d1610272958121af87787bb)。[相对 rc.4](https://github.com/deepseek-ai/deepseek-harness/compare/3f321d32bfe382212a8ed8785c1d47a5a300aa23...9c2670d3bce5275e0d1610272958121af87787bb)，未指定搜索提供商时，由 DSH 按模型路由选择默认值。工具参数和扩展消费的 RPC、事件保持原形状，设置仍由动态 schema 提供。Windows 隔离 CLI 已验证启动、精确连接、会话控制、消息实时推送及历史读取、插件目录，以及搜索提供商的设置和恢复自动选择。真实模型搜索和 Desktop 待验收。
 
 `0.2.2-rc.2` 的固定来源是 [tag `dsh-v0.2.2-rc.2`](https://github.com/deepseek-ai/deepseek-harness/tree/ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c)，提交 `ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c`。相对 rc.1，Adapter 消费的服务端源码有四处增量，`rc222` 因此独立继承 `rc221`：
 
@@ -63,6 +67,8 @@ rc.2 尚未做 Windows 隔离现场运行，也未验证真实模型回复、插
 | `0.2.2-rc.1`                                                                        | `rc221`                                         | 独立入口；适配批量 Session control 和已观察引用的图片读取，宿主级 Schedule 尚未适配；不作为未知版本回退                                                           |
 | `0.2.2-rc.2`                                                                        | `rc222`                                         | 独立入口；子代理续接/中断改按目标 Session 授权、catalog v3 降级、`team/mode` 审计事实、插件 `unexpected-package`；不作为未知版本回退                              |
 | `0.2.2-rc.3`                                                                        | `rc223`                                         | 精确入口沿用 rc.2 协议，也是较新 0.2.x 的有界兼容基线                                                                                                             |
+| `0.2.2-rc.4`                                                                        | `rc224`                                         | 精确入口沿用 rc.3 协议，模型拒答使用既有 V4 事件                                                                                                                  |
+| `0.2.2-rc.5`                                                                        | `rc225`                                         | 精确入口沿用 rc.4 协议，搜索默认值由 DSH 选择                                                                                                                     |
 
 `0.1.7-rc.2` 的固定源码是 [tag `dsh-v0.1.7-rc.2`](https://github.com/deepseek-ai/deepseek-harness/tree/dsh-v0.1.7-rc.2)，提交 `477b4f420553e8a52c2fbccc464d7561b239c443`。其他新增版本也必须在 fixture 注明 tag、commit、文件和类型；版本身份、schema、错误词汇、启动参数与能力声明一起核对。
 
