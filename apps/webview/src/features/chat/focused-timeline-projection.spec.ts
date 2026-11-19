@@ -23,7 +23,6 @@ describe('focused Turn presentation', () => {
     const [streaming] = project([before, live])
     expect(streaming?.kind === 'focused-turn' && streaming.answer).toBe(live)
     expect(streaming?.kind === 'focused-turn' && streaming.foldable).toBe(false)
-    expect(streaming?.kind === 'focused-turn' && streaming.processCount).toBe(1)
     const settled = { ...live, streaming: false }
     const [waiting] = project([before, settled])
     expect(waiting?.kind === 'focused-turn' && waiting.answer).toBe(settled)
@@ -169,7 +168,6 @@ describe('focused Turn presentation', () => {
     expect(group?.kind === 'focused-turn' && group.sourceIds).toEqual(source.map((node) => node.id))
     expect(group?.kind === 'focused-turn' && group.nodes).toHaveLength(1_000)
     expect(group?.kind === 'focused-turn' && group.id).toBe('focused-turn:message-0')
-    expect(group?.kind === 'focused-turn' && group.processCount).toBe(999)
   })
 
   it('keeps submitted plans outside a folded process', () => {
@@ -228,7 +226,7 @@ describe('focused Turn presentation', () => {
     expect(last?.kind === 'focused-turn' && last.answer?.id).toBe('changed-answer')
   })
 
-  it('does not hide a reply when tool step coordinates cannot establish a final answer', () => {
+  it('does not report the process complete without the tool step coordinates', () => {
     const call: DisplayTimelineNode = {
       kind: 'tool',
       id: 'tool',

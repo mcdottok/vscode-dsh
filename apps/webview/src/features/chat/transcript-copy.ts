@@ -7,17 +7,23 @@ import type { FocusedWorkNode, PresentedTimelineNode } from './focused-timeline-
  * Reasoning, tool calls, notices and statistics stay out. Answer rows publish
  * the same Markdown their own copy button offers (`assistant-message`,
  * `assistant-turn`, `user-message`); a focused turn has no such button, so it
- * publishes its settled answer, or the text of its grouped messages while it
- * runs. Markdown rather than rendered text is intentional — pasting a response
+ * publishes the addressed reply. If the whole turn is addressed, it publishes
+ * the closing answer or its grouped messages. Pasting Markdown rather than rendered text
  * keeps its headings, lists and code fences.
  */
-export function rowCopyMarkdown(node: PresentedTimelineNode): string | undefined {
+export function rowCopyMarkdown(node: PresentedTimelineNode, messageId?: string): string | undefined {
   switch (node.kind) {
     case 'assistant-message':
     case 'assistant-turn':
     case 'user-message':
       return readableMarkdown(node.markdown)
     case 'focused-turn':
+      if (messageId !== undefined) {
+        const message = node.nodes.find((member) => member.id === messageId)
+        return message === undefined || message.kind === 'tool'
+          ? undefined
+          : readableMarkdown(message.markdown)
+      }
       // A settled answer is the whole answer, even when it carries only
       // images: its absent text is a strict no-op, never the process text of
       // the messages that produced it.

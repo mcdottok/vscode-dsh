@@ -239,40 +239,38 @@ describe('focused conversation interactions', () => {
         </ConversationLayoutProvider>
       )
       const view = render(content(answer))
-      const outside = view.container.querySelector('.dsh-focused-turn__answer')!
-      expect(outside.textContent).toContain(body)
-      expect(screen.getByText(body).closest('.dsh-focused-turn__process')).toBeNull()
+      const outside = screen.getByText(body).closest('.dsh-focused-turn__answer')!
+      expect(outside).not.toBeNull()
       fireEvent.click(view.container.querySelector<HTMLButtonElement>('.dsh-focused-turn__summary')!)
       expect(screen.getByText(body).closest('.dsh-focused-turn__process')).toBeNull()
       view.rerender(content({ ...answer, markdown: body + ' continues' }))
       const streamedReply = await screen.findByText(body + ' continues')
       expect(outside.contains(streamedReply)).toBe(true)
-      expect(view.container.querySelector('.dsh-focused-turn__answer')).toBe(outside)
       view.rerender(
         content({ ...answer, markdown: body + ' continues', streaming: false, turnCompleted: true }),
       )
-      expect(view.container.querySelector('.dsh-focused-turn__answer')).toBe(outside)
-      expect(screen.getByText(body + ' continues').closest('.dsh-focused-turn__process')).toBeNull()
+      expect(screen.getByText(body + ' continues').closest('.dsh-focused-turn__answer')).toBe(outside)
     },
   )
   it('presents one disclosure for the whole continuous process and toggles it', () => {
     const source: TimelineNode[] = Array.from({ length: 55 }, (_, index) => ({
       kind: 'assistant-message',
       id: `continuous-${index}`,
-      markdown: `Progress item ${index}`,
+      markdown: '',
+      reasoning: { markdown: `Progress item ${index}`, streaming: false },
       streaming: false,
       turn: 1,
       step: index + 1,
       turnCompleted: false,
     }))
-    const view = render(session('standard', source))
+    const view = render(session('verbose', source))
     expect(screen.getAllByRole('button', { name: /Work details/u })).toHaveLength(1)
     expect(screen.getByText('Progress item 54')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /Work details/u }))
     expect(screen.queryByText('Progress item 0')).toBeNull()
-    expect(screen.getByText('Progress item 54').closest('.dsh-focused-turn__process')).toBeNull()
+    expect(screen.queryByText('Progress item 54')).toBeNull()
     view.rerender(
-      session('standard', [
+      session('verbose', [
         ...source,
         {
           kind: 'assistant-message',
@@ -295,7 +293,8 @@ describe('focused conversation interactions', () => {
     const source: TimelineNode[] = Array.from({ length: 200 }, (_, index) => ({
       kind: 'assistant-message',
       id: `running-${index}`,
-      markdown: `Running step ${index}`,
+      markdown: '',
+      reasoning: { markdown: `Running step ${index}`, streaming: false },
       streaming: false,
       turn: 1,
       step: index + 1,
@@ -303,14 +302,14 @@ describe('focused conversation interactions', () => {
     }))
     render(
       <ConversationLayoutProvider initialLayout="focused">
-        <Timeline sessionId="fixture" nodes={source} streaming />
+        <Timeline sessionId="fixture" nodes={source} streaming transcriptView="verbose" />
       </ConversationLayoutProvider>,
     )
     expect(screen.getByText('Running step 199')).toBeTruthy()
     expect(screen.queryByText('Running step 0')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Load earlier' }))
-    expect(screen.getByText('Running step 79')).toBeTruthy()
-    expect(screen.queryByText('Running step 78')).toBeNull()
+    expect(screen.getByText('Running step 80')).toBeTruthy()
+    expect(screen.queryByText('Running step 79')).toBeNull()
   })
   it('lets a user close active work, retains that choice on updates, and reopens the same process', () => {
     const live = nodes
@@ -322,13 +321,17 @@ describe('focused conversation interactions', () => {
     fireEvent.click(screen.getByRole('button', { name: /Tool calls: 1/u }))
     fireEvent.click(summary)
     expect(summary.getAttribute('aria-expanded')).toBe('false')
-    expect(screen.queryByText('I am examining the implementation')).toBeNull()
+    expect(
+      screen.getByText('I am examining the implementation').closest('.dsh-focused-turn__process'),
+    ).toBeNull()
 
     const updated = live.map((node) =>
       node.kind === 'assistant-message' ? { ...node, markdown: 'New progress from the same Turn' } : node,
     )
     view.rerender(session('standard', updated))
-    expect(screen.queryByText('New progress from the same Turn')).toBeNull()
+    expect(
+      screen.getByText('New progress from the same Turn').closest('.dsh-focused-turn__process'),
+    ).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: /Work details/u }))
     expect(screen.getByText('New progress from the same Turn')).toBeDefined()
     expect(screen.getByRole('button', { name: /Tool calls: 1/u }).getAttribute('aria-expanded')).toBe('true')
@@ -374,7 +377,7 @@ describe('focused conversation interactions', () => {
     )
     render(session('standard', source))
     expect(screen.getByText('The complete result')).toBeDefined()
-    expect(screen.queryByText('I am examining the implementation')).toBeNull()
+    expect(screen.getByText('I am examining the implementation')).toBeDefined()
     const summary = screen.getByRole('button', { name: /Tools used: 1 · 1 failed/u })
     expect(summary.getAttribute('aria-expanded')).toBe('false')
     expect(screen.queryByText('Failed tool calls: 1')).toBeNull()
@@ -395,29 +398,44 @@ describe('focused conversation interactions', () => {
         <Timeline sessionId="fixture" nodes={source} streaming={false} onOpenLink={open} />
       </ConversationLayoutProvider>,
     )
-    expect(screen.queryByText('I am examining the implementation')).toBeNull()
+    expect(screen.getByText('I am examining the implementation')).toBeDefined()
     fireEvent.click(screen.getByRole('button', { name: 'Open src/result.ts' }))
     expect(open).toHaveBeenCalledWith('src/result.ts')
     // The chip already opens the file, so the row must not offer a second
     // folder action that only repeats it.
     expect(screen.queryByRole('button', { name: 'Show in folder' })).toBeNull()
   })
-  it('folds completed work, keeps the final reply visible and opens the original process', () => {
-    const view = render(session())
+  it('keeps the report and follow-up outside the same folded tool process', () => {
+    const source = nodes.map((node): TimelineNode =>
+      node.kind === 'assistant-message' && node.id === 'commentary'
+        ? {
+            ...node,
+            markdown: '## Review findings\n\n```text\nReport details\n```',
+            reasoning: { markdown: 'Preparing the report', streaming: false },
+            turnCompleted: false,
+          }
+        : node,
+    )
+    const view = render(session('standard', source))
     const turn = (): Element | null => view.container.querySelector('.dsh-focused-turn')
-    expect(screen.getByText('The complete result')).toBeDefined()
-    expect(screen.queryByText('I am examining the implementation')).toBeNull()
-    // Collapsed work is not a scroll box; it mounts nothing to bound.
-    expect(turn()?.getAttribute('data-compact-process')).toBe('false')
     const button = screen.getByRole('button', { name: /Tools used: 1/ })
     expect(button.getAttribute('aria-expanded')).toBe('false')
+    const report = screen.getByRole('heading', { name: 'Review findings' })
+    const followUp = screen.getByText('The complete result')
+    expect(report.compareDocumentPosition(followUp) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText('Report details').closest('.dsh-focused-turn__process')).toBeNull()
+    expect(screen.queryByText('Preparing the report')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Tool calls: 1/ })).toBeNull()
+    expect(turn()?.getAttribute('data-compact-process')).toBe('false')
     fireEvent.click(button)
     expect(button.getAttribute('aria-expanded')).toBe('true')
-    // Reopening a settled process keeps the compact, bounded work log the live
-    // run uses instead of expanding the whole process into the page.
     expect(turn()?.getAttribute('data-compact-process')).toBe('true')
-    expect(screen.getByText('I am examining the implementation')).toBeDefined()
+    expect(screen.getByText('Preparing the report').closest('.dsh-focused-turn__process')).not.toBeNull()
     expect(screen.getByRole('button', { name: /Tool calls: 1/ })).toBeDefined()
+    expect(screen.getByRole('heading', { name: 'Review findings' })).toBe(report)
+    fireEvent.click(button)
+    expect(screen.getByRole('heading', { name: 'Review findings' })).toBe(report)
+    expect(screen.getByText('The complete result')).toBe(followUp)
   })
 
   it('keeps inherited replies visible through successive forks with incomplete turn metadata', () => {
@@ -439,7 +457,7 @@ describe('focused conversation interactions', () => {
     const view = render(session('standard', branchHistory))
     const reply = screen.getByText('The complete result')
     expect(reply.closest('.dsh-focused-turn__answer')).not.toBeNull()
-    expect(screen.queryByText('I am examining the implementation')).toBeNull()
+    expect(screen.getByText('I am examining the implementation')).toBeDefined()
 
     view.rerender(
       session('standard', [
@@ -459,7 +477,7 @@ describe('focused conversation interactions', () => {
     )
     expect(screen.getByText('The complete result').closest('.dsh-focused-turn__answer')).not.toBeNull()
     expect(screen.getByText('A reply in the branch').closest('.dsh-focused-turn__answer')).not.toBeNull()
-    expect(screen.queryByText('I am examining the implementation')).toBeNull()
+    expect(screen.getByText('I am examining the implementation')).toBeDefined()
   })
 
   it('reveals usage and actions in the existing footer when the live reply settles', () => {
@@ -564,7 +582,7 @@ describe('focused conversation interactions', () => {
       ),
     )
     // Settled history starts folded, whatever ended it.
-    expect(screen.queryByText('I am examining the implementation')).toBeNull()
+    expect(screen.getByText('I am examining the implementation')).toBeDefined()
     const folded = screen.getByRole('button', { name: /Work details|Tools used: 1/ })
     expect(folded.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(folded)
@@ -572,7 +590,7 @@ describe('focused conversation interactions', () => {
     interrupted.unmount()
 
     const verbose = render(session('verbose'))
-    expect(screen.queryByText('I am examining the implementation')).toBeNull()
+    expect(screen.getByText('I am examining the implementation')).toBeDefined()
     const verboseSummary = screen.getByRole('button', { name: /Work details|Tools used: 1/ })
     expect(verboseSummary.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(verboseSummary)

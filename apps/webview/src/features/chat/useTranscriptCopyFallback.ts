@@ -5,12 +5,18 @@ import type { PresentedTimelineNode } from './focused-timeline-projection.js'
 
 /** Transcript rows publish their projection id here, which is the semantic target. */
 const ROW_SELECTOR = '[data-node-id]'
+const MESSAGE_SELECTOR = '[data-transcript-message-id]'
 /**
  * Text fields copy their own content: the composer, and the temporary
  * textarea `writeClipboard` selects before its DOM fallback runs.
  */
 const FIELD_SELECTOR = 'input, textarea, [contenteditable="true"]'
 const ANNOUNCEMENT_MS = 1_000
+
+interface TranscriptCopyTarget {
+  readonly rowId: string
+  readonly messageId?: string
+}
 
 /**
  * Fills the Webview's own context-menu "Copy" with the row the user addressed.
@@ -31,7 +37,7 @@ const ANNOUNCEMENT_MS = 1_000
 export function useTranscriptCopyFallback(rows: readonly PresentedTimelineNode[]): boolean {
   const rowsRef = useRef(rows)
   /** Row the most recent `contextmenu` addressed, until the user moves on. */
-  const contextRowRef = useRef<string | undefined>(undefined)
+  const contextRowRef = useRef<TranscriptCopyTarget | undefined>(undefined)
   const timerRef = useRef<number | undefined>(undefined)
   const [announced, setAnnounced] = useState(false)
 
@@ -68,9 +74,10 @@ export function useTranscriptCopyFallback(rows: readonly PresentedTimelineNode[]
       return
     }
 
-    const rowId = addressed ?? rowIdOf(focused)
-    const row = rowId === undefined ? undefined : rowsRef.current.find((candidate) => candidate.id === rowId)
-    const markdown = row === undefined ? undefined : rowCopyMarkdown(row)
+    const target = addressed ?? copyTarget(focused)
+    const row =
+      target === undefined ? undefined : rowsRef.current.find((candidate) => candidate.id === target.rowId)
+    const markdown = row === undefined ? undefined : rowCopyMarkdown(row, target?.messageId)
     // A row without readable text stays a strict no-op: leaving the event
     // alone is what keeps an untouched clipboard untouched.
     if (markdown === undefined) return
@@ -86,7 +93,7 @@ export function useTranscriptCopyFallback(rows: readonly PresentedTimelineNode[]
   })
 
   const recordTarget = useCallback((event: Event): void => {
-    contextRowRef.current = event.target instanceof Element ? rowIdOf(event.target) : undefined
+    contextRowRef.current = event.target instanceof Element ? copyTarget(event.target) : undefined
   }, [])
 
   useEffect(() => {
@@ -110,7 +117,9 @@ export function useTranscriptCopyFallback(rows: readonly PresentedTimelineNode[]
   return announced
 }
 
-function rowIdOf(element: Element | null): string | undefined {
-  if (element === null) return undefined
-  return element.closest(ROW_SELECTOR)?.getAttribute('data-node-id') ?? undefined
+function copyTarget(element: Element | null): TranscriptCopyTarget | undefined {
+  const rowId = element?.closest(ROW_SELECTOR)?.getAttribute('data-node-id')
+  if (rowId == null) return undefined
+  const messageId = element?.closest(MESSAGE_SELECTOR)?.getAttribute('data-transcript-message-id')
+  return messageId == null ? { rowId } : { rowId, messageId }
 }

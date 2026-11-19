@@ -18,6 +18,15 @@ function TranscriptHarness(props: { readonly rows: readonly PresentedTimelineNod
       {props.rows.map((row) => (
         <div key={row.id} data-node-id={row.id}>
           <span data-testid={`text-${row.id}`}>{rowCopyMarkdown(row)}</span>
+          {row.kind === 'focused-turn'
+            ? row.nodes.map((node) =>
+                node.kind === 'tool' ? null : (
+                  <span key={node.id} data-transcript-message-id={node.id}>
+                    {node.markdown}
+                  </span>
+                ),
+              )
+            : null}
           <button type="button">{row.id}</button>
         </div>
       ))}
@@ -78,6 +87,28 @@ describe('useTranscriptCopyFallback', () => {
     const { event, written } = dispatchCopy()
     expect(written).toEqual(['text/plain:# Heading\n\nwith `code`'])
     expect(event.defaultPrevented).toBe(true)
+  })
+
+  it('copies the earlier reply when addressed, even when the turn has a closing reply', () => {
+    if (ANSWER.kind !== 'assistant-message') throw new Error('Expected an assistant reply')
+    const earlier = { ...ANSWER, id: 'assistant-earlier', markdown: 'The earlier report' }
+    render(
+      <TranscriptHarness
+        rows={[
+          {
+            kind: 'focused-turn',
+            id: 'focused-turn:1',
+            turn: 1,
+            nodes: [earlier, ANSWER],
+            sourceIds: [earlier.id, ANSWER.id],
+            foldable: true,
+            answer: ANSWER,
+          },
+        ]}
+      />,
+    )
+    fireEvent.contextMenu(screen.getByText(earlier.markdown))
+    expect(dispatchCopy().written).toEqual(['text/plain:The earlier report'])
   })
 
   it('copies a user row with the same rule as an assistant row', () => {

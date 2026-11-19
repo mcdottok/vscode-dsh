@@ -3,11 +3,13 @@ import { Icon } from '../../ui/Icon.js'
 import { renderAnswerActions, renderAnswerUsage, renderTimelineNode } from './timeline-renderers.js'
 import { assistantBlocksFromAggregates, type TimelineNodeRenderContext } from './timeline-shared.js'
 import {
+  hasFocusedBody,
   hasFocusedWork,
   hasReadableReasoning,
   summarizeFocusedWork,
   type FocusedAnswerNode,
   type FocusedTurnNode,
+  type FocusedWorkNode,
 } from './focused-timeline-projection.js'
 import { FocusedToolActivity } from './FocusedToolActivity.js'
 import type { ToolTimelineNode } from './ToolCallCollection.js'
@@ -25,46 +27,11 @@ export function FocusedTurn(props: {
   const processRef = useRef<HTMLDivElement>(null)
   const processScroll = useRef({ top: 0, maxTop: 0, following: true })
   const [visibleWork, setVisibleWork] = useState(60)
-  const windowLiveWork =
-    context.running && node.live === true && (node.processCount ?? node.nodes.length) >= 4
   const summary = node.processSummary ?? summarizeFocusedWork(node.nodes)
   const finished = node.foldable
   const live = node.live === true
   const failedCount = summary.failedCount
-  const work = node.nodes.filter((member) => member !== node.answer && hasFocusedWork(member))
-  let answer: FocusedAnswerNode | undefined = node.answer
-  if (answer !== undefined) {
-    if (answer.kind === 'assistant-turn') {
-      const { reasoning, ...body } = answer
-      const plain = { ...body, turnUsage: undefined }
-      const blocks = answer.blocks.length === 0 ? assistantBlocksFromAggregates(answer) : answer.blocks
-      const thinking = blocks.filter(
-        (block) => block.kind === 'tool' || (block.kind === 'reasoning' && hasReadableReasoning(block)),
-      )
-      if (thinking.length > 0) {
-        work.push({
-          ...plain,
-          ...(reasoning === undefined ? {} : { reasoning }),
-          kind: 'assistant-turn',
-          markdown: '',
-          images: [],
-          blocks: thinking,
-        })
-      }
-      answer = {
-        ...plain,
-        kind: 'assistant-turn',
-        blocks: blocks.filter((block) => block.kind === 'message'),
-        tools: [],
-      }
-    } else {
-      const { reasoning, ...body } = answer
-      const plain = { ...body, turnUsage: undefined }
-      if (reasoning !== undefined && hasReadableReasoning(reasoning))
-        work.push({ ...plain, markdown: '', images: [], reasoning })
-      answer = plain
-    }
-  }
+  const { work, replies } = splitFocusedContent(node.nodes)
   // The footer controls describe the original closing reply, not the split cards.
   const answerActions = renderAnswerActions(node.answer, context)
   const answerUsage = renderAnswerUsage(node.answer, context)
@@ -154,7 +121,7 @@ export function FocusedTurn(props: {
   const process: ReactElement[] = []
   // A live run mounts only its latest window; a reopened settled turn keeps the
   // whole log scrollable inside the same bounded box.
-  const workStart = windowLiveWork && !revealed ? Math.max(0, work.length - visibleWork) : 0
+  const workStart = context.running && live && !revealed ? Math.max(0, work.length - visibleWork) : 0
   if (open)
     for (let index = workStart; index < work.length; index++) {
       const member = work[index]!
@@ -288,9 +255,11 @@ export function FocusedTurn(props: {
           </div>
         </>
       )}
-      {answer === undefined ? null : (
-        <div className="dsh-focused-turn__answer">{renderTimelineNode(answer, context)}</div>
-      )}
+      {replies.map((reply) => (
+        <div className="dsh-focused-turn__answer" key={reply.id} data-transcript-message-id={reply.id}>
+          {renderTimelineNode(reply, context)}
+        </div>
+      ))}
       {renderProducedFiles(
         producedFilePaths(node.nodes.flatMap((member) => (member.kind === 'tool' ? [member] : []))),
         context.onOpenLink === undefined ? undefined : context.requestOpenLink,
@@ -307,4 +276,47 @@ export function FocusedTurn(props: {
       </div>
     </section>
   )
+}
+
+/** Keep every assistant body in the conversation while folding tools and reasoning. */
+function splitFocusedContent(nodes: readonly FocusedWorkNode[]): {
+  readonly work: readonly FocusedWorkNode[]
+  readonly replies: readonly FocusedAnswerNode[]
+} {
+  const work: FocusedWorkNode[] = []
+  const replies: FocusedAnswerNode[] = []
+  for (const node of nodes) {
+    if (!hasFocusedBody(node)) {
+      if (hasFocusedWork(node)) work.push(node)
+      continue
+    }
+    if (node.kind === 'assistant-message') {
+      const { reasoning, ...body } = node
+      if (reasoning !== undefined && hasReadableReasoning(reasoning))
+        work.push({ ...body, reasoning, markdown: '', images: [], turnUsage: undefined })
+      replies.push({ ...body, turnUsage: undefined })
+      continue
+    }
+    const blocks = node.blocks.length === 0 ? assistantBlocksFromAggregates(node) : node.blocks
+    const { reasoning, ...body } = node
+    const process = blocks.filter(
+      (block) => block.kind === 'tool' || (block.kind === 'reasoning' && hasReadableReasoning(block)),
+    )
+    if (process.length > 0)
+      work.push({
+        ...body,
+        ...(reasoning === undefined ? {} : { reasoning }),
+        markdown: '',
+        images: [],
+        blocks: process,
+        turnUsage: undefined,
+      })
+    replies.push({
+      ...body,
+      blocks: blocks.filter((block) => block.kind === 'message'),
+      tools: [],
+      turnUsage: undefined,
+    })
+  }
+  return { work, replies }
 }

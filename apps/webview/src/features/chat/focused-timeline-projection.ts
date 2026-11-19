@@ -16,7 +16,6 @@ export interface FocusedTurnNode {
   readonly foldable: boolean
   readonly answer: FocusedAnswerNode | undefined
   readonly processId?: string
-  readonly processCount?: number
   readonly processSummary?: FocusedProcessSummary
   readonly live?: boolean
 }
@@ -58,7 +57,7 @@ export function hasFocusedWork(node: FocusedWorkNode): boolean {
         node.blocks.some(
           (block) => block.kind === 'tool' || (block.kind === 'reasoning' && hasReadableReasoning(block)),
         ))) ||
-    hasBody(node)
+    hasFocusedBody(node)
   )
 }
 
@@ -87,7 +86,7 @@ function groupable(node: DisplayTimelineNode): node is FocusedWorkNode {
 function assistantSurface(node: DisplayTimelineNode): node is FocusedAnswerNode {
   return node.kind === 'assistant-message' || node.kind === 'assistant-turn'
 }
-function hasBody(node: FocusedWorkNode): node is FocusedAnswerNode {
+export function hasFocusedBody(node: FocusedWorkNode): node is FocusedAnswerNode {
   return (
     node.kind !== 'tool' &&
     (node.markdown.trim() !== '' ||
@@ -200,7 +199,7 @@ export function createFocusedTimelineProjector(): (
       common > 0 &&
       changedTurn !== undefined &&
       groupable(nodes[common - 1]!) &&
-      !hasBody(nodes[common - 1] as FocusedWorkNode) &&
+      !hasFocusedBody(nodes[common - 1] as FocusedWorkNode) &&
       workTurn(nodes[common - 1]) === changedTurn
     )
       common--
@@ -240,8 +239,8 @@ export function createFocusedTimelineProjector(): (
       const turn = workTurn(node)!
       const state = turns.get(turn)!
       let runStart = index
-      // One Turn is one process: intermediate replies keep their place inside
-      // the folded run, so only the non-groupable boundaries split it.
+      // Keep the replies and their process in one row until a separate event
+      // or another Turn breaks the run.
       while (runStart > 0 && groupable(nodes[runStart - 1]!) && workTurn(nodes[runStart - 1]) === turn)
         runStart--
       let runEnd = index + 1
@@ -253,12 +252,10 @@ export function createFocusedTimelineProjector(): (
         index = runEnd
         continue
       }
-      // Replies interleaved with tool steps need ordering metadata before one of
-      // them can be read as the closing answer; otherwise keep the whole Turn
-      // open instead of hiding a reply inside the fold.
+      // Replies interleaved with tool steps need ordering metadata before the
+      // process can be reported as complete.
       const interleaved =
-        runMembers.filter((member) => hasBody(member)).length > 1 &&
-        runMembers.some((member) => member.kind === 'tool')
+        runMembers.filter(hasFocusedBody).length > 1 && runMembers.some((member) => member.kind === 'tool')
       const replyStep = groupable(runLast) ? answeredStep(runLast) : undefined
       const proven =
         !interleaved ||
@@ -268,14 +265,13 @@ export function createFocusedTimelineProjector(): (
             const step = answeredStep(member)
             return step !== undefined && step < replyStep
           }))
-      // The last visible assistant message belongs in the chat even when fork
-      // history omits its sequence or turn end, or follows it with an empty
-      // assistant step. A later tool still makes an earlier reply intermediate.
+      // The last reply supplies the footer even when fork history omits its
+      // sequence or turn end, or follows it with an empty assistant step.
       let tailReply: FocusedAnswerNode | undefined
       for (let memberIndex = runMembers.length - 1; memberIndex >= 0; memberIndex--) {
         const member = runMembers[memberIndex]!
         if (member.kind === 'tool') break
-        if (hasBody(member)) {
+        if (hasFocusedBody(member)) {
           tailReply = member
           break
         }
@@ -287,10 +283,7 @@ export function createFocusedTimelineProjector(): (
         ((tailReply?.turnCompleted === true && tailReply === runLast && proven) || runLast.kind === 'tool')
       const live = !state.closed && runEnd === nodes.length
       const processId = `focused-turn:${nodes[runStart]!.id}`
-      const processCount = runEnd - runStart - (tailReply !== undefined ? 1 : 0)
       const processSummary = summarizeFocusedWork(runMembers)
-      // One Turn is one disclosure: the whole run scrolls inside a single
-      // bounded, compact log instead of stacking virtual segments on the page.
       const first = runMembers[0]!
       starts.push(index)
       rows.push({
@@ -302,7 +295,6 @@ export function createFocusedTimelineProjector(): (
         foldable,
         answer: tailReply,
         processId,
-        processCount,
         processSummary,
         live,
       })
