@@ -170,4 +170,11 @@ export const sessionRequestSchemas = [
       payload: z.object({ sessionId: id, configuration: agentConfigurationSchema }).strict(),
     })
     .strict(),
+  z
+    .object({
+      type: z.literal('session.setAgentTeamMode'),
+      ...requestBase,
+      payload: z.object({ sessionId: id, enabled: z.boolean() }).strict(),
+    })
+    .strict(),
 ] as const

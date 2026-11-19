@@ -253,6 +253,143 @@
   margin-inline-start: auto;
 }
 
+.dsh-model-picker__team-row {
+  border-radius: var(--dsh-radius-sm);
+  cursor: pointer;
+}
+
+.dsh-model-picker__team-row > span:first-child {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.dsh-model-picker__switch {
+  position: relative;
+  flex: 0 0 2rem;
+  block-size: 1.125rem;
+  margin-inline-start: auto;
+}
+
+.dsh-model-picker__switch > input {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.dsh-model-picker__switch-track {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--dsh-radius-pill);
+  background: var(--dsh-muted);
+  color: var(--dsh-widget-bg);
+  transition: background-color var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard);
+}
+
+.dsh-model-picker__switch-track::before {
+  content: '';
+  position: absolute;
+  inset-block-start: 0.1875rem;
+  inset-inline-start: 0.1875rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  background: currentColor;
+  transition: inset-inline-start var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard);
+}
+
+.dsh-model-picker__switch > input:checked + .dsh-model-picker__switch-track {
+  background: var(--dsh-primary);
+  color: var(--dsh-primary-text);
+}
+
+.dsh-model-picker__switch > input:checked + .dsh-model-picker__switch-track::before {
+  inset-inline-start: 1.0625rem;
+}
+
+.dsh-model-picker__switch > input:focus-visible + .dsh-model-picker__switch-track {
+  outline: 2px solid var(--dsh-focus);
+  outline-offset: 2px;
+}
+
+.dsh-model-picker__team-row:has(input[aria-disabled='true']) {
+  cursor: wait;
+}
+
+.dsh-model-picker__switch > input[aria-disabled='true'] + .dsh-model-picker__switch-track {
+  opacity: 0.65;
+}
+
+@media (forced-colors: active) {
+  .dsh-model-picker__switch-track {
+    forced-color-adjust: none;
+    background: ButtonText;
+    color: ButtonFace;
+  }
+
+  .dsh-model-picker__switch > input:checked + .dsh-model-picker__switch-track {
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  .dsh-model-picker__switch > input:focus-visible + .dsh-model-picker__switch-track {
+    outline-color: Highlight;
+  }
+}
+
+.dsh-modal-dialog.dsh-agent-team-dialog {
+  width: min(28rem, calc(100% - 2 * var(--dsh-panel-gutter)));
+  padding: clamp(var(--dsh-space-3), 5vw, var(--dsh-space-5));
+}
+
+.dsh-agent-team-dialog:modal {
+  overscroll-behavior: contain;
+}
+
+.dsh-agent-team-dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background: rgb(0 0 0 / 42%);
+}
+
+.dsh-agent-team-dialog .dsh-modal-dialog__header {
+  align-items: center;
+  gap: var(--dsh-space-2);
+  margin-block-end: var(--dsh-space-3);
+}
+
+.dsh-agent-team-dialog__icon {
+  flex: none;
+  color: var(--dsh-warning);
+}
+
+.dsh-agent-team-dialog .dsh-modal-dialog__header h2 {
+  flex: 1;
+}
+
+.dsh-agent-team-dialog__description {
+  display: grid;
+  gap: var(--dsh-space-2);
+  color: var(--dsh-muted);
+  line-height: 1.55;
+}
+
+.dsh-agent-team-dialog__description > p {
+  margin: 0;
+}
+
+.dsh-agent-team-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--dsh-space-2);
+  margin-block-start: var(--dsh-space-4);
+}
+
 .dsh-model-picker__row:hover:not(:disabled),
 .dsh-model-picker__back:hover:not(:disabled) {
   background: var(--dsh-surface-hover);

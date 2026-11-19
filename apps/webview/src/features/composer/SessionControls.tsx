@@ -14,7 +14,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactElem
 import { SelectMenu, type SelectMenuOption } from '../../components/common/SelectMenu.js'
 import { useDismissibleLayer } from '../../components/common/useDismissibleLayer.js'
 import { Icon, type IconName } from '../../ui/Icon.js'
-import { ModelPicker } from '../models/ModelPicker.js'
+import { ModelPicker, type ModelPickerProps } from '../models/ModelPicker.js'
 import { useI18n, type Translate } from '../../i18n.js'
 import { ContextMeter } from './ContextMeter.js'
 import { useViewportMenuPosition } from '../../components/common/useViewportMenuPosition.js'
@@ -54,6 +54,7 @@ export interface SessionControlsProps {
   readonly disabled: boolean
   readonly presetMutable: boolean
   readonly modelPickerOpenRequest?: number
+  readonly agentTeam?: ModelPickerProps['agentTeam']
   /** Keep the primary model selector in the toolbar and move secondary
    * session switches into the composer's extras surface. */
   readonly surface?: 'all' | 'primary' | 'secondary' | 'model' | 'permission'
@@ -362,6 +363,7 @@ export const SessionControls = memo(function SessionControls(props: SessionContr
             {...(props.modelPickerOpenRequest === undefined
               ? {}
               : { openRequest: props.modelPickerOpenRequest })}
+            {...(props.agentTeam === undefined ? {} : { agentTeam: props.agentTeam })}
             displayLabel
             showIcon={props.surface !== 'model'}
             disabled={props.disabled}

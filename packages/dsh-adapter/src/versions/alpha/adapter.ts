@@ -249,7 +249,7 @@ export class Alpha1VersionAdapter extends DshVersionAdapterBase {
       // Alpha171+ derives the complete queue from each V4 follow projection,
       // because fork children can inherit Inbox state without a control event.
       queueBaseline: this.queueBaselineMode,
-      mapProjectionValues: (values) => this.mapProjectionValues(values),
+      mapProjectionValues: (values) => this.mapProjectionValues(values, backend),
     })
     const goals = new Rc6GoalRepository(transport, this.supportsLiveGoal)
     const jobs = this.createJobRepository(transport)
@@ -271,7 +271,7 @@ export class Alpha1VersionAdapter extends DshVersionAdapterBase {
       observe,
       historyGapRecovery(sessions),
       jobs.watchRows === undefined ? undefined : (sessionId, signal) => jobs.watchRows!(sessionId, signal),
-      (event) => this.mapBackendEvent(event),
+      (event) => this.mapBackendEvent(event, backend),
       () => this.createSessionEventNormalizer(),
     )
     eventsHolder.value = events
@@ -360,12 +360,15 @@ export class Alpha1VersionAdapter extends DshVersionAdapterBase {
   }
 
   /** Version profiles normalize newly introduced durable projection values here. */
-  protected mapProjectionValues(values: Readonly<Record<string, unknown>>): SessionProjectionValues {
+  protected mapProjectionValues(
+    values: Readonly<Record<string, unknown>>,
+    _backend?: ConnectedBackend,
+  ): SessionProjectionValues {
     return values
   }
 
   /** Version profiles normalize structured events before repositories and clients observe them. */
-  protected mapBackendEvent(event: BackendEvent): BackendEvent {
+  protected mapBackendEvent(event: BackendEvent, _backend?: ConnectedBackend): BackendEvent {
     return event
   }
 

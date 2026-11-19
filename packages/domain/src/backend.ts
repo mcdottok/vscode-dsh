@@ -104,6 +104,11 @@ export interface SessionRepository {
   readonly sessionForQueuedInput?: (this: SessionRepository, inputId: string) => string | undefined
   cancel(sessionId: string, signal?: AbortSignal): Promise<void>
   setConfiguration(sessionId: string, configuration: AgentConfiguration, signal?: AbortSignal): Promise<void>
+  setAgentTeamMode?(
+    sessionId: string,
+    enabled: boolean,
+    signal?: AbortSignal,
+  ): Promise<{ readonly enabled: boolean; readonly sequence: number }>
 }
 
 export interface WorkspaceRepository {

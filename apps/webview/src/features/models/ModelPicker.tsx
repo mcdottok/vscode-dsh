@@ -18,6 +18,7 @@ import { useViewportMenuPosition } from '../../components/common/useViewportMenu
 import { useConversationLayout } from '../../app/ConversationLayoutProvider.js'
 import { rankByName } from './rank-by-name.js'
 import { publicProtocolErrorCode } from '../../app/protocol-client.js'
+import { AgentTeamDisableDialog } from './AgentTeamDisableDialog.js'
 
 type ModelPane = 'root' | 'models' | 'effort'
 
@@ -47,6 +48,11 @@ export interface ModelPickerProps {
   readonly displayLabel?: boolean
   readonly showIcon?: boolean
   readonly openRequest?: number
+  readonly agentTeam?: {
+    readonly enabled: boolean
+    readonly confirmDisable?: boolean
+    readonly onChange: (enabled: boolean) => Promise<void>
+  }
   readonly onChange: (value: ModelSelection) => void | Promise<void>
 }
 
@@ -64,7 +70,8 @@ export const ModelPicker = memo(function ModelPicker(props: ModelPickerProps): R
   const [open, setOpen] = useState(false)
   const [pane, setPane] = useState<ModelPane>('root')
   const [applying, setApplying] = useState(false)
-  const [applyError, setApplyError] = useState<'generic' | 'session-writer-held'>()
+  const [confirmAgentTeamDisable, setConfirmAgentTeamDisable] = useState(false)
+  const [applyError, setApplyError] = useState<'model' | 'agent-team' | 'session-writer-held'>()
   const applyingRef = useRef(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -293,19 +300,23 @@ export const ModelPicker = memo(function ModelPicker(props: ModelPickerProps): R
     }
   }
 
-  const applySelection = (value: ModelSelection): void => {
+  const applyChange = (change: () => void | Promise<void>, setting: 'model' | 'agent-team'): void => {
     if (applyingRef.current) return
     setApplyError(undefined)
+    const reportFailure = (error: unknown): void => {
+      setApplyError(
+        publicProtocolErrorCode(error) === 'SESSION_WRITER_HELD' ? 'session-writer-held' : setting,
+      )
+    }
     let result: void | Promise<void>
     try {
-      result = props.onChange(value)
+      result = change()
     } catch (error) {
-      setApplyError(
-        publicProtocolErrorCode(error) === 'SESSION_WRITER_HELD' ? 'session-writer-held' : 'generic',
-      )
+      reportFailure(error)
       return
     }
     const finish = (): void => {
+      if (setting === 'agent-team') return
       close()
       triggerRef.current?.focus()
     }
@@ -317,16 +328,14 @@ export const ModelPicker = memo(function ModelPicker(props: ModelPickerProps): R
     setApplying(true)
     void result
       .then(finish)
-      .catch((error: unknown) =>
-        setApplyError(
-          publicProtocolErrorCode(error) === 'SESSION_WRITER_HELD' ? 'session-writer-held' : 'generic',
-        ),
-      )
+      .catch(reportFailure)
       .finally(() => {
         applyingRef.current = false
         setApplying(false)
       })
   }
+
+  const applySelection = (value: ModelSelection): void => applyChange(() => props.onChange(value), 'model')
 
   const selectModel = (model: ModelDescriptor): void => {
     const sameRoute = props.value.providerId === model.providerId && props.value.modelId === model.id
@@ -350,6 +359,7 @@ export const ModelPicker = memo(function ModelPicker(props: ModelPickerProps): R
     })
   }
 
+  const agentTeam = props.agentTeam
   return (
     <div
       ref={rootRef}
@@ -458,6 +468,41 @@ export const ModelPicker = memo(function ModelPicker(props: ModelPickerProps): R
                     <span className="dsh-model-picker__row-value">{effortLabel}</span>
                     <Icon name="chevron-right" />
                   </button>
+                )}
+                {agentTeam === undefined ? null : (
+                  <label
+                    className="dsh-model-picker__row dsh-model-picker__team-row"
+                    title={t('model.agentTeamHint')}
+                  >
+                    <span>{t('model.agentTeam')}</span>
+                    <span className="dsh-model-picker__switch">
+                      <input
+                        type="checkbox"
+                        {...{ switch: '' }}
+                        role="menuitemcheckbox"
+                        checked={agentTeam.enabled}
+                        aria-checked={agentTeam.enabled}
+                        aria-description={t('model.agentTeamHint')}
+                        aria-disabled={applying || props.disabled === true}
+                        onKeyDown={(event) => {
+                          if (event.key !== 'Enter') return
+                          event.preventDefault()
+                          event.currentTarget.click()
+                        }}
+                        onChange={(event) => {
+                          if (props.disabled === true || applyingRef.current) return
+                          const { checked } = event.currentTarget
+                          if (!checked && agentTeam.confirmDisable === true) {
+                            close()
+                            // The menu row is removed when the dialog opens, so focus the persistent invoker.
+                            triggerRef.current?.focus()
+                            setConfirmAgentTeamDisable(true)
+                          } else applyChange(() => agentTeam.onChange(checked), 'agent-team')
+                        }}
+                      />
+                      <span className="dsh-model-picker__switch-track" aria-hidden="true" />
+                    </span>
+                  </label>
                 )}
               </>
             ) : (
@@ -616,22 +661,39 @@ export const ModelPicker = memo(function ModelPicker(props: ModelPickerProps): R
                 </p>
               ) : applyError ? (
                 <p className="dsh-model-picker__warning" role="alert">
-                  {t(applyError === 'session-writer-held' ? 'model.sessionWriterHeld' : 'model.applyFailed')}
+                  {t(
+                    applyError === 'session-writer-held'
+                      ? 'model.sessionWriterHeld'
+                      : applyError === 'agent-team'
+                        ? 'model.agentTeamSaveFailed'
+                        : 'model.applyFailed',
+                  )}
                 </p>
               ) : null}
             </div>
           ) : null}
         </div>
       ) : null}
+      {confirmAgentTeamDisable && agentTeam !== undefined ? (
+        <AgentTeamDisableDialog
+          onClose={() => setConfirmAgentTeamDisable(false)}
+          onConfirm={() => agentTeam.onChange(false)}
+          disabled={props.disabled === true}
+        />
+      ) : null}
     </div>
   )
 })
 
 /** Menu rows in DOM order, including the back row. */
-function menuItems(menu: HTMLElement | null): readonly HTMLButtonElement[] {
+function menuItems(menu: HTMLElement | null): readonly HTMLElement[] {
   return menu === null
     ? []
-    : Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"], [role="menuitemradio"]'))
+    : Array.from(
+        menu.querySelectorAll<HTMLElement>(
+          '[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]',
+        ),
+      )
 }
 
 function groupModels(models: readonly ModelDescriptor[]): readonly ProviderGroup[] {

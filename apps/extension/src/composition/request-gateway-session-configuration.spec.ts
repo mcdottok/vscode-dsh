@@ -52,6 +52,8 @@ function harness(): {
   readonly list: Mock<DshBackend['presets']['list']>
   readonly create: Mock<DshBackend['sessions']['create']>
   readonly setConfiguration: Mock<DshBackend['sessions']['setConfiguration']>
+  readonly setAgentTeamMode: Mock<NonNullable<DshBackend['sessions']['setAgentTeamMode']>>
+  readonly publish: Mock<NonNullable<DshBackend['events']['publish']>>
   readonly guard: Mock<RequestGatewayDependencies['requireCurrentWorkspaceSession']>
 } {
   const list = vi.fn<DshBackend['presets']['list']>().mockResolvedValue({
@@ -60,15 +62,20 @@ function harness(): {
   })
   const create = vi.fn<DshBackend['sessions']['create']>().mockResolvedValue(session)
   const setConfiguration = vi.fn<DshBackend['sessions']['setConfiguration']>().mockResolvedValue(undefined)
+  const setAgentTeamMode = vi
+    .fn<NonNullable<DshBackend['sessions']['setAgentTeamMode']>>()
+    .mockResolvedValue({ enabled: false, sequence: 11 })
+  const publish = vi.fn<NonNullable<DshBackend['events']['publish']>>()
   const guard = vi
     .fn<RequestGatewayDependencies['requireCurrentWorkspaceSession']>()
     .mockResolvedValue(session)
   const service = new BackendService()
   service.attach(
     {
-      events: { subscribe: () => () => undefined },
+      events: { subscribe: () => () => undefined, publish },
       presets: { list },
-      sessions: { create, setConfiguration },
+      connection: { capabilities: { compatibilityMode: 'exact' } },
+      sessions: { create, setConfiguration, setAgentTeamMode },
     } as unknown as DshBackend,
     () => undefined,
   )
@@ -94,7 +101,7 @@ function harness(): {
     diagnostics: { log: () => {} },
     context: { extensionUri: { fsPath: '/extension' }, subscriptions: [] },
   } as unknown as RequestGatewayDependencies)
-  return { gateway, sent, list, create, setConfiguration, guard }
+  return { gateway, sent, list, create, setConfiguration, setAgentTeamMode, publish, guard }
 }
 
 function request(type: 'session.create' | 'session.configure'): unknown {
@@ -114,6 +121,31 @@ function request(type: 'session.create' | 'session.configure'): unknown {
 describe('session configuration routes', () => {
   beforeEach(() => {
     host.isTrusted = true
+  })
+
+  it('changes Team mode for the owned root Session only', async () => {
+    const { gateway, guard, sent, setAgentTeamMode, publish } = harness()
+    const message = {
+      type: 'session.setAgentTeamMode',
+      requestId: 'team-1',
+      payload: { sessionId: session.id, enabled: false },
+    }
+    await gateway.router.handle({ protocolVersion: 1, message })
+    expect(setAgentTeamMode).toHaveBeenCalledExactlyOnceWith(session.id, false, guard.mock.calls[0]?.[1])
+    expect(publish).toHaveBeenCalledExactlyOnceWith({
+      type: 'session.projection',
+      sessionId: session.id,
+      key: 'agentTeam',
+      sequence: 11,
+      value: { enabled: false },
+    })
+    expect(sent[0]).toMatchObject({ ok: true })
+
+    guard.mockResolvedValueOnce({ ...session, origin: 'subagent' })
+    await gateway.router.handle({ protocolVersion: 1, message: { ...message, requestId: 'team-2' } })
+    expect(setAgentTeamMode).toHaveBeenCalledTimes(1)
+    expect(publish).toHaveBeenCalledTimes(1)
+    expect(sent[1]).toMatchObject({ ok: false, error: { code: 'PERMISSION_DENIED' } })
   })
 
   it.each(['session.create', 'session.configure'] as const)(

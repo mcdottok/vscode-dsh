@@ -48,6 +48,7 @@ export interface SessionActionDependencies {
 
 export interface SessionActions {
   configureSession(sessionId: string, configuration: AgentConfiguration): Promise<void>
+  setAgentTeamMode(sessionId: string, enabled: boolean): Promise<void>
   executeCommand(
     sessionId: string,
     command: string,
@@ -196,5 +197,21 @@ export function createSessionActions(dependencies: SessionActionDependencies): S
     rememberOpenFileId(normalized)
   }
 
-  return { configureSession, executeCommand, sendPrompt, cancelSession, setPromptMode, rememberOpenFile }
+  const setAgentTeamMode = async (sessionId: string, enabled: boolean): Promise<void> => {
+    await client.request<unknown>({
+      type: 'session.setAgentTeamMode',
+      requestId: requestId(),
+      payload: { sessionId, enabled },
+    })
+  }
+
+  return {
+    configureSession,
+    setAgentTeamMode,
+    executeCommand,
+    sendPrompt,
+    cancelSession,
+    setPromptMode,
+    rememberOpenFile,
+  }
 }

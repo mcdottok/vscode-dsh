@@ -332,6 +332,7 @@ export interface AppActions {
   /** Destructive: removes the conversation record from DSH. */
   deleteSession(sessionId: string): Promise<void>
   configureSession(sessionId: string, configuration: AgentConfiguration): Promise<void>
+  setAgentTeamMode(sessionId: string, enabled: boolean): Promise<void>
   executeCommand(
     sessionId: string,
     command: string,

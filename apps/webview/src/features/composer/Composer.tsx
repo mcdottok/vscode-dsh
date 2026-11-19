@@ -116,6 +116,7 @@ export interface ComposerProps {
   readonly references?: readonly ReferenceCandidate[]
   readonly referenceLoading?: boolean
   readonly modelPickerOpenRequest?: number
+  readonly agentTeam?: SessionControlsProps['agentTeam']
   readonly estimatedContextTokens?: number
   readonly contextWindowTokens?: number
   readonly contextBreakdown?: ContextBreakdown
@@ -365,6 +366,7 @@ export const Composer = memo(function Composer(props: ComposerProps): ReactEleme
       ...(props.modelPickerOpenRequest === undefined
         ? {}
         : { modelPickerOpenRequest: props.modelPickerOpenRequest }),
+      ...(props.agentTeam === undefined ? {} : { agentTeam: props.agentTeam }),
       ...(props.onPromptModeChange === undefined ? {} : { onPromptModeChange: props.onPromptModeChange }),
       onChange: onConfigurationChange,
       onCommand: handleSessionCommand,

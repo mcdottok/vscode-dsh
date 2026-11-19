@@ -308,6 +308,7 @@ function storeFor(state: AppState): AppStore {
     restoreSession: vi.fn().mockResolvedValue(undefined),
     deleteSession: vi.fn().mockResolvedValue(undefined),
     configureSession: vi.fn(),
+    setAgentTeamMode: vi.fn(),
     executeCommand: vi.fn(),
     sendPrompt: vi.fn().mockResolvedValue(undefined),
     cancelSession: vi.fn().mockResolvedValue(undefined),

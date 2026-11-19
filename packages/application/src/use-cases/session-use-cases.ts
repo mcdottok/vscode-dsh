@@ -85,6 +85,48 @@ export class SessionUseCases {
     return this.backendService.requireBackend().sessions.setArchived(sessionId, archived, signal)
   }
 
+  public async setAgentTeamMode(
+    session: SessionDetail,
+    enabled: boolean,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const backend = this.backendService.requireBackend()
+    if (backend.connection.capabilities.compatibilityMode !== 'exact' || !backend.sessions.setAgentTeamMode)
+      throw new AppError({
+        code: 'CAPABILITY_UNAVAILABLE',
+        message: 'This DSH connection does not support Agent Teams configuration.',
+        retryable: false,
+      })
+    if (session.origin === 'subagent')
+      throw new AppError({
+        code: 'PERMISSION_DENIED',
+        message: 'Change Agent Teams from the root session.',
+        retryable: false,
+      })
+    signal?.throwIfAborted()
+    const current = await backend.sessions.setAgentTeamMode(session.id, enabled, signal)
+    signal?.throwIfAborted()
+    if (this.backendService.requireBackend() !== backend)
+      throw new AppError({
+        code: 'STALE_INTERACTION',
+        message: 'The DSH connection changed while saving Agent Teams settings.',
+        retryable: true,
+      })
+    backend.events.publish?.({
+      type: 'session.projection',
+      sessionId: session.id,
+      key: 'agentTeam',
+      sequence: current.sequence,
+      value: { enabled: current.enabled },
+    })
+    if (current.enabled !== enabled)
+      throw new AppError({
+        code: 'STALE_INTERACTION',
+        message: 'Agent Teams mode changed before the saved state could be confirmed.',
+        retryable: true,
+      })
+  }
+
   public enqueuePrompt(
     input: PromptInput,
     mode: RunningInputMode,

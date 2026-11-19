@@ -18,12 +18,12 @@ DSH Coding Agent is a community-maintained VS Code extension. Ask questions abou
 
 ## Features
 
-| Feature                | What you can do                                                                                                           |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Resume sessions        | Continue the same session across VS Code and DSH Desktop in real time while reviewing code.                               |
-| Editor context         | Attach code selections, files, and images so DSH can see what you are discussing.                                         |
-| Tools and approvals    | Follow replies, reasoning, and tool progress as they stream, respond to questions and approvals, and review code changes. |
-| Models and permissions | Choose the models and permissions provided by the connected DSH runtime.                                                  |
+| Feature                | What you can do                                                                                                                                      |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Resume sessions        | Continue the same session across VS Code and DSH Desktop in real time while reviewing code.                                                          |
+| Editor context         | Attach code selections, files, and images so DSH can see what you are discussing.                                                                    |
+| Tools and approvals    | Follow replies, reasoning, and tool progress as they stream, respond to questions and approvals, and review code changes.                            |
+| Models and permissions | Choose the models and permissions provided by the connected DSH runtime. In a root session that supports Agent Teams, toggle it from the model menu. |
 
 See [runtime compatibility](docs/dsh-contract.md) and the [capability matrix](docs/capability-matrix.md) for supported behavior.
 

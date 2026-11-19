@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import type { PluginBundleRepository } from '@dsh-vscode/domain'
+import { describe, expect, it, vi } from 'vitest'
+import type { ConnectedBackend, PluginBundleRepository } from '@dsh-vscode/domain'
 import { Rc6SubagentRepository } from '../src/repositories/subagent-repository.js'
 import { SubagentAddressRegistry } from '../src/repositories/shared/subagent-addresses.js'
 import { normalizeEnvelope } from '../src/stream-envelopes.js'
@@ -11,8 +11,15 @@ import {
 } from '../src/versions/alpha171/session-wire.js'
 import { alpha213SessionProfile } from '../src/versions/alpha213/session-wire.js'
 import { Rc222VersionAdapter } from '../src/versions/rc222/adapter.js'
+import { mapTeamModeEvent, mapTeamModeValues } from '../src/versions/rc222/agent-team.js'
 import { rc222SessionProfile } from '../src/versions/rc222/session-wire.js'
-import { transportOptions } from './support/contract-harness.js'
+import {
+  bodyText,
+  endpoint,
+  failureResponse,
+  transportOptions,
+  wrappedResponse,
+} from './support/contract-harness.js'
 
 // dsh-v0.2.2-rc.2 / ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c.
 const namedChild = {
@@ -51,6 +58,85 @@ interface DiffableSnapshot extends Record<string, unknown> {
 }
 
 describe('DSH 0.2.2-rc.2', () => {
+  it('reads the sequenced Team projection only after a successful void receipt', async () => {
+    const calls: unknown[] = []
+    let writes = 0
+    const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+      await Promise.resolve()
+      const url = input instanceof Request ? input.url : input instanceof URL ? input.href : input
+      calls.push(JSON.parse(bodyText(init)))
+      if (url.endsWith('/session/projections'))
+        return wrappedResponse(init, {
+          kind: 'sequenced',
+          asOfSeq: 8,
+          values: { agentTeam: { enabled: false, tasks: [] } },
+        })
+      expect(url).toMatch(/\/agentTeams\/setEnabled$/u)
+      writes += 1
+      if (writes === 2) return failureResponse(init, 'session/writer-held')
+      return wrappedResponse(init, writes === 1 ? undefined : { accepted: true })
+    })
+    const connected: ConnectedBackend = {
+      endpoint,
+      ownership: 'external',
+      capabilities: {
+        dshVersion: '0.2.2-rc.2',
+        protocolVersion: 'rc222',
+        compatibilityMode: 'exact',
+        features: new Set(['session']),
+      },
+    }
+    const backend = await new Rc222VersionAdapter(transportOptions(fetch)).createBackend(connected)
+    try {
+      await expect(backend.sessions.setAgentTeamMode?.('s1', false)).resolves.toEqual({
+        enabled: false,
+        sequence: 8,
+      })
+      await expect(backend.sessions.setAgentTeamMode?.('s1', true)).rejects.toMatchObject({
+        code: 'BACKEND_BUSY',
+      })
+      await expect(backend.sessions.setAgentTeamMode?.('s1', false)).rejects.toMatchObject({
+        code: 'PROTOCOL_ERROR',
+      })
+      expect(calls[0]).toMatchObject({ payload: { args: { agentId: 's1', enabled: false } } })
+      expect(calls[1]).toMatchObject({ payload: { args: { request: { sessionId: 's1' } } } })
+      const controller = new AbortController()
+      controller.abort()
+      await expect(backend.sessions.setAgentTeamMode?.('s1', true, controller.signal)).rejects.toMatchObject({
+        code: 'REQUEST_CANCELLED',
+      })
+      expect(fetch).toHaveBeenCalledTimes(4)
+    } finally {
+      await backend.close()
+    }
+  })
+
+  it('projects only the saved flag and withholds Team mode on unpinned hosts', () => {
+    const agentTeam = { enabled: false, tasks: [{ title: 'private task' }], failure: '/private/path' }
+    const values = { title: 'Session', agentTeam }
+    expect(mapTeamModeValues(values, true)).toEqual({ title: 'Session', agentTeam: false })
+    expect(mapTeamModeValues(values, false)).toEqual({ title: 'Session' })
+    expect(mapTeamModeValues({ agentTeam: { enabled: 'false' } }, true)).toEqual({})
+    expect(
+      mapTeamModeEvent(
+        { type: 'session.projection.baseline', projections: { s1: { asOfSequence: 7, values } } },
+        true,
+      ),
+    ).toMatchObject({ projections: { s1: { asOfSequence: 7, values: { agentTeam: false } } } })
+    expect(
+      mapTeamModeEvent(
+        {
+          type: 'session.projection',
+          sessionId: 's1',
+          key: 'agentTeam',
+          value: { ...agentTeam, enabled: true },
+          sequence: 8,
+        },
+        true,
+      ),
+    ).toMatchObject({ value: true, sequence: 8 })
+  })
+
   it('opens complete V4 logs with named children and preserves Team mode sequence', () => {
     const log = snapshot(namedChild, teamMode)
     expect(validAlpha171SessionSnapshot(log, rc222SessionProfile)).toBe(true)

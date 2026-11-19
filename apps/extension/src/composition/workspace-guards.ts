@@ -42,6 +42,7 @@ export function requiresTrustedWorkspace(type: WebviewRequest['type']): boolean 
     case 'session.queue.update':
     case 'session.queue.steer':
     case 'session.configure':
+    case 'session.setAgentTeamMode':
     case 'attachment.pick':
     case 'attachment.ingest':
     case 'attachment.preview':

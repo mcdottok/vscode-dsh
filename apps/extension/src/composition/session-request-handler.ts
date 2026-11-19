@@ -1,5 +1,5 @@
 import * as vscode from 'vscode'
-import { type SessionSummary } from '@dsh-vscode/domain'
+import { AppError, type SessionSummary } from '@dsh-vscode/domain'
 import type { WebviewRequest } from '@dsh-vscode/webview-protocol'
 import { publicList } from './public-projection.js'
 import { listScopedSessions } from './session-directory.js'
@@ -302,6 +302,19 @@ export function createSessionRequestHandler(
       return backendService
         .requireBackend()
         .sessions.convertQueuedInputToSteer(request.payload.inputId, signal)
+    }
+
+    if (request.type === 'session.setAgentTeamMode') {
+      const { sessionId, enabled } = request.payload
+      const backend = backendService.requireBackend()
+      const session = await requireCurrentWorkspaceSession(sessionId, signal)
+      if (backend !== backendService.requireBackend())
+        throw new AppError({
+          code: 'STALE_INTERACTION',
+          message: 'The DSH connection changed while opening this session.',
+          retryable: true,
+        })
+      return sessionUseCases.setAgentTeamMode(session, enabled, signal)
     }
 
     if (request.type === 'session.configure') {

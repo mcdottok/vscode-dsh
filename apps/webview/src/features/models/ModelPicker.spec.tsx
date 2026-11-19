@@ -6,7 +6,7 @@ import type { ReactElement } from 'react'
 import type { ModelCatalogFailure, ModelDescriptor, ModelSelection } from '@dsh-vscode/domain'
 
 import { I18nProvider } from '../../i18n.js'
-import { ModelPicker } from './ModelPicker.js'
+import { ModelPicker, type ModelPickerProps } from './ModelPicker.js'
 import { ConversationLayoutProvider } from '../../app/ConversationLayoutProvider.js'
 import { ProtocolClient } from '../../app/protocol-client.js'
 
@@ -48,6 +48,91 @@ const REASONER: ModelSelection = {
 
 describe('DSH model selection behavior', () => {
   afterEach(() => cleanup())
+
+  it('uses the Session projection as the Team switch state and keeps the menu open on failure', async () => {
+    const onChange = vi
+      .fn<(enabled: boolean) => Promise<void>>()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('save rejected'))
+    const view = renderPicker({ agentTeam: { enabled: false, onChange } })
+    openRoot()
+    const toggle = screen.getByRole('menuitemcheckbox', { name: 'Enable Agent Teams', checked: false })
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: /^Model/u }), { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(toggle)
+    await act(async () => {
+      fireEvent.keyDown(toggle, { key: 'Enter' })
+      await Promise.resolve()
+    })
+    expect(onChange).toHaveBeenCalledWith(true)
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+
+    view.rerender(picker({ agentTeam: { enabled: true, onChange } }))
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(toggle)
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'Could not confirm the Agent Teams setting was saved',
+    )
+    expect(onChange).toHaveBeenLastCalledWith(false)
+    expect(toggle.getAttribute('aria-checked')).toBe('true')
+  })
+
+  it('omits the Team switch when the Session has no Team projection', () => {
+    renderPicker()
+    openRoot()
+    expect(screen.queryByRole('menuitemcheckbox')).toBeNull()
+  })
+
+  it('asks before disabling Team mode in a started conversation and retries a failed save', async () => {
+    const restoreDialog = mockNativeDialog()
+    const submitPrompt = vi.fn()
+    const onChange = vi
+      .fn<(enabled: boolean) => Promise<void>>()
+      .mockRejectedValueOnce(new Error('save rejected'))
+      .mockResolvedValueOnce(undefined)
+    const openConfirmation = (): HTMLElement => {
+      openRoot()
+      fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Enable Agent Teams', checked: true }))
+      return screen.getByRole('dialog', { name: 'Disable Agent Teams?' })
+    }
+    const inComposer = (enabled: boolean): ReactElement => (
+      <form onSubmit={submitPrompt}>
+        {picker({ agentTeam: { enabled, confirmDisable: true, onChange } })}
+      </form>
+    )
+    try {
+      const view = render(inComposer(true))
+      const dialog = openConfirmation()
+      expect(dialog.textContent).toContain('reduce cache reuse')
+      const cancel = screen.getByRole('button', { name: 'Cancel' })
+      expect(document.activeElement).toBe(cancel)
+      expect(onChange).not.toHaveBeenCalled()
+      fireEvent.click(cancel)
+      expect(screen.queryByRole('dialog')).toBeNull()
+      expect(onChange).not.toHaveBeenCalled()
+
+      openConfirmation()
+      fireEvent.click(screen.getByRole('button', { name: 'Disable Agent Teams' }))
+      expect((await screen.findByRole('alert')).textContent).toContain('Could not confirm')
+      expect(submitPrompt).not.toHaveBeenCalled()
+      expect(onChange).toHaveBeenCalledExactlyOnceWith(false)
+      expect(screen.getByRole('dialog')).toBeDefined()
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Disable Agent Teams' }))
+        await Promise.resolve()
+      })
+      expect(onChange.mock.calls).toEqual([[false], [false]])
+      expect(submitPrompt).not.toHaveBeenCalled()
+      expect(screen.queryByRole('dialog')).toBeNull()
+      view.rerender(inComposer(false))
+      openRoot()
+      expect(
+        screen.getByRole('menuitemcheckbox', { name: 'Enable Agent Teams', checked: false }),
+      ).toBeDefined()
+    } finally {
+      restoreDialog()
+    }
+  })
+
   function focusedPicker(onChange = vi.fn()): ReturnType<typeof render> {
     return render(
       <ConversationLayoutProvider initialLayout="focused">
@@ -620,10 +705,36 @@ function renderPicker(
     readonly onRetry?: () => void
     readonly disabled?: boolean
     readonly openRequest?: number
+    readonly agentTeam?: ModelPickerProps['agentTeam']
     readonly onChange?: (value: ModelSelection) => void | Promise<void>
   } = {},
 ): ReturnType<typeof render> {
   return render(picker(options))
+}
+
+/** jsdom lacks the native dialog's top-layer methods. Keep the modal lifecycle observable in the fixture. */
+function mockNativeDialog(): () => void {
+  const prototype = HTMLDialogElement.prototype
+  const methods = {
+    showModal(this: HTMLDialogElement): void {
+      this.open = true
+    },
+    close(this: HTMLDialogElement): void {
+      this.open = false
+      this.dispatchEvent(new Event('close'))
+    },
+  }
+  const previous = Object.keys(methods).map(
+    (name) => [name, Object.getOwnPropertyDescriptor(prototype, name)] as const,
+  )
+  for (const [name, method] of Object.entries(methods))
+    Object.defineProperty(prototype, name, { configurable: true, value: method })
+  return () => {
+    for (const [name, descriptor] of previous) {
+      if (descriptor === undefined) Reflect.deleteProperty(prototype, name)
+      else Object.defineProperty(prototype, name, descriptor)
+    }
+  }
 }
 
 function picker(
@@ -636,6 +747,7 @@ function picker(
     readonly onRetry?: () => void
     readonly disabled?: boolean
     readonly openRequest?: number
+    readonly agentTeam?: ModelPickerProps['agentTeam']
     readonly onChange?: (value: ModelSelection) => void | Promise<void>
   } = {},
 ): ReactElement {
@@ -650,6 +762,7 @@ function picker(
         {...(options.onRetry === undefined ? {} : { onRetry: options.onRetry })}
         {...(options.disabled === undefined ? {} : { disabled: options.disabled })}
         {...(options.openRequest === undefined ? {} : { openRequest: options.openRequest })}
+        {...(options.agentTeam === undefined ? {} : { agentTeam: options.agentTeam })}
         onChange={options.onChange ?? vi.fn()}
       />
     </I18nProvider>

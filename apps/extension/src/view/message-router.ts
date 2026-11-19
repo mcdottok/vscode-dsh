@@ -428,7 +428,12 @@ function response(
  * writer, so an instance that does not own the Session still reads its history
  * but fails these calls with `session/writer-held`.
  */
-const SESSION_WRITE_REQUESTS = new Set(['session.configure', 'session.sendPrompt', 'subagent.send'])
+const SESSION_WRITE_REQUESTS = new Set([
+  'session.configure',
+  'session.setAgentTeamMode',
+  'session.sendPrompt',
+  'subagent.send',
+])
 
 function publicError(
   error: unknown,

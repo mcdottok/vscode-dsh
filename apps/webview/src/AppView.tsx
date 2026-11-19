@@ -149,6 +149,7 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
     visibleReferenceLoading,
     welcomeVisible,
   } = props
+  const agentTeamMode = active === undefined ? undefined : state.projections[active.id]?.agentTeam
   const readConnectionSettings = useCallback(() => store.readSettings(), [store])
   const [inspectorReveal, setInspectorReveal] = useState<{
     readonly sessionKey: string
@@ -735,6 +736,17 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
                           {...(imageLimits === undefined ? {} : { imageLimits })}
                           busyEnter={readyDshUiPreferences?.busyEnter ?? state.busyEnter}
                           modelPickerOpenRequest={modelPickerOpenRequest}
+                          {...(activeSubagent === undefined &&
+                          active.origin !== 'subagent' &&
+                          typeof agentTeamMode === 'boolean'
+                            ? {
+                                agentTeam: {
+                                  enabled: agentTeamMode,
+                                  confirmDisable: !active.blank,
+                                  onChange: (enabled: boolean) => store.setAgentTeamMode(active.id, enabled),
+                                },
+                              }
+                            : {})}
                           {...(estimatedContextTokens === undefined ? {} : { estimatedContextTokens })}
                           {...(contextWindowTokens === undefined ? {} : { contextWindowTokens })}
                           {...(contextPressure?.breakdown === undefined
