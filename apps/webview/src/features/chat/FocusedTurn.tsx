@@ -1,16 +1,16 @@
-import { useCallback, useId, useLayoutEffect, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { Icon } from '../../ui/Icon.js'
 import { renderAnswerActions, renderAnswerUsage, renderTimelineNode } from './timeline-renderers.js'
 import { assistantBlocksFromAggregates, type TimelineNodeRenderContext } from './timeline-shared.js'
 import {
   hasFocusedBody,
-  hasFocusedWork,
   hasReadableReasoning,
   summarizeFocusedWork,
   type FocusedAnswerNode,
   type FocusedTurnNode,
   type FocusedWorkNode,
 } from './focused-timeline-projection.js'
+import { timelineSourceNodeIds } from './timeline-inspector-target.js'
 import { FocusedToolActivity } from './FocusedToolActivity.js'
 import type { ToolTimelineNode } from './ToolCallCollection.js'
 import { producedFilePaths, renderProducedFiles } from './timeline-produced-files.js'
@@ -22,23 +22,79 @@ export function FocusedTurn(props: {
   readonly context: TimelineNodeRenderContext
 }): ReactElement {
   const { node, context } = props
-  const processId = node.processId ?? node.id
+  const content = useMemo(() => splitFocusedContent(node.nodes), [node.nodes])
+  const lastProcess = content.findLast((part) => part.kind === 'process')
+  const live = node.live === true
+  // The footer describes the original closing reply, regardless of display segments.
+  const answerActions = renderAnswerActions(node.answer, context)
+  const answerUsage = renderAnswerUsage(node.answer, context)
+  return (
+    <section className="dsh-focused-turn" data-turn={node.turn} data-process-live={live}>
+      {content.map((part, index) =>
+        part.kind === 'process' ? (
+          <FocusedProcess
+            key={part.key}
+            processId={`${node.processId ?? node.id}:${part.key}`}
+            members={part.members}
+            context={context}
+            live={live && part === lastProcess}
+            ended={node.foldable || index < content.length - 1}
+          />
+        ) : (
+          <div className="dsh-focused-turn__answer" key={part.key} data-transcript-message-id={part.node.id}>
+            {renderTimelineNode(part.node, context)}
+          </div>
+        ),
+      )}
+      {renderProducedFiles(
+        producedFilePaths(
+          node.nodes.flatMap((member) =>
+            member.kind === 'tool' ? [member] : member.kind === 'assistant-turn' ? member.tools : [],
+          ),
+        ),
+        context.onOpenLink === undefined ? undefined : context.requestOpenLink,
+        context.t,
+      )}
+      <div
+        className="dsh-focused-turn__footer"
+        data-visible={answerUsage !== null || answerActions !== null || undefined}
+      >
+        <div>
+          {answerUsage}
+          {answerActions}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+interface ProcessMember {
+  readonly key: string
+  readonly node: FocusedWorkNode
+}
+
+function FocusedProcess(props: {
+  readonly processId: string
+  readonly members: readonly ProcessMember[]
+  readonly context: TimelineNodeRenderContext
+  readonly live: boolean
+  readonly ended: boolean
+}): ReactElement {
+  const { processId, members, context, live, ended } = props
   const bodyId = useId()
   const processRef = useRef<HTMLDivElement>(null)
   const processScroll = useRef({ top: 0, maxTop: 0, following: true })
   const [visibleWork, setVisibleWork] = useState(60)
-  const summary = node.processSummary ?? summarizeFocusedWork(node.nodes)
-  const finished = node.foldable
-  const live = node.live === true
+  const summary = useMemo(() => summarizeFocusedWork(members.map((member) => member.node)), [members])
+  const finished = ended && summary.settled
   const failedCount = summary.failedCount
-  const { work, replies } = splitFocusedContent(node.nodes)
-  // The footer controls describe the original closing reply, not the split cards.
-  const answerActions = renderAnswerActions(node.answer, context)
-  const answerUsage = renderAnswerUsage(node.answer, context)
   const revealDismissedId = `${processId}:reveal-dismissed:${context.revealRequestId ?? context.revealSourceNodeId}`
+  const revealSource = context.revealSourceNodeId
   const revealed =
-    context.revealSourceNodeId !== undefined &&
-    node.sourceIds.includes(context.revealSourceNodeId) &&
+    revealSource !== undefined &&
+    members.some(
+      ({ node }) => node.id === revealSource || timelineSourceNodeIds(node).includes(revealSource),
+    ) &&
     !context.expandedDetails.has(revealDismissedId)
   const collapsedId = `${processId}:collapsed`
   // Only the active tail opens by itself. Every settled run — completed, failed,
@@ -48,7 +104,6 @@ export function FocusedTurn(props: {
     revealed ||
     (!context.expandedDetails.has(collapsedId) && (live || context.expandedDetails.has(processId)))
   const followLiveWork = open && live && context.running && !revealed
-  const hasWork = work.length > 0
   const syncProcessScroll = useCallback((): void => {
     const element = processRef.current
     if (!followLiveWork || element === null) return
@@ -67,12 +122,12 @@ export function FocusedTurn(props: {
   // In the Webview, observe the actual work log size. A reply-only commit can
   // change node identities without resizing the log, and a geometry read
   // here would force layout for the just-mutated reply.
-  const unobservedNodes = typeof ResizeObserver === 'undefined' ? node.nodes : undefined
-  useLayoutEffect(syncProcessScroll, [syncProcessScroll, hasWork, unobservedNodes])
+  const unobservedNodes = typeof ResizeObserver === 'undefined' ? members : undefined
+  useLayoutEffect(syncProcessScroll, [syncProcessScroll, unobservedNodes])
   useLayoutEffect(() => {
     const element = processRef.current
     const content = element?.firstElementChild
-    if (!followLiveWork || !hasWork || element === null || content == null) return
+    if (!followLiveWork || element === null || content == null) return
     const handleWheel = (event: WheelEvent): void => {
       const { deltaMode, deltaX, deltaY } = event
       if (event.defaultPrevented || !event.cancelable || event.ctrlKey || event.shiftKey) return
@@ -114,34 +169,31 @@ export function FocusedTurn(props: {
       element.removeEventListener('wheel', handleWheel)
       observer?.disconnect()
     }
-  }, [followLiveWork, hasWork, syncProcessScroll])
+  }, [followLiveWork, syncProcessScroll])
   // Every open process reads as the same bounded, compact work log, so no
   // transcript view ever pours a whole Turn into the page at once.
-  const compactProcess = open
   const process: ReactElement[] = []
   // A live run mounts only its latest window; a reopened settled turn keeps the
   // whole log scrollable inside the same bounded box.
-  const workStart = context.running && live && !revealed ? Math.max(0, work.length - visibleWork) : 0
+  const workStart = context.running && live && !revealed ? Math.max(0, members.length - visibleWork) : 0
   if (open)
-    for (let index = workStart; index < work.length; index++) {
-      const member = work[index]!
+    for (let index = workStart; index < members.length; index++) {
+      const { key, node: member } = members[index]!
       if (member.kind !== 'tool') {
         process.push(
-          <div key={member.id} data-source-node-id={member.id}>
+          <div key={key} data-source-node-id={member.id}>
             {renderTimelineNode(member, context)}
           </div>,
         )
         continue
       }
       const tools: ToolTimelineNode[] = [member]
-      while (work[index + 1]?.kind === 'tool') {
-        const next = work[index + 1]!
-        if (next.kind !== 'tool') break
+      for (let next = members[index + 1]?.node; next?.kind === 'tool'; next = members[index + 1]?.node) {
         tools.push(next)
         index++
       }
       process.push(
-        <div key={member.id}>
+        <div key={key}>
           <FocusedToolActivity
             tools={tools}
             expanded={context.expandedDetails}
@@ -171,7 +223,7 @@ export function FocusedTurn(props: {
     })
   const commandsOnly = summary.toolCount > 0 && summary.commandCount === summary.toolCount
   // A Turn that is still running a call has no settled step count to report.
-  const pendingCall = node.live === true && node.nodes.at(-1)?.kind === 'tool'
+  const pendingCall = live && !ended && members.at(-1)?.node.kind === 'tool'
   const summaryLabel = pendingCall
     ? context.t('timeline.focused.process')
     : summary.toolCount === 0
@@ -185,138 +237,127 @@ export function FocusedTurn(props: {
             count: summary.toolCount,
           })
   return (
-    <section
-      className="dsh-focused-turn"
-      data-turn={node.turn}
-      data-process-live={live}
-      data-compact-process={compactProcess}
-    >
-      {!hasWork ? null : (
-        <>
-          <button
-            type="button"
-            className="dsh-focused-turn__summary"
-            aria-expanded={open}
-            aria-controls={bodyId}
-            onClick={toggle}
-          >
-            <Icon
-              name={
-                failedCount > 0
-                  ? 'alert'
-                  : summary.toolCount > 0
-                    ? commandsOnly
-                      ? 'terminal'
-                      : 'tool'
-                    : finished
-                      ? 'analysis'
-                      : 'status'
-              }
-            />
-            <span>{summaryLabel}</span>
-            <Icon name={open ? 'chevron-down' : 'chevron-right'} />
-          </button>
-          <div
-            ref={processRef}
-            id={bodyId}
-            hidden={!open}
-            className="dsh-focused-turn__process"
-            data-scroll-follow-boundary
-            onScroll={syncProcessScroll}
-          >
-            <div className="dsh-focused-turn__process-content">
-              {workStart > 0 ? (
-                <button
-                  type="button"
-                  className="dsh-button dsh-button--secondary dsh-button--compact"
-                  onClick={() => {
-                    processScroll.current.following = false
-                    const element = processRef.current
-                    const previousHeight = element?.scrollHeight ?? 0
-                    const previousTop = element?.scrollTop ?? 0
-                    setVisibleWork((count) => count + 60)
-                    requestAnimationFrame(() => {
-                      if (element !== null) {
-                        element.scrollTop = previousTop + element.scrollHeight - previousHeight
-                        processScroll.current = {
-                          top: element.scrollTop,
-                          maxTop: Math.max(0, element.scrollHeight - element.clientHeight),
-                          following: false,
-                        }
-                      }
-                    })
-                  }}
-                >
-                  {context.t('timeline.loadOlder')}
-                </button>
-              ) : null}
-              {process}
-            </div>
-          </div>
-        </>
-      )}
-      {replies.map((reply) => (
-        <div className="dsh-focused-turn__answer" key={reply.id} data-transcript-message-id={reply.id}>
-          {renderTimelineNode(reply, context)}
-        </div>
-      ))}
-      {renderProducedFiles(
-        producedFilePaths(node.nodes.flatMap((member) => (member.kind === 'tool' ? [member] : []))),
-        context.onOpenLink === undefined ? undefined : context.requestOpenLink,
-        context.t,
-      )}
-      <div
-        className="dsh-focused-turn__footer"
-        data-visible={answerUsage !== null || answerActions !== null || undefined}
+    <div className="dsh-focused-turn__group">
+      <button
+        type="button"
+        className="dsh-focused-turn__summary"
+        aria-expanded={open}
+        aria-controls={bodyId}
+        onClick={toggle}
       >
-        <div>
-          {answerUsage}
-          {answerActions}
+        <Icon
+          name={
+            failedCount > 0
+              ? 'alert'
+              : summary.toolCount > 0
+                ? commandsOnly
+                  ? 'terminal'
+                  : 'tool'
+                : finished
+                  ? 'analysis'
+                  : 'status'
+          }
+        />
+        <span>{summaryLabel}</span>
+        <Icon name={open ? 'chevron-down' : 'chevron-right'} />
+      </button>
+      <div
+        ref={processRef}
+        id={bodyId}
+        hidden={!open}
+        className="dsh-focused-turn__process"
+        data-scroll-follow-boundary
+        onScroll={syncProcessScroll}
+      >
+        <div className="dsh-focused-turn__process-content">
+          {workStart > 0 ? (
+            <button
+              type="button"
+              className="dsh-button dsh-button--secondary dsh-button--compact"
+              onClick={() => {
+                processScroll.current.following = false
+                const element = processRef.current
+                const previousHeight = element?.scrollHeight ?? 0
+                const previousTop = element?.scrollTop ?? 0
+                setVisibleWork((count) => count + 60)
+                requestAnimationFrame(() => {
+                  if (element !== null) {
+                    element.scrollTop = previousTop + element.scrollHeight - previousHeight
+                    processScroll.current = {
+                      top: element.scrollTop,
+                      maxTop: Math.max(0, element.scrollHeight - element.clientHeight),
+                      following: false,
+                    }
+                  }
+                })
+              }}
+            >
+              {context.t('timeline.loadOlder')}
+            </button>
+          ) : null}
+          {process}
         </div>
       </div>
-    </section>
+    </div>
   )
 }
 
-/** Keep every assistant body in the conversation while folding tools and reasoning. */
-function splitFocusedContent(nodes: readonly FocusedWorkNode[]): {
-  readonly work: readonly FocusedWorkNode[]
-  readonly replies: readonly FocusedAnswerNode[]
-} {
-  const work: FocusedWorkNode[] = []
-  const replies: FocusedAnswerNode[] = []
+type FocusedContent =
+  | { readonly kind: 'process'; readonly key: string; readonly members: ProcessMember[] }
+  | { readonly kind: 'reply'; readonly key: string; readonly node: FocusedAnswerNode }
+
+/** A visible reply ends the preceding process and leaves later work in place. */
+function splitFocusedContent(nodes: readonly FocusedWorkNode[]): readonly FocusedContent[] {
+  const content: FocusedContent[] = []
+  const appendProcess = (node: FocusedWorkNode, key: string): void => {
+    const previous = content.at(-1)
+    const member = { key, node }
+    if (previous?.kind === 'process') previous.members.push(member)
+    else content.push({ kind: 'process', key, members: [member] })
+  }
   for (const node of nodes) {
-    if (!hasFocusedBody(node)) {
-      if (hasFocusedWork(node)) work.push(node)
+    if (node.kind === 'tool') {
+      appendProcess(node, `tool:${node.id}`)
       continue
     }
     if (node.kind === 'assistant-message') {
       const { reasoning, ...body } = node
       if (reasoning !== undefined && hasReadableReasoning(reasoning))
-        work.push({ ...body, reasoning, markdown: '', images: [], turnUsage: undefined })
-      replies.push({ ...body, turnUsage: undefined })
+        appendProcess(
+          {
+            ...body,
+            reasoning,
+            markdown: '',
+            images: [],
+            streaming: reasoning.streaming,
+            turnUsage: undefined,
+          },
+          `reasoning:${node.id}`,
+        )
+      if (hasFocusedBody(node))
+        content.push({ kind: 'reply', key: `reply:${node.id}`, node: { ...body, turnUsage: undefined } })
       continue
     }
     const blocks = node.blocks.length === 0 ? assistantBlocksFromAggregates(node) : node.blocks
-    const { reasoning, ...body } = node
-    const process = blocks.filter(
-      (block) => block.kind === 'tool' || (block.kind === 'reasoning' && hasReadableReasoning(block)),
-    )
-    if (process.length > 0)
-      work.push({
-        ...body,
-        ...(reasoning === undefined ? {} : { reasoning }),
-        markdown: '',
-        images: [],
-        blocks: process,
-        turnUsage: undefined,
-      })
-    replies.push({
-      ...body,
-      blocks: blocks.filter((block) => block.kind === 'message'),
-      tools: [],
-      turnUsage: undefined,
-    })
+    const base = { ...node, images: [], tools: [], turnUsage: undefined }
+    delete base.reasoning
+    for (const block of blocks) {
+      if (block.kind === 'tool') {
+        appendProcess(block.node, `tool:${block.node.id}`)
+        continue
+      }
+      const part = { ...base, blocks: [block], streaming: block.streaming }
+      if (block.kind === 'reasoning') {
+        if (hasReadableReasoning(block))
+          appendProcess({ ...part, id: block.id, markdown: '' }, `reasoning:${block.id}`)
+      } else if (block.markdown.trim() !== '' || (block.images?.length ?? 0) > 0) {
+        content.push({
+          kind: 'reply',
+          key: `reply:${block.id}`,
+          node: { ...part, id: block.id, markdown: block.markdown },
+        })
+      }
+    }
   }
-  return { work, replies }
+  return content
 }

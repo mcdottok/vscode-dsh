@@ -405,7 +405,7 @@ describe('focused conversation interactions', () => {
     // folder action that only repeats it.
     expect(screen.queryByRole('button', { name: 'Show in folder' })).toBeNull()
   })
-  it('keeps the report and follow-up outside the same folded tool process', () => {
+  it('keeps the report between independently folded reasoning and tools', () => {
     const source = nodes.map((node): TimelineNode =>
       node.kind === 'assistant-message' && node.id === 'commentary'
         ? {
@@ -417,25 +417,63 @@ describe('focused conversation interactions', () => {
         : node,
     )
     const view = render(session('standard', source))
-    const turn = (): Element | null => view.container.querySelector('.dsh-focused-turn')
-    const button = screen.getByRole('button', { name: /Tools used: 1/ })
-    expect(button.getAttribute('aria-expanded')).toBe('false')
+    const reasoning = screen.getByRole('button', { name: 'Analysis complete' })
+    const tools = screen.getByRole('button', { name: /Tools used: 1/ })
+    expect(reasoning.getAttribute('aria-expanded')).toBe('false')
+    expect(tools.getAttribute('aria-expanded')).toBe('false')
     const report = screen.getByRole('heading', { name: 'Review findings' })
     const followUp = screen.getByText('The complete result')
-    expect(report.compareDocumentPosition(followUp) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(reasoning.compareDocumentPosition(report) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(report.compareDocumentPosition(tools) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(tools.compareDocumentPosition(followUp) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.getByText('Report details').closest('.dsh-focused-turn__process')).toBeNull()
     expect(screen.queryByText('Preparing the report')).toBeNull()
     expect(screen.queryByRole('button', { name: /Tool calls: 1/ })).toBeNull()
-    expect(turn()?.getAttribute('data-compact-process')).toBe('false')
-    fireEvent.click(button)
-    expect(button.getAttribute('aria-expanded')).toBe('true')
-    expect(turn()?.getAttribute('data-compact-process')).toBe('true')
+    fireEvent.click(reasoning)
+    expect(reasoning.getAttribute('aria-expanded')).toBe('true')
     expect(screen.getByText('Preparing the report').closest('.dsh-focused-turn__process')).not.toBeNull()
+    expect(screen.queryByRole('button', { name: /Tool calls: 1/ })).toBeNull()
+    fireEvent.click(tools)
+    expect(tools.getAttribute('aria-expanded')).toBe('true')
     expect(screen.getByRole('button', { name: /Tool calls: 1/ })).toBeDefined()
     expect(screen.getByRole('heading', { name: 'Review findings' })).toBe(report)
-    fireEvent.click(button)
+    fireEvent.click(tools)
     expect(screen.getByRole('heading', { name: 'Review findings' })).toBe(report)
     expect(screen.getByText('The complete result')).toBe(followUp)
+  })
+
+  it('keeps reasoning received after a visible reply below it during streaming', () => {
+    const reply: TimelineNode = {
+      kind: 'assistant-message',
+      id: 'progress-reply',
+      turn: 1,
+      step: 1,
+      markdown: 'Progress already shown',
+      streaming: false,
+      reasoning: { markdown: 'Earlier reasoning', streaming: false },
+    }
+    const content = (source: readonly TimelineNode[]): ReactElement => (
+      <ConversationLayoutProvider initialLayout="focused">
+        <Timeline sessionId="fixture" nodes={source} streaming transcriptView="standard" />
+      </ConversationLayoutProvider>
+    )
+    const view = render(content([reply]))
+    const body = screen.getByText('Progress already shown').closest('.dsh-focused-turn__answer')!
+    view.rerender(
+      content([
+        reply,
+        { kind: 'reasoning', id: 'next-thinking', markdown: 'Reasoning after the reply', streaming: true },
+        nodes[2]!,
+      ]),
+    )
+    expect(screen.getByText('Progress already shown').closest('.dsh-focused-turn__answer')).toBe(body)
+    const laterReasoning = screen.getByText('Reasoning after the reply')
+    expect(body.compareDocumentPosition(laterReasoning) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(laterReasoning.closest('.dsh-focused-turn__group')).toBe(body.nextElementSibling)
+    fireEvent.click(screen.getByRole('button', { name: 'Analysis complete' }))
+    expect(screen.getByText('Earlier reasoning').closest('.dsh-focused-turn__group')).toBe(
+      body.previousElementSibling,
+    )
   })
 
   it('keeps inherited replies visible through successive forks with incomplete turn metadata', () => {
@@ -595,9 +633,7 @@ describe('focused conversation interactions', () => {
     expect(verboseSummary.getAttribute('aria-expanded')).toBe('false')
     fireEvent.click(verboseSummary)
     // Verbose history reopens as the same bounded, compact log.
-    expect(verbose.container.querySelector('.dsh-focused-turn')?.getAttribute('data-compact-process')).toBe(
-      'true',
-    )
+    expect(verbose.container.querySelector('.dsh-focused-turn__process:not([hidden])')).not.toBeNull()
   })
 
   it('reveals an original source node behind a completed process for the inspector', async () => {

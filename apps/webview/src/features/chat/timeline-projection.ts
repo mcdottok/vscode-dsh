@@ -638,20 +638,14 @@ function appendReasoningContent(
   id: string,
   reasoning: Pick<ReasoningBlock, 'markdown' | 'streaming'>,
 ): void {
-  const index = blocks.findIndex((block) => block.kind === 'reasoning')
-  if (index < 0) {
-    blocks.unshift({ kind: 'reasoning', id, markdown: reasoning.markdown, streaming: reasoning.streaming })
+  const current = blocks.at(-1)
+  if (current?.kind !== 'reasoning') {
+    blocks.push({ kind: 'reasoning', id, markdown: reasoning.markdown, streaming: reasoning.streaming })
     return
   }
-  const current = blocks[index]
-  if (current?.kind !== 'reasoning') return
   const merged = appendReasoning(current, reasoning)
   if (merged === undefined) return
-  blocks[index] = { kind: 'reasoning', id: current.id, ...merged }
-  if (index !== 0) {
-    const [reasoningBlock] = blocks.splice(index, 1)
-    if (reasoningBlock !== undefined) blocks.unshift(reasoningBlock)
-  }
+  blocks[blocks.length - 1] = { kind: 'reasoning', id: current.id, ...merged }
 }
 
 function appendMessageContent(

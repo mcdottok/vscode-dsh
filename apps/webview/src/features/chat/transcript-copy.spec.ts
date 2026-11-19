@@ -66,6 +66,25 @@ describe('rowCopyMarkdown', () => {
     expect(rowCopyMarkdown(focusedTurn(answer, [assistantTurn('intermediate step')]))).toBe('the reply')
   })
 
+  it('copies the addressed reply block when reasoning separates replies in one display node', () => {
+    const aggregate: FocusedTurnNode['answer'] = {
+      kind: 'assistant-turn',
+      id: 'assistant-turn:final',
+      tools: [],
+      blocks: [
+        { kind: 'message', id: 'progress', markdown: 'Progress reply', streaming: false },
+        { kind: 'reasoning', id: 'thought', markdown: 'Thinking again', streaming: false },
+        { kind: 'message', id: 'final', markdown: 'Final reply', streaming: false },
+      ],
+      markdown: 'Progress reply\n\nFinal reply',
+      streaming: false,
+    }
+    const row = focusedTurn(aggregate, [aggregate])
+    expect(rowCopyMarkdown(row, 'progress')).toBe('Progress reply')
+    expect(rowCopyMarkdown(row, 'final')).toBe('Final reply')
+    expect(rowCopyMarkdown(row, 'thought')).toBeUndefined()
+  })
+
   it('falls back to the grouped answer text of an unsettled focused turn', () => {
     const members: FocusedTurnNode['nodes'] = [
       { kind: 'assistant-message', id: 'assistant-3', markdown: 'first', streaming: false },

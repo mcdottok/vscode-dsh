@@ -19,10 +19,17 @@ export function rowCopyMarkdown(node: PresentedTimelineNode, messageId?: string)
       return readableMarkdown(node.markdown)
     case 'focused-turn':
       if (messageId !== undefined) {
-        const message = node.nodes.find((member) => member.id === messageId)
-        return message === undefined || message.kind === 'tool'
-          ? undefined
-          : readableMarkdown(message.markdown)
+        for (const member of node.nodes) {
+          if (member.kind === 'tool') continue
+          if (member.kind === 'assistant-turn') {
+            const block = member.blocks.find(
+              (candidate) => candidate.kind === 'message' && candidate.id === messageId,
+            )
+            if (block?.kind === 'message') return readableMarkdown(block.markdown)
+          }
+          if (member.id === messageId) return readableMarkdown(member.markdown)
+        }
+        return undefined
       }
       // A settled answer is the whole answer, even when it carries only
       // images: its absent text is a strict no-op, never the process text of

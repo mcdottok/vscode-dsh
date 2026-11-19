@@ -282,13 +282,18 @@ export function createFocusedTimelineProjector(): (
         uninterrupted &&
         ((tailReply?.turnCompleted === true && tailReply === runLast && proven) || runLast.kind === 'tool')
       const live = !state.closed && runEnd === nodes.length
-      const processId = `focused-turn:${nodes[runStart]!.id}`
       const processSummary = summarizeFocusedWork(runMembers)
       const first = runMembers[0]!
+      const firstBlock = first.kind === 'assistant-turn' ? first.blocks[0] : undefined
+      // New reasoning can turn a previously standalone reply into an aggregate.
+      // Keep the row anchored to its first source block through that transition.
+      const firstSourceId =
+        firstBlock === undefined ? first.id : firstBlock.kind === 'tool' ? firstBlock.node.id : firstBlock.id
+      const processId = `focused-turn:${firstSourceId}`
       starts.push(index)
       rows.push({
         kind: 'focused-turn',
-        id: `focused-turn:${first.id}`,
+        id: processId,
         turn,
         nodes: runMembers,
         sourceIds: runMembers.flatMap(timelineSourceNodeIds),
