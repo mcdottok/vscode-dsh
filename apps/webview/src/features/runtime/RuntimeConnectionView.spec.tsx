@@ -43,8 +43,16 @@ describe('RuntimeConnectionView', () => {
 
   it.each([
     ['new-isolated', 'DSH CLI is not connected', 'You are using DSH CLI.'],
-    ['custom', 'DSH Desktop is not connected', 'Keep DSH Desktop running with VS Code connection enabled'],
-    ['auto', 'DSH Desktop is not connected', 'Keep DSH Desktop running with VS Code connection enabled'],
+    [
+      'custom',
+      'DSH Desktop is not connected',
+      'Make sure Desktop is open and the dsh-vscode-connect plugin is enabled.',
+    ],
+    [
+      'auto',
+      'DSH Desktop is not connected',
+      'Make sure Desktop is open and the dsh-vscode-connect plugin is enabled.',
+    ],
   ] as const)(
     'reads saved %s settings after reload before any connection log exists',
     async (mode, title, help) => {
@@ -71,10 +79,9 @@ describe('RuntimeConnectionView', () => {
       await screen.findByRole('heading', { name: title })
       expect(screen.getByText((text) => text.startsWith(help))).toBeDefined()
       expect(read).toHaveBeenCalledOnce()
-      if (mode === 'new-isolated')
-        expect(
-          screen.getByText('Connection source: DSH CLI. The extension starts the local service.'),
-        ).toBeDefined()
+      expect(
+        screen.getByText(`Connection source: ${mode === 'new-isolated' ? 'DSH CLI' : 'DSH Desktop'}`),
+      ).toBeDefined()
     },
   )
 

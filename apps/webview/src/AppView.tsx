@@ -170,12 +170,16 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
   const connectionFailureKey =
     connectionFailure === undefined ? undefined : `${connectionFailure.kind}:${connectionFailure.message}`
   const [previousConnectionFailure, setPreviousConnectionFailure] = useState(connectionFailureKey)
-  const [openConnectionTab, setOpenConnectionTab] = useState(false)
+  const [connectionSettingsEntry, setConnectionSettingsEntry] = useState<'choose' | 'try-desktop'>()
+  const openConnectionSettings = useCallback((): void => {
+    setConnectionSettingsEntry('choose')
+    store.setDrawer('settings')
+  }, [store])
   const settingsOpen = state.drawer === 'settings'
   const [settingsWereOpen, setSettingsWereOpen] = useState(settingsOpen)
   if (settingsWereOpen !== settingsOpen) {
     setSettingsWereOpen(settingsOpen)
-    if (!settingsOpen) setOpenConnectionTab(false)
+    if (!settingsOpen) setConnectionSettingsEntry(undefined)
   }
   if (previousConnectionFailure !== connectionFailureKey) {
     // A retry or a different failure must not inherit an earlier dismissal.
@@ -319,7 +323,8 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
         />
         <AppSettingsDrawer
           key={settingsDrawerVersionKey}
-          {...(openConnectionTab ? { initialTab: 'connection' } : {})}
+          {...(connectionSettingsEntry === undefined ? {} : { initialTab: 'connection' })}
+          preferDesktopConnection={connectionSettingsEntry === 'try-desktop'}
           state={state}
           store={store}
           themePreference={themePreference}
@@ -357,7 +362,7 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
               onAction={runRuntimeAction}
               onRetry={retryConnection}
               onOpenConnectionSettings={() => {
-                setOpenConnectionTab(true)
+                setConnectionSettingsEntry('try-desktop')
                 store.setDrawer('settings')
               }}
               onOpenSettings={() => store.setDrawer('settings')}
@@ -398,7 +403,7 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
                         draftPending
                         onRetry={retryConnection}
                         onConnectDesktop={() => store.runtimeAction('connect-desktop')}
-                        onOpenSettings={() => store.setDrawer('settings')}
+                        onOpenSettings={openConnectionSettings}
                         onShowDiagnosticsOutput={() => store.showDiagnostics()}
                       />
                     )}
@@ -463,7 +468,7 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
                       loadingSessionCatalog={backend.kind === 'connected'}
                       onRetry={retryConnection}
                       onConnectDesktop={() => store.runtimeAction('connect-desktop')}
-                      onOpenSettings={() => store.setDrawer('settings')}
+                      onOpenSettings={openConnectionSettings}
                       onShowDiagnosticsOutput={() => store.showDiagnostics()}
                     />
                   </div>

@@ -164,7 +164,7 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
         setSettingsState({ value })
         if (value !== undefined) {
           setConnectionChoice(
-            props.initialTab === 'connection' || value.connection.mode === 'custom'
+            props.preferDesktopConnection === true || value.connection.mode === 'custom'
               ? 'custom'
               : value.connection.mode === 'attach-only'
                 ? 'unchanged'
@@ -178,7 +178,7 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
     return () => {
       cancelled = true
     }
-  }, [open, onLoadSettings, props.initialTab, settingsState])
+  }, [open, onLoadSettings, props.preferDesktopConnection, settingsState])
 
   // The drawer stays mounted while closed; dropping the cached answer makes
   // the next open re-read extension settings, which can change elsewhere.

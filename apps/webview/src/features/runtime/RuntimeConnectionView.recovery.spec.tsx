@@ -10,7 +10,10 @@ afterEach(() => {
 })
 
 describe('connection recovery screen', () => {
-  const failedAttempt = (mode: 'custom' | 'auto', code: AppErrorCode): readonly ConnectionLogEntry[] => [
+  const failedAttempt = (
+    mode: 'custom' | 'auto' | 'attach-only',
+    code: AppErrorCode,
+  ): readonly ConnectionLogEntry[] => [
     { id: 1, time: '2026-10-27T02:44:08.000Z', elapsedMs: 0, phase: 'connect', status: 'started', mode },
     { id: 2, time: '2026-10-27T02:44:09.000Z', elapsedMs: 1000, phase: 'connect', status: 'failed', code },
   ]
@@ -34,9 +37,20 @@ describe('connection recovery screen', () => {
       />,
     )
     expect(screen.getByRole('heading', { name: 'Cannot connect to the saved address' })).toBeDefined()
-    expect(screen.getByText(/In Desktop, open Settings → General → VS Code connection/)).toBeDefined()
-    expect(screen.getByRole('alert').textContent).toContain('retrying the old address will not update it')
+    expect(
+      screen.getByText(
+        /If the connection still fails, copy the address from Settings → General → VS Code connection/,
+      ),
+    ).toBeDefined()
+    expect(screen.getByText(/Desktop is open and the dsh-vscode-connect plugin is enabled/)).toBeDefined()
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.getByText('Connection source: DSH Desktop')).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeDefined()
+    const choose = screen.getByRole('button', { name: 'Choose connection source' })
     const button = screen.getByRole('button', { name: 'Update connection address' })
+    expect(choose.classList.contains('dsh-button--primary')).toBe(true)
+    expect(button.classList.contains('dsh-button--secondary')).toBe(true)
+    expect(choose.nextElementSibling).toBe(button)
     fireEvent.click(button)
     fireEvent.click(button)
     expect(connect).toHaveBeenCalledOnce()
@@ -49,8 +63,44 @@ describe('connection recovery screen', () => {
     expect(
       screen.getByText('Unable to connect to DSH Desktop. Try again or open Output for details.'),
     ).toBeDefined()
-    fireEvent.click(screen.getByRole('button', { name: 'Choose connection source' }))
+    fireEvent.click(choose)
     expect(settings).toHaveBeenCalledOnce()
+  })
+
+  it('shows the Desktop source and keeps retry available when no instance is found', () => {
+    const retry = vi.fn()
+    const settings = vi.fn()
+    const output = failedAttempt('attach-only', 'NO_RUNNING_INSTANCE')
+    const { rerender } = render(
+      <RuntimeConnectionView state={{ kind: 'discovering' }} output={output.slice(0, 1)} />,
+    )
+    expect(screen.getByRole('progressbar', { name: 'Finding DSH Desktop' })).toBeDefined()
+    rerender(
+      <RuntimeConnectionView
+        state={{ kind: 'failed', retryable: true, message: 'No compatible local DSH instance is running.' }}
+        output={output}
+        onRetry={retry}
+        onOpenSettings={settings}
+        onConnectDesktop={vi.fn()}
+      />,
+    )
+    expect(screen.getByRole('heading', { name: 'Could not find DSH Desktop' })).toBeDefined()
+    expect(screen.getByText('Connection source: DSH Desktop')).toBeDefined()
+    expect(
+      screen.getByText('Make sure Desktop is open and the dsh-vscode-connect plugin is enabled.'),
+    ).toBeDefined()
+    expect(screen.queryByRole('progressbar')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+    const choose = screen.getByRole('button', { name: 'Choose connection source' })
+    const retryButton = screen.getByRole('button', { name: 'Retry' })
+    expect(choose.classList.contains('dsh-button--primary')).toBe(true)
+    expect(retryButton.classList.contains('dsh-button--secondary')).toBe(true)
+    fireEvent.click(retryButton)
+    fireEvent.click(choose)
+    expect(retry).toHaveBeenCalledOnce()
+    expect(settings).toHaveBeenCalledOnce()
+    fireEvent.click(screen.getByRole('button', { name: 'Diagnostic details' }))
+    expect(screen.getByRole('log').textContent).toContain('NO_RUNNING_INSTANCE')
   })
 
   it.each([

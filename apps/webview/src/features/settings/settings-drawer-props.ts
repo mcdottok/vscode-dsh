@@ -28,6 +28,7 @@ import type { Locale } from '../../i18n.js'
 export interface SettingsDrawerProps {
   readonly open: boolean
   readonly initialTab?: 'connection'
+  readonly preferDesktopConnection?: boolean
   readonly onOpenChange: (open: boolean) => void
   readonly connected: boolean
   readonly connectedDshVersion: string | undefined

@@ -73,41 +73,53 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
     : desktop
       ? 'runtime.posture.desktopHelp'
       : 'runtime.posture.help'
-  const hintKey = local
-    ? 'runtime.posture.localHint'
+  const sourceLabel = local
+    ? t('settings.connectionLocal')
     : desktop
-      ? 'runtime.posture.desktopSelectedHint'
-      : 'runtime.posture.desktopHint'
-  const savedAddressFailure =
-    props.state.kind === 'failed' &&
-    attemptOutput[0]?.mode === 'custom' &&
-    attemptOutput.some(
-      (entry) =>
-        entry.phase === 'connect' && entry.status === 'failed' && entry.code === 'BACKEND_UNREACHABLE',
-    )
+      ? t('settings.connectionDesktop')
+      : undefined
+  const failureCode =
+    props.state.kind === 'failed'
+      ? attemptOutput.findLast((entry) => entry.phase === 'connect' && entry.status === 'failed')?.code
+      : undefined
+  const savedAddressFailure = attemptOutput[0]?.mode === 'custom' && failureCode === 'BACKEND_UNREACHABLE'
+  const desktopUnavailable = desktop && failureCode === 'NO_RUNNING_INSTANCE'
+  const compactRecovery = savedAddressFailure || desktopUnavailable
+  const findingDesktop = desktop && props.state.kind === 'discovering' && !timedOut
   const updateAddress = savedAddressFailure && props.onConnectDesktop !== undefined
-  const title = savedAddressFailure
-    ? t('runtime.posture.savedAddressTitle')
-    : failure
-      ? t(
-          timedOut
-            ? 'runtime.posture.timeoutTitle'
-            : props.draftPending
-              ? 'runtime.posture.draftDisconnected'
-              : 'runtime.connectionProgress.failureTitle',
-        )
-      : initializing
-        ? t('runtime.posture.preparingTitle')
-        : idle && (local || desktop)
-          ? t(local ? 'runtime.posture.localIdleTitle' : 'runtime.posture.desktopIdleTitle')
-          : connectionTitle(props.state, catalogLoading, t)
+  const showConnectionActions = props.state.kind !== 'connected' || timedOut
   const loading = pending && !timedOut
   const retryable =
     timedOut ||
     (idle && !initializing) ||
     ((props.state.kind === 'failed' || props.state.kind === 'port-conflict') && props.state.retryable)
-  const message = savedAddressFailure
-    ? t('runtime.posture.savedAddressError')
+  let title = connectionTitle(props.state, catalogLoading, t)
+  let subtitleKey = 'runtime.posture.wait'
+  if (failure || idle) subtitleKey = props.draftPending && !desktop ? 'runtime.posture.draftHelp' : helpKey
+  if (savedAddressFailure) {
+    title = t('runtime.posture.savedAddressTitle')
+    subtitleKey = updateAddress ? 'runtime.posture.savedAddressHelp' : 'runtime.posture.desktopHelp'
+  } else if (desktopUnavailable) {
+    title = t('runtime.posture.desktopUnavailableTitle')
+  } else if (failure) {
+    title = t(
+      timedOut
+        ? 'runtime.posture.timeoutTitle'
+        : props.draftPending
+          ? 'runtime.posture.draftDisconnected'
+          : 'runtime.connectionProgress.failureTitle',
+    )
+  } else if (initializing) {
+    title = t('runtime.posture.preparingTitle')
+    subtitleKey = 'runtime.posture.preparingHelp'
+  } else if (findingDesktop) {
+    title = t('runtime.posture.findingDesktopTitle')
+    subtitleKey = 'runtime.posture.desktopHelp'
+  } else if (idle && (local || desktop)) {
+    title = t(local ? 'runtime.posture.localIdleTitle' : 'runtime.posture.desktopIdleTitle')
+  }
+  const message = compactRecovery
+    ? undefined
     : timedOut
       ? t('runtime.posture.timeoutHelp')
       : props.state.kind === 'failed' || props.state.kind === 'port-conflict'
@@ -133,7 +145,7 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
           className="dsh-runtime-connection__emblem"
           data-loading={loading}
           role={loading ? 'progressbar' : undefined}
-          aria-label={loading ? title : undefined}
+          aria-labelledby={loading ? 'runtime-connection-title' : undefined}
           aria-hidden={loading ? undefined : true}
         >
           <Icon name={loading ? 'refresh' : 'open-in-editor'} />
@@ -141,32 +153,33 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
         <h2 id="runtime-connection-title" aria-live="polite">
           {title}
         </h2>
-        <p className="dsh-runtime-connection__subtitle">
-          {savedAddressFailure
-            ? t('runtime.posture.savedAddressHelp')
-            : initializing && !failure
-              ? t('runtime.posture.preparingHelp')
-              : t(
-                  failure || idle
-                    ? props.draftPending
-                      ? 'runtime.posture.draftHelp'
-                      : helpKey
-                    : 'runtime.posture.wait',
-                )}
-        </p>
+        {sourceLabel === undefined || props.state.kind === 'connected' ? null : (
+          <p className="dsh-runtime-connection__hint">
+            {t('runtime.posture.currentSource', { source: sourceLabel })}
+          </p>
+        )}
+        <p className="dsh-runtime-connection__subtitle">{t(subtitleKey)}</p>
       </div>
       <div className="dsh-runtime-connection__actions">
-        {(props.onConnectDesktop === undefined && props.onOpenSettings === undefined) ||
-        (props.state.kind === 'connected' && !timedOut) ? null : (
+        {showConnectionActions && props.onOpenSettings !== undefined ? (
           <button
             className="dsh-button dsh-button--primary"
             type="button"
             disabled={desktopBusy}
+            onClick={props.onOpenSettings}
+          >
+            <Icon name="open-in-editor" />
+            {t('runtime.chooseConnection')}
+          </button>
+        ) : null}
+        {showConnectionActions &&
+        props.onConnectDesktop !== undefined &&
+        (updateAddress || props.onOpenSettings === undefined) ? (
+          <button
+            className={`dsh-button ${updateAddress ? 'dsh-button--secondary' : 'dsh-button--primary'}`}
+            type="button"
+            disabled={desktopBusy}
             onClick={() => {
-              if (!updateAddress && props.onOpenSettings !== undefined) {
-                props.onOpenSettings()
-                return
-              }
               setDesktopBusy(true)
               setDesktopFailed(false)
               void props
@@ -175,26 +188,9 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
                 .finally(() => setDesktopBusy(false))
             }}
           >
-            <Icon name="open-in-editor" />
-            {t(
-              updateAddress
-                ? 'runtime.updateConnectionAddress'
-                : props.onOpenSettings === undefined
-                  ? 'runtime.connectDesktop'
-                  : 'runtime.chooseConnection',
-            )}
+            {t(updateAddress ? 'runtime.updateConnectionAddress' : 'runtime.connectDesktop')}
           </button>
-        )}
-        {!updateAddress || props.onOpenSettings === undefined ? null : (
-          <button
-            className="dsh-button dsh-button--secondary"
-            type="button"
-            disabled={desktopBusy}
-            onClick={props.onOpenSettings}
-          >
-            {t('runtime.chooseConnection')}
-          </button>
-        )}
+        ) : null}
         {!retryable || props.onRetry === undefined ? null : (
           <button
             className="dsh-button dsh-button--secondary"
@@ -210,9 +206,6 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
           </button>
         )}
       </div>
-      {props.onConnectDesktop === undefined || props.state.kind === 'connected' ? null : (
-        <p className="dsh-runtime-connection__hint">{t(hintKey)}</p>
-      )}
       {!desktopFailed ? null : (
         <p className="dsh-runtime-connection__error" role="alert">
           {t('runtime.desktopFailed')}

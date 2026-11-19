@@ -608,7 +608,7 @@ describe('SettingsDrawer', () => {
 
   it('allows Desktop discovery without requiring a saved or pasted address', async () => {
     const onConfigureConnection = vi.fn().mockResolvedValue(undefined)
-    renderDrawer({ onConfigureConnection, initialTab: 'connection' })
+    renderDrawer({ onConfigureConnection, initialTab: 'connection', preferDesktopConnection: true })
     await screen.findByRole('heading', { name: 'Connection source' })
     expect(screen.getByRole('tab', { name: 'Connection', selected: true })).toBeDefined()
     expect(screen.getByRole('radio', { name: /DSH Desktop/ })).toHaveProperty('checked', true)
@@ -617,6 +617,12 @@ describe('SettingsDrawer', () => {
 
     await waitFor(() => expect(onConfigureConnection).toHaveBeenCalledWith('desktop', undefined))
     expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('keeps DSH CLI selected when opening connection settings directly', async () => {
+    renderDrawer({ initialTab: 'connection' })
+    expect(screen.getByRole('tab', { name: 'Connection', selected: true })).toBeDefined()
+    expect(await screen.findByRole('radio', { name: /DSH CLI/ })).toHaveProperty('checked', true)
   })
 
   it('clears a Desktop login address even when the Host rejects the connection', async () => {
