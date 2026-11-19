@@ -394,7 +394,7 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
     if (state.kind === 'connected') wasConnected = true
   })
   let checkingPair = false
-  let lastAutomaticAvailable = true
+  let lastAutomaticAvailable: boolean | undefined
   let lastPairAvailable = true
   const pairingTimer = setInterval(() => {
     if (
@@ -428,7 +428,10 @@ export function createCompositionRoot(context: vscode.ExtensionContext): Composi
     void (async () => {
       if (automatic && (!origin || !(await desktopPairing.has(origin)))) {
         const available = await desktopAutoDiscovery.available(pairingLifetime.signal)
-        const newlyAvailable = available && !lastAutomaticAvailable
+        const newlyAvailable =
+          available &&
+          (lastAutomaticAvailable === false ||
+            (lastAutomaticAvailable === undefined && state.kind === 'failed'))
         lastAutomaticAvailable = available
         if (state.kind !== 'connected' && newlyAvailable)
           if (!isAutomaticConnectionPaused()) await reconnect(pairingLifetime.signal, 'desktop-available')

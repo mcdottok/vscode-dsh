@@ -765,7 +765,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
   let connectionOperation: Promise<unknown> | undefined
   let connectionAbort: AbortController | undefined
   let connectionSelection = -1
-  const connect = (signal?: AbortSignal, attempt?: number): Promise<unknown> => {
+  const connect = (signal?: AbortSignal, attempt?: number, waitForRestart = false): Promise<unknown> => {
     if (
       connectionOperation !== undefined &&
       connectionSelection === configurationRevision &&
@@ -789,6 +789,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
       try {
         return await withDesktopRecovery({
           signal: recoverySignal,
+          waitForRestart,
           active: (active) => deps.onDesktopRecoveryState?.(active),
           connect: () => {
             if (!vscode.workspace.isTrusted) throw new DOMException('Workspace trust changed.', 'AbortError')
@@ -874,7 +875,7 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
       operationSignal.throwIfAborted()
       await externalConnection?.release()
       operationSignal.throwIfAborted()
-      return connect(operationSignal, attempt)
+      return connect(operationSignal, attempt, trigger === 'connection-lost')
     })()
     reconnectOperation = { promise: operation, attempt }
     try {

@@ -29,19 +29,21 @@ export function isRecoverableDesktopError(error: unknown): boolean {
 export async function withDesktopRecovery<T>(options: {
   readonly connect: () => Promise<T>
   readonly refresh: () => Promise<void>
+  readonly waitForRestart: boolean
   readonly signal?: AbortSignal
   readonly active: (value: boolean) => void
 }): Promise<T> {
+  const delays = options.waitForRestart ? [0, 750, 2000, 4000, 6000] : [0, 750]
   options.active(true)
   try {
-    for (const delay of [0, 750, 2000, 4000, 6000]) {
+    for (const delay of delays) {
       await waitForRetry(delay, options.signal)
       try {
         if (delay > 0) await options.refresh()
         return await options.connect()
       } catch (error) {
         options.signal?.throwIfAborted()
-        if (!isRecoverableDesktopError(error) || delay === 6000) throw error
+        if (!isRecoverableDesktopError(error) || delay === delays.at(-1)) throw error
       }
     }
     throw new Error('Desktop recovery exhausted')

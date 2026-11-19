@@ -812,6 +812,30 @@ describe('connection.configure reconnect', () => {
     }
   })
 
+  it.each(['open', 'retry'] as const)(
+    'reports an unavailable saved Desktop after one retry on %s',
+    async (trigger) => {
+      vi.useFakeTimers()
+      try {
+        harness.configuration.connection.mode = 'custom'
+        harness.configuration.connection.serverUrl = 'http://127.0.0.1:49999'
+        const f = automaticFixture(vi.fn().mockResolvedValue(undefined))
+        f.connect.mockRejectedValue(
+          new AppError({ code: 'BACKEND_UNREACHABLE', message: 'Desktop unavailable', retryable: true }),
+        )
+        const result = trigger === 'open' ? f.subject.connect() : f.subject.reconnect(undefined, 'webview')
+        const failure = expect(result).rejects.toMatchObject({ code: 'BACKEND_UNREACHABLE' })
+        await vi.advanceTimersByTimeAsync(750)
+        expect(f.recovery.mock.calls).toEqual([[true], [false]])
+        await failure
+        expect(f.connect).toHaveBeenCalledTimes(2)
+        expect(f.discover).toHaveBeenCalledOnce()
+      } finally {
+        vi.useRealTimers()
+      }
+    },
+  )
+
   it('persists a paired restart address without pinning a version', async () => {
     const f = automaticFixture()
     await f.subject.connect()

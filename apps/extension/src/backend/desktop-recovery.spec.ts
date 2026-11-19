@@ -20,7 +20,7 @@ it('refreshes address and credentials before retrying, with one recovery window'
   const connect = vi.fn().mockRejectedValueOnce(unavailable()).mockResolvedValue('connected')
   const refresh = vi.fn().mockResolvedValue(undefined)
   const active = vi.fn()
-  const result = withDesktopRecovery({ connect, refresh, active })
+  const result = withDesktopRecovery({ connect, refresh, active, waitForRestart: false })
   await vi.advanceTimersByTimeAsync(750)
   expect(await result).toBe('connected')
   expect(connect).toHaveBeenCalledTimes(2)
@@ -33,7 +33,7 @@ it('surfaces the final failure after the restart grace window and leaves no retr
   vi.useFakeTimers()
   const connect = vi.fn().mockRejectedValue(unavailable())
   const active = vi.fn()
-  const result = withDesktopRecovery({ connect, refresh: async () => {}, active })
+  const result = withDesktopRecovery({ connect, refresh: async () => {}, active, waitForRestart: true })
   const failure = expect(result).rejects.toMatchObject({ code: 'BACKEND_UNREACHABLE' })
   await vi.runAllTimersAsync()
   await failure
@@ -51,6 +51,7 @@ it('cancels a delayed retry without refreshing credentials or publishing a failu
     connect: () => Promise.reject(unavailable()),
     refresh,
     active,
+    waitForRestart: true,
     signal: abort.signal,
   })
   const failure = expect(result).rejects.toMatchObject({ name: 'AbortError' })
@@ -70,7 +71,12 @@ it('does not retry protocol incompatibility and only suppresses transient failur
   })
   const refresh = vi.fn()
   await expect(
-    withDesktopRecovery({ connect: () => Promise.reject(failure), refresh, active: () => {} }),
+    withDesktopRecovery({
+      connect: () => Promise.reject(failure),
+      refresh,
+      active: () => {},
+      waitForRestart: false,
+    }),
   ).rejects.toBe(failure)
   expect(refresh).not.toHaveBeenCalled()
   const state = { kind: 'failed' as const, message: 'Unavailable', retryable: true }
