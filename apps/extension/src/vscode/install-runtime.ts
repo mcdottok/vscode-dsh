@@ -10,32 +10,42 @@ export interface RuntimeInstallerDependencies {
   readonly Uri: typeof vscode.Uri
   readonly workspace?: typeof vscode.workspace
   readonly verifyExecutable?: (path: string) => Promise<boolean>
+  readonly resolveInstallNpm?: (checkedNpm?: string) => Promise<
+    | {
+        readonly executable: string
+        readonly path: string
+      }
+    | undefined
+  >
 }
 
 export class RuntimeInstaller {
   public constructor(private readonly dependencies: RuntimeInstallerDependencies) {}
 
-  public install(version?: string): Promise<void> {
+  public async install(version?: string, checkedNpm?: string): Promise<void> {
     if (version !== undefined && (version !== version.trim() || !isDshPackageVersion(version)))
-      return Promise.reject(
-        new AppError({
-          code: 'INVALID_CONFIGURATION',
-          message: 'Select an exact DSH version.',
-          retryable: false,
-        }),
-      )
+      throw new AppError({
+        code: 'INVALID_CONFIGURATION',
+        message: 'Select an exact DSH version.',
+        retryable: false,
+      })
     if (this.dependencies.workspace?.isTrusted === false)
-      return Promise.reject(
-        new AppError({
-          code: 'PERMISSION_DENIED',
-          message: 'Trust this workspace before opening the DSH installation terminal.',
-          retryable: false,
-        }),
-      )
-    const terminal = this.dependencies.window.createTerminal({ name: 'Install DSH CLI' })
+      throw new AppError({
+        code: 'PERMISSION_DENIED',
+        message: 'Trust this workspace before opening the DSH installation terminal.',
+        retryable: false,
+      })
+    const npm = await this.dependencies.resolveInstallNpm?.(checkedNpm)
+    const terminal = this.dependencies.window.createTerminal({
+      name: 'Install DSH CLI',
+      ...(npm === undefined
+        ? {}
+        : { shellPath: '/bin/sh', env: { DSH_INSTALL_NPM: npm.executable, DSH_INSTALL_PATH: npm.path } }),
+    })
     terminal.show(false)
-    terminal.sendText(version === undefined ? INSTALL_COMMAND : dshInstallCommand(version), false)
-    return Promise.resolve()
+    // Keep filesystem paths out of the command typed into the terminal.
+    const npmCommand = npm === undefined ? 'npm' : 'PATH="$DSH_INSTALL_PATH" "$DSH_INSTALL_NPM"'
+    terminal.sendText(dshInstallCommand(version, npmCommand), false)
   }
 
   public copyInstallCommand(): Thenable<void> {

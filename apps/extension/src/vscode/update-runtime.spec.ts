@@ -110,27 +110,36 @@ describe('DshRuntimeUpdater', () => {
     expect(calls.some((args) => args[0] === 'dsh')).toBe(false)
   })
 
-  it('selects npm from the detected runtime once for both version queries', async () => {
+  it('uses the same npm for both version queries and installation', async () => {
     const current = { ...runtime(), executable: '/home/test/node/bin/dsh' }
     const calls: string[] = []
+    const installedWith: string[] = []
+    const checkedNpm = '/home/test/node/bin/npm'
+    let preferredNpm = checkedNpm
     const updater = new DshRuntimeUpdater({
       locateRuntime: () => Promise.resolve(current),
       npmExecutable: (detected) => {
         expect(detected).toBe(current)
-        return '/home/test/node/bin/npm'
+        return preferredNpm
       },
       execute: (executable, args) => {
         calls.push(`${executable} ${args[0]}`)
         return Promise.resolve({ stdout: args[0] === 'view' ? metadata : '{}', stderr: '' })
       },
-      openInstallTerminal: () => Promise.resolve(),
+      openInstallTerminal: (version, npm) => {
+        installedWith.push(`${npm} ${version}`)
+        return Promise.resolve()
+      },
     })
 
     expect(await updater.checkForUpdates()).toMatchObject({
       status: 'ready',
       currentVersion: current.version,
     })
-    expect(calls).toEqual(['/home/test/node/bin/npm view', '/home/test/node/bin/npm list'])
+    preferredNpm = '/home/test/another-node/bin/npm'
+    await updater.installVersion('0.1.0-rc.8')
+    expect(calls).toEqual([`${checkedNpm} view`, `${checkedNpm} list`])
+    expect(installedWith).toEqual([`${checkedNpm} 0.1.0-rc.8`])
   })
 
   it('still reports a detected CLI when there is no native npm', async () => {

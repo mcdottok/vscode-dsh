@@ -36,7 +36,12 @@ export interface DshRuntimeUpdaterDependencies {
   readonly onProgress?: (progress: DshRuntimeUpdateProgress) => void
   readonly environment?: () => NodeJS.ProcessEnv
   readonly now?: () => Date
-  readonly openInstallTerminal: (version: string) => Promise<void>
+  readonly openInstallTerminal: (version: string, npm: string) => Promise<void>
+}
+
+interface RuntimeUpdateCheck {
+  readonly snapshot: DshUpdateSnapshot
+  readonly npm: string | undefined
 }
 
 interface RegistryMetadata {
@@ -46,12 +51,16 @@ interface RegistryMetadata {
 }
 
 export class DshRuntimeUpdater {
-  private cached: DshUpdateSnapshot | undefined
-  private inFlight: Promise<DshUpdateSnapshot> | undefined
+  private cached: RuntimeUpdateCheck | undefined
+  private inFlight: Promise<RuntimeUpdateCheck> | undefined
 
   public constructor(private readonly dependencies: DshRuntimeUpdaterDependencies) {}
 
-  public checkForUpdates(force = false, signal?: AbortSignal): Promise<DshUpdateSnapshot> {
+  public async checkForUpdates(force = false, signal?: AbortSignal): Promise<DshUpdateSnapshot> {
+    return (await this.check(force, signal)).snapshot
+  }
+
+  private check(force: boolean, signal?: AbortSignal): Promise<RuntimeUpdateCheck> {
     if (!force && this.cached !== undefined) return Promise.resolve(this.cached)
     if (this.inFlight !== undefined) return this.inFlight
 
@@ -76,20 +85,20 @@ export class DshRuntimeUpdater {
         'Select an exact DSH version from the upstream version list.',
         false,
       )
-    const checked = await this.checkForUpdates(false, signal)
+    const { snapshot: checked, npm } = await this.check(false, signal)
     if (signal?.aborted === true) throw cancelledError(signal.reason)
-    if (checked.status !== 'ready' || !checked.availableVersions.includes(requested))
+    if (npm === undefined || checked.status !== 'ready' || !checked.availableVersions.includes(requested))
       throw updateError(
         'metadata-unavailable',
         'The selected DSH version could not be verified against the upstream registry.',
         true,
       )
 
-    if (checked.globalVersion !== requested) await this.dependencies.openInstallTerminal(requested)
+    if (checked.globalVersion !== requested) await this.dependencies.openInstallTerminal(requested, npm)
     return checked
   }
 
-  private async checkOnce(signal?: AbortSignal): Promise<DshUpdateSnapshot> {
+  private async checkOnce(signal?: AbortSignal): Promise<RuntimeUpdateCheck> {
     this.emitProgress({ phase: 'checking' })
     const checkedAt = this.timestamp()
     const runtime = await this.dependencies.locateRuntime(signal).catch((error: unknown) => {
@@ -121,15 +130,15 @@ export class DshRuntimeUpdater {
         checkedAt,
         failure: metadataResult === undefined ? 'npm-not-found' : failureFor(metadataResult.reason),
       }
-      this.cached = snapshot
+      this.cached = { snapshot, npm }
       this.emitProgress({ phase: 'failed' })
-      return snapshot
+      return this.cached
     }
 
     const snapshot = this.snapshot('ready', runtime, globalVersion, metadataResult.value, checkedAt)
-    this.cached = snapshot
+    this.cached = { snapshot, npm }
     this.emitProgress({ phase: 'completed' })
-    return snapshot
+    return this.cached
   }
 
   private emitProgress(progress: DshRuntimeUpdateProgress): void {

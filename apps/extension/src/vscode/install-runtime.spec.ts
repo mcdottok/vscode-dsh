@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { INSTALL_COMMAND } from '../constants.js'
-import { RuntimeInstaller } from './install-runtime.js'
+import { RuntimeInstaller, type RuntimeInstallerDependencies } from './install-runtime.js'
 
 interface Harness {
   readonly installer: RuntimeInstaller
@@ -20,6 +20,7 @@ function createHarness(
     readonly verifyExecutable?: (path: string) => Promise<boolean>
     readonly isTrusted?: boolean
     readonly selected?: readonly { readonly fsPath: string }[]
+    readonly resolveInstallNpm?: RuntimeInstallerDependencies['resolveInstallNpm']
   } = {},
 ): Harness {
   const verifyExecutable = vi.fn(options.verifyExecutable ?? (() => Promise.resolve(true)))
@@ -36,6 +37,7 @@ function createHarness(
     Uri: { parse: (value: string) => ({ value }) } as never,
     workspace: { isTrusted: options.isTrusted ?? true, getConfiguration: () => ({ update }) } as never,
     verifyExecutable,
+    ...(options.resolveInstallNpm === undefined ? {} : { resolveInstallNpm: options.resolveInstallNpm }),
   })
   return {
     installer,
@@ -67,6 +69,29 @@ describe('runtime installer', () => {
     await harness.installer.install('0.2.2-rc.2')
 
     expect(harness.sendText).toHaveBeenCalledWith('npm install --global "@deepseek-ai/dsh@0.2.2-rc.2"', false)
+  })
+
+  it('keeps the checked WSL npm and its Node.js path in the install terminal environment', async () => {
+    const bin = "/home/test's nvm/versions/node/v26.1.0/bin"
+    const npm = `${bin}/npm`
+    const path = `${bin}:/usr/bin`
+    const resolveInstallNpm = vi.fn((checkedNpm?: string) =>
+      Promise.resolve({ executable: checkedNpm ?? npm, path }),
+    )
+    const harness = createHarness({ resolveInstallNpm })
+
+    await harness.installer.install('0.2.2-rc.2', npm)
+
+    expect(resolveInstallNpm).toHaveBeenCalledWith(npm)
+    expect(harness.createTerminal).toHaveBeenCalledWith({
+      name: 'Install DSH CLI',
+      shellPath: '/bin/sh',
+      env: { DSH_INSTALL_NPM: npm, DSH_INSTALL_PATH: path },
+    })
+    expect(harness.sendText).toHaveBeenCalledWith(
+      'PATH="$DSH_INSTALL_PATH" "$DSH_INSTALL_NPM" install --global "@deepseek-ai/dsh@0.2.2-rc.2"',
+      false,
+    )
   })
 
   it('rejects a shell fragment before creating a terminal', async () => {

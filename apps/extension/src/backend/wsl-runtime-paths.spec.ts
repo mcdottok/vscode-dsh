@@ -3,7 +3,7 @@ import { DshRuntimeLocator } from './runtime-locator.js'
 import { wslRuntimePaths } from './wsl-runtime-paths.js'
 
 const root = '/home/test/.nvm'
-const oldBin = `${root}/versions/node/v22.9.0/bin`
+const oldBin = `${root}/versions/node/v24.9.1/bin`
 const currentBin = `${root}/versions/node/v24.10.0/bin`
 const newerBin = `${root}/versions/node/v26.1.0/bin`
 const windowsBin = '/mnt/c/Program Files/nodejs'
@@ -42,13 +42,13 @@ describe('WSL extension runtime paths', () => {
     const inherited = [windowsBin, oldBin, customWindowsBin, '/usr/bin']
 
     const initial = wslRuntimePaths(environment, inherited, files)
-    expect(initial.entries).toEqual([currentBin, '/usr/bin'])
+    expect(initial.entries).toEqual([currentBin, oldBin, '/usr/bin'])
     expect(initial.npmExecutable()).toBe(`${currentBin}/npm`)
 
     aliases.set(`${root}/alias/default`, 'lts/*\n')
     aliases.set(`${root}/alias/lts/*`, 'v26.1.0\n')
     const updated = wslRuntimePaths(environment, [currentBin, ...inherited], files)
-    expect(updated.entries).toEqual([newerBin, '/usr/bin'])
+    expect(updated.entries).toEqual([newerBin, currentBin, oldBin, '/usr/bin'])
     expect(updated.npmExecutable()).toBe(`${newerBin}/npm`)
     expect(updated.npmExecutable(`${oldBin}/dsh`)).toBe(`${oldBin}/npm`)
   })
@@ -68,7 +68,7 @@ describe('WSL extension runtime paths', () => {
 
   it('finds DSH without a configured path and honors one when provided', async () => {
     const { files, executables, aliases } = fixture()
-    for (const bin of [currentBin, newerBin, windowsBin]) executables.set(`${bin}/dsh`, `${bin}/dsh`)
+    for (const bin of [oldBin, currentBin, newerBin, windowsBin]) executables.set(`${bin}/dsh`, `${bin}/dsh`)
     const settings: { executable?: string } = {}
     const locator = new DshRuntimeLocator({
       os: 'linux',
@@ -80,6 +80,16 @@ describe('WSL extension runtime paths', () => {
     })
 
     expect((await locator.locate()).runtime?.executable).toBe(`${currentBin}/dsh`)
+
+    executables.delete(`${currentBin}/dsh`)
+    locator.invalidate()
+    const fallback = (await locator.locate()).runtime
+    expect(fallback?.executable).toBe(`${oldBin}/dsh`)
+    expect(wslRuntimePaths({ NVM_DIR: root }, [oldBin], files).npmExecutable(fallback?.executable)).toBe(
+      `${oldBin}/npm`,
+    )
+    executables.set(`${currentBin}/dsh`, `${currentBin}/dsh`)
+
     aliases.set(`${root}/alias/default`, '26')
     locator.invalidate()
     expect((await locator.locate()).runtime?.executable).toBe(`${newerBin}/dsh`)

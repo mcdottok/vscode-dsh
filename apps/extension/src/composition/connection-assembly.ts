@@ -364,13 +364,23 @@ export function createRuntimeAssembly(deps: RuntimeAssemblyDependencies): Runtim
     Uri: vscode.Uri,
     workspace: vscode.workspace,
     verifyExecutable: async (executable) => (await runtimeLocator.inspectExecutable(executable)).supported,
+    ...(isWsl
+      ? {
+          resolveInstallNpm: async (checkedNpm?: string) => {
+            const executable =
+              checkedNpm ?? npmExecutable((await runtimeLocator.locate().catch(() => undefined))?.runtime)
+            if (executable === undefined) return undefined
+            return { executable, path: runtimeEnvironment(undefined, executable).PATH ?? '' }
+          },
+        }
+      : {}),
   })
   const runtimeUpdater = new DshRuntimeUpdater({
     npmExecutable,
     locateRuntime: async (signal) => (await runtimeLocator.locate(signal)).runtime,
     onProgress: (progress) => onRuntimeUpdateProgress(progress),
     execute: executeRuntimeCommand,
-    openInstallTerminal: (version) => runtimeInstaller.install(version),
+    openInstallTerminal: (version, npm) => runtimeInstaller.install(version, npm),
     environment: () => runtimeEnvironment(),
   })
   const runtimeUseCases = new RuntimeUseCases({

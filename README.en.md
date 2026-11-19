@@ -88,8 +88,7 @@ npm install --global @deepseek-ai/dsh
 **Using the CLI in Remote WSL**
 
 1. Install DSH Coding Agent in your VS Code WSL window and install Node.js and the DSH CLI in the same Linux distribution. In the integrated terminal, run `node -p process.platform` and `dsh --version` to confirm the platform is `linux` and the CLI reports a version.
-2. In the DSH panel, choose **DSH CLI → Recheck DSH → Start and connect**. The extension checks the default Node.js environment managed by `nvm` in WSL. If it still cannot find the CLI, run `command -v dsh` in the WSL terminal and put its output in `dsh.runtime.executablePath` under the **Remote [WSL]** settings.
-3. After configuring a model, start a session, ask DSH to read a test file from the workspace, and check the returned contents. If the panel shows a local CLI version, you can still choose **Start and connect** when the online version check fails.
+2. In the DSH panel, choose **DSH CLI → Recheck DSH → Start and connect**. The extension checks the default `nvm` environment in WSL first and then other locations on the Linux `PATH`. If it still cannot find the CLI, run `command -v dsh` in the WSL terminal and put its output in `dsh.runtime.executablePath` under the **Remote [WSL]** settings. Installing a version from the list uses the same Linux npm that retrieved the list.
 
 ## Development and feedback
 

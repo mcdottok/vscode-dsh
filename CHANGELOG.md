@@ -19,7 +19,7 @@
 ## 未发布
 
 - 为新版 DSH rc4 rc5 增加精确版本识别，并沿用已核对的会话协议。
-- Remote WSL 支持从 nvm 默认环境查找 DSH CLI，在线版本查询优先使用与 CLI 同目录的 Linux npm。连接设置分别显示本地 CLI 和在线版本查询结果。
+- Remote WSL 优先从 nvm 默认环境查找 DSH CLI，找不到时继续查找 Linux `PATH`。在线版本查询优先使用与 CLI 同目录的 Linux npm，安装所选版本时沿用同一个 npm。连接设置分别显示本地 CLI 和在线版本查询结果。
 
 ## 0.1.89 — 桌面端连接、设置与更新提示
 

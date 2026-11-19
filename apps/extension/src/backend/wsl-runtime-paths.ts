@@ -112,8 +112,8 @@ export function wslRuntimePaths(
       ...(defaultBin === undefined ? [] : [defaultBin]),
       ...pathEntries.filter((entry) => {
         if (!nativePath(entry)) return false
-        // A running WSL host may still carry the previous nvm default in PATH.
-        return nvmDefault === undefined || !path.normalize(entry).startsWith(`${nvmRoot}/versions/node/`)
+        // An explicit system alias opts out of nvm, even if the host inherited an nvm bin.
+        return nvmDefault !== 'system' || !path.normalize(entry).startsWith(`${nvmRoot}/versions/node/`)
       }),
     ]),
   ]
