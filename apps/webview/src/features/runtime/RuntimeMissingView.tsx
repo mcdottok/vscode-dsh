@@ -2,8 +2,15 @@ import { useId, type ReactElement } from 'react'
 import type { DiagnosticsSnapshot } from '@dsh-vscode/domain'
 import { ContentFlow } from '../../components/common/ContentFlow.js'
 import { useI18n } from '../../i18n.js'
+import { runtimeEnvironment } from '../../vscode-api.js'
 import { Icon } from '../../ui/Icon.js'
 import { DiagnosticsDrawer } from '../diagnostics/DiagnosticsDrawer.js'
+
+const CLI_MISSING_DESCRIPTION = {
+  'ssh-remote': 'runtime.remoteSshDescription',
+  wsl: 'runtime.wslDescription',
+  default: 'runtime.description',
+} as const
 
 export interface RuntimeMissingViewProps {
   readonly searchedLocations: readonly string[]
@@ -20,6 +27,7 @@ export interface RuntimeMissingViewProps {
 export function RuntimeMissingView(props: RuntimeMissingViewProps): ReactElement {
   const { t } = useI18n()
   const titleId = useId()
+  const environment = runtimeEnvironment()
   const searchedLocations = [...new Set(props.searchedLocations.filter((location) => location.trim() !== ''))]
   return (
     <article className="dsh-runtime-missing" aria-labelledby={titleId}>
@@ -30,7 +38,7 @@ export function RuntimeMissingView(props: RuntimeMissingViewProps): ReactElement
         <h1 id={titleId}>{t('runtime.title')}</h1>
       </header>
       <ContentFlow as="p" className="dsh-runtime-missing__description">
-        {t('runtime.description')}
+        {t(CLI_MISSING_DESCRIPTION[environment])}
       </ContentFlow>
       <div className="dsh-runtime-missing__actions">
         <button

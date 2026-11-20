@@ -5,6 +5,7 @@ import { useDismissibleLayer } from '../../components/common/useDismissibleLayer
 import { Icon } from '../../ui/Icon.js'
 import type { CustomProviderTemplate } from './CustomProviderCard.js'
 import { useI18n } from '../../i18n.js'
+import { runtimeEnvironment } from '../../vscode-api.js'
 import { publicProtocolErrorCode } from '../../app/protocol-client.js'
 import { useStableCallback } from '../../app/useStableCallback.js'
 import {
@@ -29,6 +30,12 @@ import { SettingsTabs } from './settings-tabs.js'
 
 export type { SettingsDrawerProps } from './settings-drawer-props.js'
 
+const CLI_MISSING_MESSAGE = {
+  'ssh-remote': 'settings.connectionCliMissingRemoteSsh',
+  wsl: 'settings.connectionCliMissingWsl',
+  default: 'settings.connectionCliMissing',
+} as const
+
 /**
  * 'unchanged' preserves attach-only settings until the user explicitly chooses
  * Desktop or local execution. A new-isolated runtime is a local source.
@@ -41,6 +48,7 @@ interface LoadedSettings {
 
 export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
   const { t } = useI18n()
+  const cliMissingMessage = t(CLI_MISSING_MESSAGE[runtimeEnvironment()])
   const feedbackHintId = useId()
   const { onLoadAccountDetails, onAcknowledgeAccountBonus, onOpenAccountPage } = props
   const refreshAccountDetails = useCallback((): void => {
@@ -350,7 +358,7 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
       .catch((reason: unknown) => {
         if (openEpochRef.current !== epoch) return
         if (publicProtocolErrorCode(reason) === 'DSH_NOT_FOUND') {
-          setConnectionError(t('settings.connectionCliMissing'))
+          setConnectionError(cliMissingMessage)
           return
         }
         setConnectionError(reason instanceof Error ? reason.message : t('settings.connectionApplyFailed'))
@@ -462,9 +470,7 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
       .then((snapshot) => {
         if (openEpochRef.current !== epoch) return
         if (snapshot?.currentVersion === undefined) return
-        setConnectionError((message) =>
-          message === t('settings.connectionCliMissing') ? undefined : message,
-        )
+        setConnectionError((message) => (message === cliMissingMessage ? undefined : message))
       })
       .catch((reason: unknown) =>
         setDshUpdateError(reason instanceof Error ? reason.message : t('settings.dshUpdateFailed')),

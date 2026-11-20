@@ -12,6 +12,12 @@ export function hasVsCodeApi(): boolean {
   return typeof acquireVsCodeApi === 'function'
 }
 
+export function runtimeEnvironment(): 'ssh-remote' | 'wsl' | 'default' {
+  const remoteName =
+    typeof document === 'undefined' ? null : document.documentElement.getAttribute('data-dsh-remote')
+  return remoteName === 'ssh-remote' || remoteName === 'wsl' ? remoteName : 'default'
+}
+
 const holder: { singleton?: VsCodeApi } = {}
 
 export function getVsCodeApi(): VsCodeApi {

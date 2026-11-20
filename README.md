@@ -90,6 +90,13 @@ npm install --global @deepseek-ai/dsh
 1. 在 VS Code 的 WSL 窗口安装 DSH Coding Agent，在同一个 Linux 发行版中安装 Node.js 和 DSH CLI。用集成终端运行 `node -p process.platform` 和 `dsh --version`，确认平台为 `linux` 且能看到 CLI 版本。
 2. 在 DSH 面板选择 **DSH CLI → 重新检测 DSH → 启动并连接**。扩展先查找 WSL 中 `nvm` 的默认 Node.js 环境，再查找 Linux `PATH` 中的其他位置。若仍未检测到 CLI，在 WSL 终端运行 `command -v dsh`，将输出填入 VS Code 的 **远程 [WSL]** 设置 `dsh.runtime.executablePath`。从版本列表安装时，扩展会沿用查询使用的 Linux npm。
 
+**在 Remote SSH 中使用 CLI**
+
+1. 在本机 VS Code 安装微软的 **Remote - SSH** 扩展。运行 **Remote-SSH: Connect to Host...** 连接 Linux 主机，再打开并信任远端项目文件夹。首次连接可能需要等 VS Code Server 安装完成。详见 [VS Code 官方连接说明](https://code.visualstudio.com/docs/remote/ssh#connect-to-a-remote-host)。
+2. 在这个 SSH 窗口从 VSIX 安装 **DSH Coding Agent**，并在扩展视图确认它列在 **SSH: 主机名** 下。
+3. 在 SSH 窗口的集成终端运行 `node --version`。如果找不到 Node.js，先在远端安装它，再用上面的 npm 命令安装 DSH CLI。运行 `dsh --version` 确认 CLI 可用。
+4. 在 DSH 面板选择 **DSH CLI**，点击 **启动并连接**。如果扩展没检测到 CLI，在 SSH 窗口的终端运行 `command -v dsh`。如果返回了可执行文件路径，把它填入 VS Code 的 **远程 [SSH: 主机名]** 设置 `dsh.runtime.executablePath`，然后点击 **重新检测 DSH** 并重试连接。
+
 ## 开发与反馈
 
 - 本地开发见[构建说明](BUILD.md)、[贡献指南](CONTRIBUTING.md)和[开发者文档](docs/README.md)。

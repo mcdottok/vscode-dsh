@@ -11,6 +11,9 @@ export function createWebviewHtml(
   const script = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'webview.js'))
   const style = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'webview.css'))
   const documentLanguage = /^zh(?:-[A-Za-z0-9]{1,8})*$/iu.test(hostLanguage) ? 'zh-CN' : 'en'
+  const remoteName = vscode.env.remoteName
+  const remoteAttribute =
+    remoteName === 'ssh-remote' || remoteName === 'wsl' ? ` data-dsh-remote="${remoteName}"` : ''
   const csp = [
     "default-src 'none'",
     `img-src ${webview.cspSource} data:`,
@@ -25,7 +28,7 @@ export function createWebviewHtml(
     "frame-src 'none'",
   ].join('; ')
   return `<!doctype html>
-<html lang="${documentLanguage}">
+<html lang="${documentLanguage}"${remoteAttribute}>
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">

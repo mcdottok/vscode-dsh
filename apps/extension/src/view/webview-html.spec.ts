@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 
-const vscodeEnv = vi.hoisted(() => ({ language: 'en' }))
+const vscodeEnv = vi.hoisted<{ language: string; remoteName?: string | undefined }>(() => ({
+  language: 'en',
+}))
 
 vi.mock('vscode', () => ({
   env: vscodeEnv,
@@ -89,6 +91,31 @@ describe('createWebviewHtml', () => {
 
     expect(html).toContain(`<html lang="${expected}">`)
   })
+
+  it.each([
+    ['ssh-remote', ' data-dsh-remote="ssh-remote"'],
+    ['wsl', ' data-dsh-remote="wsl"'],
+    ['dev-container', ''],
+    [undefined, ''],
+  ] as const)(
+    'sets the Webview remote attribute for host type %s only when supported',
+    (remoteName, attribute) => {
+      vscodeEnv.remoteName = remoteName
+      try {
+        const html = createWebviewHtml(
+          {
+            cspSource: 'vscode-resource:',
+            asWebviewUri: (uri: unknown): unknown => uri,
+          } as never,
+          { toString: () => 'extension-root' } as never,
+          'en',
+        )
+        expect(html).toContain(`<html lang="en"${attribute}>`)
+      } finally {
+        vscodeEnv.remoteName = undefined
+      }
+    },
+  )
 
   it('bootstraps the actual Webview from VS Code env.language', () => {
     vscodeEnv.language = 'zh-Hans'

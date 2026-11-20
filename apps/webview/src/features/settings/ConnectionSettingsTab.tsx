@@ -2,9 +2,16 @@ import type { ReactElement } from 'react'
 import { SettingCard } from '../../components/common/SettingCard.js'
 import { SelectMenu } from '../../components/common/SelectMenu.js'
 import { Icon } from '../../ui/Icon.js'
+import { runtimeEnvironment } from '../../vscode-api.js'
 import { connectionModeLabel, dshUpdateFailureMessage } from './update-labels.js'
 
 import type { GeneralSettingsTabProps } from './GeneralSettingsTab.js'
+
+const CLI_NOT_DETECTED = {
+  'ssh-remote': 'settings.dshUpdateNotDetectedRemoteSsh',
+  wsl: 'settings.dshUpdateNotDetectedWsl',
+  default: 'settings.dshUpdateNotDetected',
+} as const
 
 export function ConnectionSettingsTab(input: GeneralSettingsTabProps): ReactElement {
   const {
@@ -253,7 +260,7 @@ export function ConnectionSettingsTab(input: GeneralSettingsTabProps): ReactElem
           {dshUpdate === undefined ? null : (
             <dl className="dsh-settings__runtime-update-facts">
               <dt>{t('settings.dshUpdateCurrent')}</dt>
-              <dd>{dshUpdate.currentVersion ?? t('settings.dshUpdateNotDetected')}</dd>
+              <dd>{dshUpdate.currentVersion ?? t(CLI_NOT_DETECTED[runtimeEnvironment()])}</dd>
               {dshUpdate.globalVersion !== undefined &&
               dshUpdate.globalVersion !== dshUpdate.currentVersion ? (
                 <>
