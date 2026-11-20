@@ -47,6 +47,7 @@ vi.mock('vscode', () => ({
 const harness = vi.hoisted(() => {
   const state = {
     isTrusted: true,
+    awaitingCliStart: false,
     configuration: {
       connection: { mode: 'auto' as 'auto' | 'custom' | 'attach-only', serverUrl: '', runtimeVersion: '' },
       runtime: { autoStart: false },
@@ -99,7 +100,19 @@ function lifecycle(
       ...(withResources ? { extensionUri: { fsPath: '/fixture' } } : {}),
       workspaceState: { update: () => Promise.resolve(undefined), get: () => undefined },
     },
-    configuration: { read: () => harness.configuration },
+    configuration: {
+      read: () =>
+        harness.awaitingCliStart && !harness.configuration.runtime.autoStart
+          ? {
+              ...harness.configuration,
+              connection: {
+                ...harness.configuration.connection,
+                mode: 'new-isolated',
+                awaitingCliStart: true,
+              },
+            }
+          : harness.configuration,
+    },
     coordinator: {
       connect: (
         request: {
@@ -131,6 +144,7 @@ describe('connection.configure reconnect', () => {
   afterEach(() => vi.unstubAllEnvs())
   beforeEach(() => {
     harness.isTrusted = true
+    harness.awaitingCliStart = false
     harness.connects.length = 0
     harness.transportListeners.length = 0
     harness.writes.length = 0
@@ -140,6 +154,19 @@ describe('connection.configure reconnect', () => {
     harness.afterWrite = undefined
     harness.configuration.runtime.autoStart = false
     harness.update.mockReset().mockResolvedValue(false)
+  })
+
+  it('leaves the remote CLI idle until the user explicitly starts it', async () => {
+    harness.awaitingCliStart = true
+    harness.configuration.connection.mode = 'attach-only'
+    const subject = lifecycle()
+
+    await expect(subject.connect()).resolves.toEqual({ connected: false })
+    expect(harness.connects).toEqual([])
+    expect(harness.writes).toEqual([])
+
+    await expect(subject.configureConnection('local')).resolves.toEqual({ connected: true })
+    expect(harness.connects).toEqual([{ mode: 'new-isolated', autoStart: true }])
   })
 
   it('preserves an exact same-origin version for a saved manual Desktop address', async () => {

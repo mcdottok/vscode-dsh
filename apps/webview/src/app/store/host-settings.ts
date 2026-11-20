@@ -40,6 +40,7 @@ export function parseExtensionSettings(value: unknown): ExtensionSettingsSummary
       : {}),
     connection: {
       mode: connection.mode,
+      ...(connection.awaitingCliStart === true ? { awaitingCliStart: true } : {}),
       customEndpointConfigured: connection.customEndpointConfigured,
       desktopEndpointConfigured: connection.desktopEndpointConfigured === true,
     },

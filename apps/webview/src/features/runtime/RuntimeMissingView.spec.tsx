@@ -6,7 +6,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RuntimeMissingView } from './RuntimeMissingView.js'
 
 describe('RuntimeMissingView', () => {
-  afterEach(() => cleanup())
+  afterEach(() => {
+    cleanup()
+    document.documentElement.removeAttribute('data-dsh-remote')
+  })
 
   it('explains the setup path and exposes install, selection, command, retry, and docs actions', () => {
     const onOpenSettings = vi.fn()
@@ -39,4 +42,26 @@ describe('RuntimeMissingView', () => {
     expect(screen.getByRole('button', { name: 'Docs' })).toBeDefined()
     expect(screen.getByText('Searched locations (1)')).toBeDefined()
   })
+
+  it.each(['ssh-remote', 'wsl'] as const)(
+    'keeps settings accessible without the Desktop shortcut in %s',
+    (remote) => {
+      document.documentElement.setAttribute('data-dsh-remote', remote)
+      const openSettings = vi.fn()
+      render(
+        <RuntimeMissingView
+          searchedLocations={[]}
+          busyAction={undefined}
+          onAction={vi.fn()}
+          onOpenConnectionSettings={vi.fn()}
+          onOpenSettings={openSettings}
+        />,
+      )
+
+      expect(screen.queryByRole('button', { name: 'Try connecting to DSH Desktop' })).toBeNull()
+      fireEvent.click(screen.getByText('More options'))
+      fireEvent.click(screen.getByRole('button', { name: 'Open settings' }))
+      expect(openSettings).toHaveBeenCalledOnce()
+    },
+  )
 })

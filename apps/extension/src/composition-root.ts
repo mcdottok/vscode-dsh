@@ -63,7 +63,7 @@ export interface CompositionRoot extends vscode.Disposable {
  */
 export function createCompositionRoot(context: vscode.ExtensionContext): CompositionRoot {
   const pluginInstallRequests = new PluginInstallRequestCoordinator()
-  const configuration = new VsCodeConfigurationSource(vscode.workspace)
+  const configuration = new VsCodeConfigurationSource(vscode.workspace, vscode.env?.remoteName)
   const extensionVersion = readExtensionVersion(context)
   const channel = vscode.window.createOutputChannel(EXTENSION_DISPLAY_NAME, { log: true })
   const diagnostics = new RedactedDiagnostics(channel, () =>

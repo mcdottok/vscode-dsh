@@ -1873,6 +1873,7 @@
   "runtime.posture.preparingTitle": "Preparing DSH connection",
   "runtime.posture.preparingHelp": "Reading your connection settings and restoring the saved connection…",
   "runtime.posture.localIdleTitle": "DSH CLI is not connected",
+  "runtime.posture.remoteCliIdleHelp": "DSH CLI will run in the current remote environment.",
   "runtime.posture.desktopIdleTitle": "DSH Desktop is not connected",
   "runtime.posture.localHelp": "You are using DSH CLI. Retry to start and connect to the local service. If connection still fails, check DSH CLI installation and version in connection settings.",
   "runtime.posture.desktopHelp": "Make sure Desktop is open and the dsh-vscode-connect plugin is enabled.",

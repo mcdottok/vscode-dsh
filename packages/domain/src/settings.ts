@@ -3,6 +3,8 @@ import type { ConnectionMode } from './runtime.js'
 
 export interface ConnectionSettings {
   readonly mode: ConnectionMode
+  /** The remote CLI is selected by default and waits for the first explicit start. */
+  readonly awaitingCliStart?: true
   readonly serverUrl?: string
   /**
    * Optional explicit DSH wire version for an external instance whose runtime
@@ -44,7 +46,7 @@ export interface ExtensionSettingsSummary {
   /** The installed VS Code extension version, sourced from its manifest. */
   readonly extensionVersion: string
   readonly autoCheckUpdates?: boolean
-  readonly connection: Pick<ConnectionSettings, 'mode'> & {
+  readonly connection: Pick<ConnectionSettings, 'mode' | 'awaitingCliStart'> & {
     /** The endpoint is deliberately not returned to the Webview. */
     readonly customEndpointConfigured: boolean
     /** Only a presence bit; the remembered Desktop origin stays in Host state. */

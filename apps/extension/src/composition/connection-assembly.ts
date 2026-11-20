@@ -544,6 +544,10 @@ export function createConnectionLifecycle(deps: ConnectionLifecycleDependencies)
     const current = configuration.read()
     transportSettingsSnapshot = JSON.stringify(current.connection)
     const development = usesDevelopmentRuntime(context)
+    if (current.connection.awaitingCliStart === true && !development) {
+      signal?.throwIfAborted()
+      return { connected: false }
+    }
     const automaticOrigin =
       deps.discoverAutomaticDesktop === undefined
         ? undefined

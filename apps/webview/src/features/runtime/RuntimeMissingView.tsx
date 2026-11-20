@@ -50,14 +50,16 @@ export function RuntimeMissingView(props: RuntimeMissingViewProps): ReactElement
           <Icon name="terminal" />
           {props.busyAction === 'install' ? t('runtime.installing') : t('runtime.install')}
         </button>
-        <button
-          className="dsh-button dsh-button--secondary"
-          type="button"
-          onClick={props.onOpenConnectionSettings}
-        >
-          <Icon name="open-in-editor" />
-          {t('runtime.tryDesktop')}
-        </button>
+        {environment === 'default' ? (
+          <button
+            className="dsh-button dsh-button--secondary"
+            type="button"
+            onClick={props.onOpenConnectionSettings}
+          >
+            <Icon name="open-in-editor" />
+            {t('runtime.tryDesktop')}
+          </button>
+        ) : null}
       </div>
       <ContentFlow as="p" className="dsh-runtime-missing__description">
         {t('runtime.installHint')}

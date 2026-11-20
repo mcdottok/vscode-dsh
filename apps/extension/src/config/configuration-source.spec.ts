@@ -17,6 +17,47 @@ describe('DSH connection configuration', () => {
       runtime: { autoStart: true },
     })
   })
+
+  it.each(['ssh-remote', 'wsl'] as const)('waits for the first CLI start in %s', (remoteName) => {
+    const settings = new VsCodeConfigurationSource(
+      {
+        getConfiguration: () => ({
+          get: (_key: string, fallback: unknown) => fallback,
+          inspect: (key: string) => (key === 'connection.mode' ? { defaultValue: 'attach-only' } : undefined),
+        }),
+      } as never,
+      remoteName,
+    ).read()
+
+    expect(settings).toMatchObject({
+      connection: { mode: 'new-isolated', awaitingCliStart: true },
+      runtime: { autoStart: false },
+    })
+  })
+
+  it.each([
+    ['connection.mode', 'attach-only'],
+    ['connection.mode', 'custom'],
+    ['connection.serverUrl', 'http://127.0.0.1:4310'],
+    ['connection.attachPorts', [3080]],
+    ['runtime.autoStart', false],
+    ['runtime.autoStart', true],
+  ] as const)('preserves the existing remote setting %s = %j', (key, value) => {
+    const settings = new VsCodeConfigurationSource(
+      {
+        getConfiguration: () => ({
+          get: (name: string, fallback: unknown) => (name === key ? value : fallback),
+          inspect: (name: string) => (name === key ? { workspaceValue: value } : undefined),
+        }),
+      } as never,
+      'ssh-remote',
+    ).read()
+
+    expect(settings.connection.awaitingCliStart).toBeUndefined()
+    expect(settings.connection.mode).toBe(key === 'connection.mode' ? value : 'attach-only')
+    expect(settings.runtime.autoStart).toBe(key === 'runtime.autoStart' ? value : false)
+  })
+
   it.each(['globalValue', 'workspaceValue', 'workspaceFolderValue'] as const)(
     'distinguishes explicit ports in %s from the built-in default',
     (scope) => {

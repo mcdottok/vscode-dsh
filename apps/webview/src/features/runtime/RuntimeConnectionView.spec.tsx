@@ -41,6 +41,39 @@ describe('RuntimeConnectionView', () => {
     expect(screen.getByRole('button', { name: 'Retry' })).toBeDefined()
   })
 
+  it('offers an explicit start as the primary action for the first remote CLI connection', async () => {
+    const settings: ExtensionSettingsSummary = {
+      extensionVersion: '0.1.90',
+      connection: { mode: 'new-isolated', customEndpointConfigured: false, awaitingCliStart: true },
+      runtime: { customExecutableConfigured: false, autoStart: false },
+      security: { defaultPermissionPreset: 'workspace-write' },
+      defaultAgent: {
+        preset: 'standard',
+        toolMode: 'native',
+        permissionPreset: 'workspace-write',
+        planMode: false,
+        model: { providerId: 'fixture', modelId: 'model' },
+      },
+    }
+    const startCli = vi.fn<() => Promise<void>>().mockResolvedValue(undefined)
+    render(
+      <RuntimeConnectionView
+        state={{ kind: 'idle' }}
+        onReadSettings={() => Promise.resolve(settings)}
+        onStartCli={startCli}
+        onRetry={vi.fn()}
+        onOpenSettings={vi.fn()}
+      />,
+    )
+
+    const start = await screen.findByRole('button', { name: 'Start and connect' })
+    expect(startCli).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull()
+    fireEvent.click(start)
+    await waitFor(() => expect(start).toHaveProperty('disabled', false))
+    expect(startCli).toHaveBeenCalledOnce()
+  })
+
   it.each([
     ['new-isolated', 'DSH CLI is not connected', 'You are using DSH CLI.'],
     [

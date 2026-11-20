@@ -117,6 +117,7 @@ export function publicExtensionSettings(
     extensionVersion,
     connection: {
       mode: settings.connection.mode,
+      ...(settings.connection.awaitingCliStart === true ? { awaitingCliStart: true } : {}),
       customEndpointConfigured: settings.connection.serverUrl !== undefined,
       desktopEndpointConfigured,
     },

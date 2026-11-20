@@ -151,6 +151,7 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
   } = props
   const agentTeamMode = active === undefined ? undefined : state.projections[active.id]?.agentTeam
   const readConnectionSettings = useCallback(() => store.readSettings(), [store])
+  const startCli = useCallback(() => store.configureConnection('local'), [store])
   const [inspectorReveal, setInspectorReveal] = useState<{
     readonly sessionKey: string
     readonly nodeId: string
@@ -402,6 +403,7 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
                         initializing={state.connectionInitializing === true}
                         draftPending
                         onRetry={retryConnection}
+                        onStartCli={startCli}
                         onConnectDesktop={() => store.runtimeAction('connect-desktop')}
                         onOpenSettings={openConnectionSettings}
                         onShowDiagnosticsOutput={() => store.showDiagnostics()}
@@ -467,6 +469,7 @@ export function AppView(props: ReturnType<typeof useAppController>): ReactElemen
                       initializing={state.connectionInitializing === true}
                       loadingSessionCatalog={backend.kind === 'connected'}
                       onRetry={retryConnection}
+                      onStartCli={startCli}
                       onConnectDesktop={() => store.runtimeAction('connect-desktop')}
                       onOpenSettings={openConnectionSettings}
                       onShowDiagnosticsOutput={() => store.showDiagnostics()}

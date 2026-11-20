@@ -3,7 +3,10 @@ import type { ExtensionSettings } from '@dsh-vscode/domain'
 import { AppError, parseServerOrigin, type AgentConfiguration } from '@dsh-vscode/domain'
 
 export class VsCodeConfigurationSource {
-  public constructor(private readonly workspace: typeof vscode.workspace) {}
+  public constructor(
+    private readonly workspace: typeof vscode.workspace,
+    private readonly remoteName?: string,
+  ) {}
 
   public read(): ExtensionSettings {
     const config = this.workspace.getConfiguration('dsh')
@@ -21,17 +24,7 @@ export class VsCodeConfigurationSource {
       config.get<unknown>('connection.attachPorts', [3080]),
       'connection.attachPorts',
     )
-    const portSetting = config.inspect?.<unknown>('connection.attachPorts')
-    const attachPortsConfigured =
-      portSetting !== undefined &&
-      [
-        portSetting.globalValue,
-        portSetting.workspaceValue,
-        portSetting.workspaceFolderValue,
-        portSetting.globalLanguageValue,
-        portSetting.workspaceLanguageValue,
-        portSetting.workspaceFolderLanguageValue,
-      ].some((value) => value !== undefined)
+    const attachPortsConfigured = hasSettingOverride(config, 'connection.attachPorts')
     const discoveryTimeoutMs = readInteger(
       config.get<unknown>('connection.discoveryTimeoutMs', 1500),
       100,
@@ -45,6 +38,15 @@ export class VsCodeConfigurationSource {
       'connection.requestTimeoutMs',
     )
     const serverUrl = normalizeServerUrl(config.get<unknown>('connection.serverUrl', ''))
+    const autoStart = readBoolean(config.get<unknown>('runtime.autoStart', false), 'runtime.autoStart')
+    const awaitingCliStart =
+      (this.remoteName === 'ssh-remote' || this.remoteName === 'wsl') &&
+      mode === 'attach-only' &&
+      serverUrl === undefined &&
+      !attachPortsConfigured &&
+      !autoStart &&
+      !hasSettingOverride(config, 'connection.mode') &&
+      !hasSettingOverride(config, 'runtime.autoStart')
     const runtimeVersion = readOptionalString(
       config.get<unknown>('connection.runtimeVersion', ''),
       'connection.runtimeVersion',
@@ -72,7 +74,8 @@ export class VsCodeConfigurationSource {
     }
     return {
       connection: {
-        mode,
+        mode: awaitingCliStart ? 'new-isolated' : mode,
+        ...(awaitingCliStart ? { awaitingCliStart: true } : {}),
         ...(serverUrl === undefined ? {} : { serverUrl }),
         ...(runtimeVersion === undefined ? {} : { runtimeVersion }),
         managedPort,
@@ -83,7 +86,7 @@ export class VsCodeConfigurationSource {
       },
       runtime: {
         executablePath,
-        autoStart: readBoolean(config.get<unknown>('runtime.autoStart', false), 'runtime.autoStart'),
+        autoStart,
         installPackage: '@deepseek-ai/dsh',
       },
       security: {
@@ -101,6 +104,19 @@ export class VsCodeConfigurationSource {
       if (event.affectsConfiguration('dsh')) listener((section) => event.affectsConfiguration(section))
     })
   }
+}
+
+function hasSettingOverride(config: vscode.WorkspaceConfiguration, key: string): boolean {
+  const setting = config.inspect?.<unknown>(key)
+  if (setting === undefined) return false
+  return [
+    setting.globalValue,
+    setting.workspaceValue,
+    setting.workspaceFolderValue,
+    setting.globalLanguageValue,
+    setting.workspaceLanguageValue,
+    setting.workspaceFolderLanguageValue,
+  ].some((value) => value !== undefined)
 }
 
 function readString(value: unknown, key: string): string {

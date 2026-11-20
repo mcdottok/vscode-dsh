@@ -1873,6 +1873,7 @@
   "runtime.posture.preparingTitle": "正在准备 DSH 连接",
   "runtime.posture.preparingHelp": "正在读取连接配置并恢复上次使用的连接，请稍候。",
   "runtime.posture.localIdleTitle": "DSH CLI 尚未连接",
+  "runtime.posture.remoteCliIdleHelp": "DSH CLI 将在当前远端环境中运行。",
   "runtime.posture.desktopIdleTitle": "DSH Desktop 尚未连接",
   "runtime.posture.localHelp": "当前使用 DSH CLI。点击「重试」启动并连接本机服务；若仍无法连接，请在连接设置中检查 DSH CLI 安装与版本。",
   "runtime.posture.desktopHelp": "请确认桌面端已打开，并已启用同步插件 dsh-vscode-connect。",

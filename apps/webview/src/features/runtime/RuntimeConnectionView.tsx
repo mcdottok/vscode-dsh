@@ -14,12 +14,13 @@ export interface RuntimeConnectionViewProps {
   readonly onOpenSettings?: () => void
   readonly onShowDiagnosticsOutput?: () => Promise<void>
   readonly onConnectDesktop?: () => Promise<void>
+  readonly onStartCli?: () => Promise<void>
   readonly onReadSettings?: () => Promise<ExtensionSettingsSummary | undefined>
 }
 
 export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactElement {
   const { t } = useI18n()
-  const { onReadSettings } = props
+  const { onReadSettings, onConnectDesktop } = props
   const [loadedSettings, setLoadedSettings] = useState<{
     readonly reader: typeof onReadSettings
     readonly value: ExtensionSettingsSummary | undefined
@@ -64,6 +65,8 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
     ? (settings?.connection.mode ?? attemptOutput[0]?.mode)
     : (attemptOutput[0]?.mode ?? settings?.connection.mode)
   const local = mode === 'new-isolated'
+  const startCli =
+    idle && !initializing && settings?.connection.awaitingCliStart === true ? props.onStartCli : undefined
   const desktop =
     mode === 'custom' ||
     mode === 'attach-only' ||
@@ -86,12 +89,12 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
   const desktopUnavailable = desktop && failureCode === 'NO_RUNNING_INSTANCE'
   const compactRecovery = savedAddressFailure || desktopUnavailable
   const findingDesktop = desktop && props.state.kind === 'discovering' && !timedOut
-  const updateAddress = savedAddressFailure && props.onConnectDesktop !== undefined
+  const updateAddress = savedAddressFailure && onConnectDesktop !== undefined
   const showConnectionActions = props.state.kind !== 'connected' || timedOut
   const loading = pending && !timedOut
   const retryable =
     timedOut ||
-    (idle && !initializing) ||
+    (idle && !initializing && startCli === undefined) ||
     ((props.state.kind === 'failed' || props.state.kind === 'port-conflict') && props.state.retryable)
   let title = connectionTitle(props.state, catalogLoading, t)
   let subtitleKey = 'runtime.posture.wait'
@@ -117,6 +120,7 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
     subtitleKey = 'runtime.posture.desktopHelp'
   } else if (idle && (local || desktop)) {
     title = t(local ? 'runtime.posture.localIdleTitle' : 'runtime.posture.desktopIdleTitle')
+    if (startCli !== undefined) subtitleKey = 'runtime.posture.remoteCliIdleHelp'
   }
   const message = compactRecovery
     ? undefined
@@ -126,8 +130,16 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
         ? props.state.message
         : undefined
   const [outputFailed, setOutputFailed] = useState(false)
-  const [desktopBusy, setDesktopBusy] = useState(false)
-  const [desktopFailed, setDesktopFailed] = useState(false)
+  const [connectionBusy, setConnectionBusy] = useState(false)
+  const [connectionActionError, setConnectionActionError] = useState<string | undefined>()
+  const runConnectionAction = (action: () => Promise<void>, failureMessage: string): void => {
+    if (connectionBusy) return
+    setConnectionBusy(true)
+    setConnectionActionError(undefined)
+    void action()
+      .catch(() => setConnectionActionError(failureMessage))
+      .finally(() => setConnectionBusy(false))
+  }
   const [expanded, setExpanded] = useState(false)
   const pane = useRef<HTMLDivElement>(null)
   const follow = useRef(true)
@@ -158,14 +170,28 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
             {t('runtime.posture.currentSource', { source: sourceLabel })}
           </p>
         )}
-        <p className="dsh-runtime-connection__subtitle">{t(subtitleKey)}</p>
+        <p id="runtime-connection-subtitle" className="dsh-runtime-connection__subtitle">
+          {t(subtitleKey)}
+        </p>
       </div>
       <div className="dsh-runtime-connection__actions">
-        {showConnectionActions && props.onOpenSettings !== undefined ? (
+        {startCli === undefined ? null : (
           <button
             className="dsh-button dsh-button--primary"
             type="button"
-            disabled={desktopBusy}
+            aria-describedby="runtime-connection-subtitle"
+            disabled={connectionBusy}
+            onClick={() => runConnectionAction(startCli, t('settings.connectionApplyFailed'))}
+          >
+            <Icon name="terminal" />
+            {t(connectionBusy ? 'runtime.status.starting' : 'settings.connectionLocalApply')}
+          </button>
+        )}
+        {showConnectionActions && props.onOpenSettings !== undefined ? (
+          <button
+            className={`dsh-button ${startCli === undefined ? 'dsh-button--primary' : 'dsh-button--secondary'}`}
+            type="button"
+            disabled={connectionBusy}
             onClick={props.onOpenSettings}
           >
             <Icon name="open-in-editor" />
@@ -173,20 +199,13 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
           </button>
         ) : null}
         {showConnectionActions &&
-        props.onConnectDesktop !== undefined &&
-        (updateAddress || props.onOpenSettings === undefined) ? (
+        onConnectDesktop !== undefined &&
+        (updateAddress || (startCli === undefined && props.onOpenSettings === undefined)) ? (
           <button
             className={`dsh-button ${updateAddress ? 'dsh-button--secondary' : 'dsh-button--primary'}`}
             type="button"
-            disabled={desktopBusy}
-            onClick={() => {
-              setDesktopBusy(true)
-              setDesktopFailed(false)
-              void props
-                .onConnectDesktop?.()
-                .catch(() => setDesktopFailed(true))
-                .finally(() => setDesktopBusy(false))
-            }}
+            disabled={connectionBusy}
+            onClick={() => runConnectionAction(onConnectDesktop, t('runtime.desktopFailed'))}
           >
             {t(updateAddress ? 'runtime.updateConnectionAddress' : 'runtime.connectDesktop')}
           </button>
@@ -195,7 +214,7 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
           <button
             className="dsh-button dsh-button--secondary"
             type="button"
-            disabled={desktopBusy}
+            disabled={connectionBusy}
             onClick={() => {
               setAttempt((value) => value + 1)
               props.onRetry?.()
@@ -206,9 +225,9 @@ export function RuntimeConnectionView(props: RuntimeConnectionViewProps): ReactE
           </button>
         )}
       </div>
-      {!desktopFailed ? null : (
+      {connectionActionError === undefined ? null : (
         <p className="dsh-runtime-connection__error" role="alert">
-          {t('runtime.desktopFailed')}
+          {connectionActionError}
         </p>
       )}
       {message === undefined ? null : (
