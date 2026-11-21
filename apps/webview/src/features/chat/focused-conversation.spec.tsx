@@ -416,7 +416,7 @@ describe('focused conversation interactions', () => {
           }
         : node,
     )
-    const view = render(session('standard', source))
+    render(session('standard', source))
     const reasoning = screen.getByRole('button', { name: 'Analysis complete' })
     const tools = screen.getByRole('button', { name: /Tools used: 1/ })
     expect(reasoning.getAttribute('aria-expanded')).toBe('false')
@@ -462,7 +462,15 @@ describe('focused conversation interactions', () => {
     view.rerender(
       content([
         reply,
-        { kind: 'reasoning', id: 'next-thinking', markdown: 'Reasoning after the reply', streaming: true },
+        {
+          kind: 'assistant-message',
+          id: 'next-thinking',
+          turn: 1,
+          step: 2,
+          markdown: '',
+          streaming: false,
+          reasoning: { markdown: 'Reasoning after the reply', streaming: true },
+        },
         nodes[2]!,
       ]),
     )

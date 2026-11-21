@@ -1381,7 +1381,7 @@ describe('Timeline', () => {
     expect(branch).toHaveBeenCalledWith(8)
   })
 
-  it('renders reasoning first while preserving the tool position inside one assistant answer', () => {
+  it('preserves the order of replies, reasoning, and tools inside one assistant answer', () => {
     const { container } = render(
       <Timeline
         sessionId="session-1"
@@ -1451,8 +1451,8 @@ describe('Timeline', () => {
     const tools = container.querySelector<HTMLElement>('summary[aria-label="Show 2 tool calls"]')
     const after = screen.getByText('After the tools.')
     expect(tools).not.toBeNull()
-    expect(reasoning.compareDocumentPosition(before)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
-    expect(before.compareDocumentPosition(tools!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(before.compareDocumentPosition(reasoning)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(reasoning.compareDocumentPosition(tools!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
     expect(tools!.compareDocumentPosition(after)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
   })
 
