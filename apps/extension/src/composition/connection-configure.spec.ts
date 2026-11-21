@@ -165,7 +165,7 @@ describe('connection.configure reconnect', () => {
     expect(harness.connects).toEqual([])
     expect(harness.writes).toEqual([])
 
-    await expect(subject.configureConnection('local')).resolves.toEqual({ connected: true })
+    await expect(subject.configureConnection('local', undefined)).resolves.toEqual({ connected: true })
     expect(harness.connects).toEqual([{ mode: 'new-isolated', autoStart: true }])
   })
 
