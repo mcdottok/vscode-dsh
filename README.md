@@ -33,19 +33,31 @@ DSH Coding Agent 是一款社区维护的 VS Code 扩展。你可以在编辑器
 
 连接 DSH Desktop 后，在两端打开同一个工作区和已有会话，即可切换到另一端继续对话。
 
-![查看双端同步演示（GIF）](docs/assets/stream%20sync.gif)
+<p align="center">
+  <a href="docs/assets/stream%20sync.gif">
+    <img src="docs/assets/stream%20sync.gif" alt="查看双端同步演示（GIF）" width="760">
+  </a>
+</p>
 
 ### 结合代码上下文提问
 
 选中编辑器中的代码，将选区附加到消息，在 DSH 侧栏中直接提问。
 
-![查看代码上下文演示（GIF）](docs/assets/context.gif)
+<p align="center">
+  <a href="docs/assets/context.gif">
+    <img src="docs/assets/context.gif" alt="查看代码上下文演示（GIF）" width="760">
+  </a>
+</p>
 
 ### 查找和接续会话
 
 按工作区浏览和搜索已有会话，快速回到之前的对话，继续当前项目的开发。
 
-<img src="docs/assets/session-list.png" alt="按工作区分组的会话列表与搜索入口" width="720">
+<p align="center">
+  <a href="docs/assets/session-list.png">
+    <img src="docs/assets/session-list.png" alt="按工作区分组的会话列表与搜索入口" width="540">
+  </a>
+</p>
 
 ## 安装扩展
 

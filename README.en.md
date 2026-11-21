@@ -33,19 +33,31 @@ See [runtime compatibility](docs/dsh-contract.md) and the [capability matrix](do
 
 Connect to DSH Desktop and open the same workspace and existing session in both apps to continue the conversation in either one.
 
-![View the session sync demo (GIF)](docs/assets/stream%20sync.gif)
+<p align="center">
+  <a href="docs/assets/stream%20sync.gif">
+    <img src="docs/assets/stream%20sync.gif" alt="View the session sync demo (GIF)" width="760">
+  </a>
+</p>
 
 ### Ask with code context
 
 Select code in the editor, attach it to your message, and ask about it in the DSH sidebar.
 
-![View the code context demo (GIF)](docs/assets/context.gif)
+<p align="center">
+  <a href="docs/assets/context.gif">
+    <img src="docs/assets/context.gif" alt="View the code context demo (GIF)" width="760">
+  </a>
+</p>
 
 ### Find and resume sessions
 
 Browse and search existing sessions by workspace, then return to a conversation to continue working on your project.
 
-<img src="docs/assets/session-list.png" alt="Session search and workspace groups" width="720">
+<p align="center">
+  <a href="docs/assets/session-list.png">
+    <img src="docs/assets/session-list.png" alt="Session search and workspace groups" width="540">
+  </a>
+</p>
 
 ## Install the extension
 
