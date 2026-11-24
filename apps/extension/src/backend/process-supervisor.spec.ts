@@ -467,6 +467,31 @@ describe('DshProcessSupervisor', () => {
     expect(kill).toHaveBeenCalledOnce()
   })
 
+  it('accepts a healthy startup that reports its endpoint after 20 seconds', async () => {
+    vi.useFakeTimers()
+    try {
+      const ready = deferred<string>()
+      const kill = vi.fn()
+      const supervisor = new DshProcessSupervisor({
+        managedPort: () => 0,
+        spawn: () => ({ ...child(kill), stdout: delayedOutput() }),
+      })
+      async function* delayedOutput(): AsyncIterable<string> {
+        yield await ready.promise
+      }
+      const started = expect(supervisor.start(runtime())).resolves.toMatchObject({
+        endpoint: { baseUrl: 'http://127.0.0.1:4317' },
+      })
+      await vi.advanceTimersByTimeAsync(20_000)
+      ready.resolve('dsh web: http://127.0.0.1:4317\n')
+      await started
+      expect(kill).not.toHaveBeenCalled()
+      await supervisor.dispose()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('times out an endpoint callback that never resolves and aborts it before stopping the child', async () => {
     vi.useFakeTimers()
     try {

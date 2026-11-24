@@ -41,7 +41,8 @@ interface ReadyEndpoint {
   readonly launchUrl?: string
 }
 
-const startupStepTimeoutMs = 15_000
+const processReadyTimeoutMs = 45_000
+const endpointInitializationTimeoutMs = 15_000
 
 export class DshProcessSupervisor implements ProcessSupervisor {
   private active: ManagedProcessHandle | undefined
@@ -228,13 +229,13 @@ export class DshProcessSupervisor implements ProcessSupervisor {
       return status
     })
     try {
-      const readyEndpoint = await withTimeout(ready, startupStepTimeoutMs, signal)
+      const readyEndpoint = await withTimeout(ready, processReadyTimeoutMs, signal)
       await awaitWithAbort(
         Promise.resolve(
           this.dependencies.onReadyEndpoint?.(readyEndpoint.endpoint, readyEndpoint.launchUrl, signal),
         ),
         startupController,
-        startupStepTimeoutMs,
+        endpointInitializationTimeoutMs,
       )
       throwIfCancelled(signal)
       this.throwIfDisposing()

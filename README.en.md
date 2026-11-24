@@ -89,6 +89,8 @@ A saved manual address takes precedence. VS Code SecretStorage keeps your creden
 2. Select **DSH CLI** in the connection settings. The extension detects the installed CLI, or you can select the executable manually.
 3. Choose **Start and connect**.
 
+On Linux, the extension checks the default nvm environment before searching `PATH`. It prefers the npm next to the DSH CLI when checking or installing versions.
+
 **If the CLI is missing**, choose **Install in Terminal** and press Enter to run the install command. Once it finishes, choose **Recheck DSH**, then start the connection. The extension installs the npm `latest` version by default. To use a specific version, select it under **DSH CLI installation and version**.
 
 You can also install the CLI directly in a terminal:

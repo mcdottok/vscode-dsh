@@ -53,7 +53,7 @@ import { probeWebNoOpen } from '../backend/web-launch-probe.js'
 import type { RedactedDiagnostics } from '../backend/diagnostics.js'
 import { DshRuntimeLocator, readStoredRuntimePath } from '../backend/runtime-locator.js'
 import { resolveNpmExecutable } from '../backend/runtime-paths.js'
-import { wslRuntimePaths } from '../backend/wsl-runtime-paths.js'
+import { linuxRuntimePaths } from '../backend/linux-runtime-paths.js'
 import { resolveWindowsShim } from '../backend/windows-shim.js'
 import type { VsCodeConfigurationSource } from '../config/configuration-source.js'
 import { normalizeServerUrl } from '../config/configuration-source.js'
@@ -110,17 +110,19 @@ export interface RuntimeAssembly {
 export function createRuntimeAssembly(deps: RuntimeAssemblyDependencies): RuntimeAssembly {
   const { context, configuration, diagnostics, currentWorkspaceFolder, onRuntimeUpdateProgress } = deps
   const os = platform()
-  const isWsl = os === 'linux' && vscode.env?.remoteName === 'wsl'
+  const isLinux = os === 'linux'
+  const isWsl = isLinux && vscode.env?.remoteName === 'wsl'
   const pathEntries = (): readonly string[] => extensionRuntimePathEntries(os, process.env)
-  const wslPaths = (): ReturnType<typeof wslRuntimePaths> => wslRuntimePaths(process.env, pathEntries())
+  const linuxPaths = (): ReturnType<typeof linuxRuntimePaths> =>
+    linuxRuntimePaths(process.env, pathEntries(), { wsl: isWsl })
   const npmExecutable = (runtime?: DshRuntime): string | undefined =>
-    isWsl ? wslPaths().npmExecutable(runtime?.executable) : resolveNpmExecutable(os, pathEntries())
+    isLinux ? linuxPaths().npmExecutable(runtime?.executable) : resolveNpmExecutable(os, pathEntries())
   const runtimeLocator = new DshRuntimeLocator({
     os,
     configuredPath: () => configuration.read().runtime.executablePath,
-    pathEntries: () => (isWsl ? wslPaths().entries : pathEntries()),
-    // Recheck nvm's default instead of preferring a previous WSL executable.
-    ...(isWsl
+    pathEntries: () => (isLinux ? linuxPaths().entries : pathEntries()),
+    // Recheck nvm's default instead of preferring a previous Linux executable.
+    ...(isLinux
       ? {}
       : {
           lastKnownRuntimePath: () =>
@@ -364,7 +366,7 @@ export function createRuntimeAssembly(deps: RuntimeAssemblyDependencies): Runtim
     Uri: vscode.Uri,
     workspace: vscode.workspace,
     verifyExecutable: async (executable) => (await runtimeLocator.inspectExecutable(executable)).supported,
-    ...(isWsl
+    ...(isLinux
       ? {
           resolveInstallNpm: async (checkedNpm?: string) => {
             const executable =

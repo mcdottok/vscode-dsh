@@ -40,6 +40,8 @@ interface FeatureBackendIdentity {
 // calls: a shorter one reports a timeout for a check the Host completes and
 // drops the version list the drawer was waiting for.
 const RUNTIME_UPDATE_CHECK_TIMEOUT_MS = 90_000
+// Covers managed CLI readiness, endpoint login, and the initial backend probe.
+const CONNECTION_TIMEOUT_MS = 90_000
 // Covers metadata lookup, the ten-minute npm install, verification and connection.
 const RUNTIME_UPDATE_INSTALL_TIMEOUT_MS = 13 * 60_000
 // Checkpoint work reads or writes every recorded file through the host file
@@ -60,6 +62,8 @@ const PLUGIN_INSTALL_TIMEOUT_MS = 600_000
 
 /** Per-type host budgets; any request not listed keeps the ordinary timeout. */
 const EXTENDED_TIMEOUT_MS: Readonly<Record<string, number>> = {
+  'connection.configure': CONNECTION_TIMEOUT_MS,
+  'connection.retry': CONNECTION_TIMEOUT_MS,
   'workspace.addFolder': NATIVE_DIALOG_TIMEOUT_MS,
   'attachment.pick': NATIVE_DIALOG_TIMEOUT_MS,
   'provider.secret.configure': NATIVE_DIALOG_TIMEOUT_MS,

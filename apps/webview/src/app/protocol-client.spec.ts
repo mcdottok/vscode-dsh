@@ -317,6 +317,29 @@ describe('ProtocolClient', () => {
     client.dispose()
   })
 
+  it('waits past the ordinary request timeout for a managed connection', async () => {
+    vi.useFakeTimers()
+    const client = new ProtocolClient({
+      postMessage: () => undefined,
+      getState: () => undefined,
+      setState: () => undefined,
+    })
+    try {
+      const connection = expect(
+        client.request({ type: 'connection.configure', requestId: 'slow-start', payload: { mode: 'local' } }),
+      ).resolves.toEqual({ connected: true })
+      await vi.advanceTimersByTimeAsync(45_000)
+      client.handle({
+        protocolVersion: PROTOCOL_VERSION,
+        message: { type: 'response', requestId: 'slow-start', ok: true, payload: { connected: true } },
+      })
+      await connection
+    } finally {
+      client.dispose()
+      vi.useRealTimers()
+    }
+  })
+
   it('bounds a prompt request, asks the Host to cancel it, and ignores a late success', async () => {
     const posted: ProtocolEnvelope[] = []
     const timeoutCallbacks: Array<() => void> = []

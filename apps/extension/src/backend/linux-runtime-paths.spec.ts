@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DshRuntimeLocator } from './runtime-locator.js'
-import { wslRuntimePaths } from './wsl-runtime-paths.js'
+import { linuxRuntimePaths } from './linux-runtime-paths.js'
 
 const root = '/home/test/.nvm'
 const oldBin = `${root}/versions/node/v24.9.1/bin`
@@ -8,11 +8,20 @@ const currentBin = `${root}/versions/node/v24.10.0/bin`
 const newerBin = `${root}/versions/node/v26.1.0/bin`
 const windowsBin = '/mnt/c/Program Files/nodejs'
 const customWindowsBin = '/windows/c/Tools'
+type LinuxRuntimeFiles = NonNullable<NonNullable<Parameters<typeof linuxRuntimePaths>[2]>['files']>
+
+function wslRuntimePaths(
+  environment: NodeJS.ProcessEnv,
+  entries: readonly string[],
+  files: LinuxRuntimeFiles,
+): ReturnType<typeof linuxRuntimePaths> {
+  return linuxRuntimePaths(environment, entries, { wsl: true, files })
+}
 
 function fixture(): {
   readonly aliases: Map<string, string>
   readonly executables: Map<string, string>
-  readonly files: NonNullable<Parameters<typeof wslRuntimePaths>[2]>
+  readonly files: LinuxRuntimeFiles
 } {
   const aliases = new Map([[`${root}/alias/default`, '24\n']])
   const executables = new Map(
@@ -34,6 +43,16 @@ function fixture(): {
     },
   }
 }
+
+it('finds nvm on native Linux without an interactive shell or WSL filtering', () => {
+  const { files, executables } = fixture()
+  executables.set('/mnt/d/bin/npm', '/mnt/d/bin/npm')
+  const paths = linuxRuntimePaths({ HOME: '/home/test' }, ['/mnt/d/bin', '/usr/bin'], { files })
+
+  expect(paths.entries).toEqual([currentBin, '/mnt/d/bin', '/usr/bin'])
+  expect(paths.npmExecutable()).toBe(`${currentBin}/npm`)
+  expect(paths.npmExecutable('/mnt/d/bin/dsh')).toBe('/mnt/d/bin/npm')
+})
 
 describe('WSL extension runtime paths', () => {
   it('resolves the installed nvm default and rechecks an alias change despite a stale PATH', () => {

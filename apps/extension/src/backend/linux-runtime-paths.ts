@@ -1,13 +1,13 @@
 import { accessSync, constants, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { posix as path } from 'node:path'
 
-interface WslRuntimeFiles {
+interface LinuxRuntimeFiles {
   readonly readText: (file: string) => string | undefined
   readonly readDirectories: (directory: string) => readonly string[]
   readonly executableTarget: (file: string) => string | undefined
 }
 
-const localFiles: WslRuntimeFiles = {
+const localFiles: LinuxRuntimeFiles = {
   readText: (file) => {
     try {
       return readFileSync(file, 'utf8')
@@ -40,7 +40,7 @@ const versionOrder = new Intl.Collator('en', { numeric: true })
 function nvmDefaultBin(
   nvmDirectory: string,
   isNativeExecutable: (file: string) => boolean,
-  files: WslRuntimeFiles,
+  files: LinuxRuntimeFiles,
 ): string | undefined {
   const versionsDirectory = path.join(nvmDirectory, 'versions/node')
   const visited = new Set<string>()
@@ -82,14 +82,15 @@ function windowsMounts(mountInfo: string | undefined): readonly string[] {
   })
 }
 
-export function wslRuntimePaths(
+export function linuxRuntimePaths(
   environment: Readonly<NodeJS.ProcessEnv>,
   pathEntries: readonly string[],
-  files: WslRuntimeFiles = localFiles,
+  { wsl = false, files = localFiles }: { readonly wsl?: boolean; readonly files?: LinuxRuntimeFiles } = {},
 ): { readonly entries: readonly string[]; readonly npmExecutable: (runtime?: string) => string | undefined } {
-  const mounts = windowsMounts(files.readText('/proc/self/mountinfo'))
+  const mounts = wsl ? windowsMounts(files.readText('/proc/self/mountinfo')) : []
   const nativePath = (entry: string): boolean => {
     if (!path.isAbsolute(entry)) return false
+    if (!wsl) return true
     const normalized = path.normalize(entry)
     return (
       !/^\/mnt\/[a-z](?:\/|$)/iu.test(normalized) &&
