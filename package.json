@@ -5,7 +5,7 @@
   "type": "module",
   "description": "DeepSeek Harness integration for Visual Studio Code",
   "license": "MIT",
-  "packageManager": "pnpm@11.19.0",
+  "packageManager": "pnpm@11.29.0",
   "engines": {
     "node": ">=22.19.0 <27",
     "pnpm": ">=11.0.0"

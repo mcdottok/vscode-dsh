@@ -18,6 +18,7 @@
 
 ## 未发布
 
+- 本地开发、CI 与 VSIX 打包使用 pnpm 11.29.0，纳入 11.x 的安全修复。
 - 补充 Remote SSH 下安装和连接 DSH CLI 的步骤。未检测到 CLI 时，提示用户检查远端 SSH 主机上的安装。
 - Remote WSL 未检测到 DSH CLI 时，提示用户在当前 WSL 发行版中安装。
 - Remote SSH 和 WSL 在首次使用时默认选中 DSH CLI，点击「启动并连接」后才运行。已有连接设置继续生效，连接设置保留手动连接 Desktop 的入口。
