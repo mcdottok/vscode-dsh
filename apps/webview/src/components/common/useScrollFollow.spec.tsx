@@ -220,6 +220,45 @@ describe('useScrollFollow user jump', () => {
     expect(viewport.scrollTop).toBe(520)
   })
 
+  it('keeps the reading position when middle-button autoscroll starts during session placement', async () => {
+    vi.useFakeTimers()
+    function Conversation({ sessionId, revision }: { sessionId: string; revision: number }): ReactElement {
+      const follow = useScrollFollow({
+        sessionId,
+        contentKey: revision,
+        itemCount: 30,
+        layoutMeasurementsActive: true,
+        smoothTailGrowth: true,
+      })
+      return (
+        <div ref={follow.scrollRef} data-testid="viewport" data-pinned={follow.isPinnedToBottom}>
+          <div ref={follow.contentRef} />
+        </div>
+      )
+    }
+
+    const view = render(<Conversation sessionId="first" revision={0} />)
+    const viewport = screen.getByTestId<HTMLDivElement>('viewport')
+    setScrollMetrics(viewport, 600, 1_000, 400)
+    view.rerender(<Conversation sessionId="second" revision={0} />)
+
+    expect(fireEvent.pointerDown(viewport, { button: 1, pointerType: 'mouse', cancelable: true })).toBe(true)
+    viewport.scrollTop = 250
+    fireEvent.scroll(viewport)
+    expect(viewport.scrollTop).toBe(250)
+    expect(viewport.getAttribute('data-pinned')).toBe('false')
+
+    fireEvent.pointerDown(viewport, { button: 1, pointerType: 'mouse' })
+    fireEvent(viewport, new Event('scrollend'))
+    setScrollMetrics(viewport, 250, 1_150, 400)
+    view.rerender(<Conversation sessionId="second" revision={1} />)
+    await act(async () => {
+      await vi.runAllTimersAsync()
+    })
+    expect(viewport.scrollTop).toBe(250)
+    expect(viewport.getAttribute('data-pinned')).toBe('false')
+  })
+
   it.each([
     { top: 100, deltaY: -80, pinned: true },
     { top: 0, deltaY: 80, pinned: true },

@@ -701,7 +701,9 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       handleWheel(event)
     }
     const onPointerDown = (event: PointerEvent): void => {
-      if (event.button !== 0 || isNestedScrollGesture(event)) return
+      // Scrollbar dragging and native middle-button autoscroll both begin
+      // before the scroll event can distinguish reader input from layout.
+      if ((event.button !== 0 && event.button !== 1) || isNestedScrollGesture(event)) return
       cancelScheduledFollow()
       armUserScrollLock()
     }
