@@ -106,6 +106,10 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
   const positionedSessionRef = useRef(false)
   const initialPlacementFrameRef = useRef<number | undefined>(undefined)
   const preserveBottomOnLayoutRef = useRef(false)
+  // A viewport resize reflows the conversation without any reader input. While
+  // the resulting layout settles, a pinned reader must stay glued to the tail
+  // instead of easing across the gap the resize opened.
+  const snapToBottomOnLayoutRef = useRef(false)
   const layoutProtectionTimerRef = useRef<number | undefined>(undefined)
   const smoothTailGrowth = options.smoothTailGrowth === true
   const tailMotionRef = useRef<{ frame: number; target: number; position: number } | undefined>(undefined)
@@ -173,6 +177,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       layoutProtectionTimerRef.current = undefined
     }
     preserveBottomOnLayoutRef.current = false
+    snapToBottomOnLayoutRef.current = false
   }, [])
 
   const armLayoutProtection = useCallback((): void => {
@@ -404,9 +409,10 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       if (preserveBottom) preserveBottomOnLayoutRef.current = true
       if (preserveBottom && scheduleOptions?.immediate === true) {
         // Reconcile before paint, using the same follow motion for text,
-        // footer and viewport changes throughout a reply.
+        // footer and viewport changes throughout a reply. A viewport resize
+        // keeps the tail under the reader without motion.
         cancelScheduledFollow()
-        if (scheduleOptions.snap === true) scrollToLatest()
+        if (scheduleOptions.snap === true || snapToBottomOnLayoutRef.current) scrollToLatest()
         else followGrowth()
         armLayoutProtection()
         return
@@ -430,7 +436,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
             stickToBottomRef.current = true
             setIsPinnedToBottom(true)
           }
-          if (scheduleOptions?.snap === true) scrollToLatest()
+          if (scheduleOptions?.snap === true || snapToBottomOnLayoutRef.current) scrollToLatest()
           else followGrowth()
           if (preserveBottom) armLayoutProtection()
         }
@@ -812,7 +818,13 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
           // Notifications and in-flow helpers resize the scroll owner without
           // changing its content. Reconcile only through the existing intent
           // guard: a free reader or an active gesture always keeps control.
-          if (measured && changed) resized = true
+          if (measured && changed) {
+            resized = true
+            if (!userScrollActiveRef.current) {
+              snapToBottomOnLayoutRef.current = true
+              armLayoutProtection()
+            }
+          }
           continue
         }
         if (entry.target !== content) continue
@@ -834,6 +846,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       cancelScheduledFollow()
     }
   }, [
+    armLayoutProtection,
     cancelScheduledFollow,
     options.observeContentSize,
     options.sessionId,

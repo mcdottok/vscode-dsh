@@ -199,6 +199,47 @@ describe('useScrollFollow user jump', () => {
     expect(nextFrame).toBeUndefined()
   })
 
+  it('keeps a pinned reader glued to the tail when the viewport narrows', async () => {
+    stubReducedMotion(false)
+    const resize = stubViewportResize()
+    function Stream(): ReactElement {
+      const follow = useScrollFollow({
+        contentKey: 'narrow',
+        itemCount: 1,
+        smoothTailGrowth: true,
+      })
+      return (
+        <div ref={follow.scrollRef} data-testid="narrow-viewport" onScroll={follow.handleScroll}>
+          <div ref={follow.contentRef} data-testid="narrow-content" />
+          <output data-testid="narrow-pinned" data-pinned={String(follow.isPinnedToBottom)} />
+        </div>
+      )
+    }
+    render(<Stream />)
+    const viewport = screen.getByTestId<HTMLDivElement>('narrow-viewport')
+    const content = screen.getByTestId('narrow-content')
+    setScrollMetrics(viewport, 600, 1_000, 400)
+    act(() => {
+      resize(viewport, 400, 240)
+      resize(content, 1_000)
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(viewport.scrollTop).toBe(600)
+
+    // Narrowing the panel reflows the conversation taller while the reader is
+    // still pinned. The tail has to land under the viewport before paint
+    // instead of easing down through the gap the reflow opened.
+    setScrollMetrics(viewport, 600, 1_340, 400)
+    act(() => {
+      resize(viewport, 400, 200)
+      resize(content, 1_340)
+    })
+    expect(viewport.scrollTop).toBe(940)
+    expect(screen.getByTestId('narrow-pinned').getAttribute('data-pinned')).toBe('true')
+  })
+
   it('lets a captured reader gesture cancel same-turn append following', async () => {
     vi.useFakeTimers()
     const { viewport } = renderHarness()
@@ -659,7 +700,7 @@ describe('useScrollFollow user jump', () => {
   })
 })
 
-function stubViewportResize(): (target: Element, height: number) => void {
+function stubViewportResize(): (target: Element, height: number, width?: number) => void {
   let notify: ((entry: ResizeObserverEntry) => void) | undefined
   vi.stubGlobal(
     'ResizeObserver',
@@ -672,9 +713,9 @@ function stubViewportResize(): (target: Element, height: number) => void {
       disconnect(): void {}
     },
   )
-  return (target, height) => {
+  return (target, height, width = 240) => {
     if (notify === undefined) throw new Error('Viewport is not observed')
-    notify({ target, contentRect: new DOMRect(0, 0, 240, height) } as ResizeObserverEntry)
+    notify({ target, contentRect: new DOMRect(0, 0, width, height) } as ResizeObserverEntry)
   }
 }
 
