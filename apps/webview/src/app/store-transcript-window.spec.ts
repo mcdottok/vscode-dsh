@@ -185,13 +185,37 @@ describe('Webview installs Host windows', () => {
       const loading = store.loadOlderHistory()
       client.emit({ ...window('s', 3, 'Live response while reading history'), delivery: 'live' })
       expect(store.historyLoading).toBe(true)
+      const updates: {
+        loading: boolean
+        hasMore: boolean
+        before: number | undefined
+        first: string | undefined
+      }[] = []
+      // Only transcript installs are under test here. Unrelated reads that
+      // settle with this open (such as the command directory refresh) notify
+      // subscribers too and must not count as a second paging commit.
+      let installed = store.getState().transcript
+      const unsubscribe = store.subscribe(() => {
+        const state = store.getState()
+        if (state.transcript === installed) return
+        installed = state.transcript
+        updates.push({
+          loading: state.historyLoading,
+          hasMore: state.historyHasMore,
+          before: state.historyBeforeSequence,
+          first: state.timeline.nodes[0]?.id,
+        })
+      })
       finish({
         ...window('s', 2, 'Old page'),
         delivery: 'prepend',
+        hasMore: false,
         nodes: [{ kind: 'assistant-message', id: 'old', markdown: 'Old page', streaming: false }],
-        beforeSequence: 1,
+        beforeSequence: 0,
       })
       await loading
+      unsubscribe()
+      expect(updates).toEqual([{ loading: false, hasMore: false, before: 0, first: 'old' }])
       expect(store.timeline.nodes.map((node) => ('markdown' in node ? node.markdown : ''))).toEqual([
         'Old page',
         'Live response while reading history',

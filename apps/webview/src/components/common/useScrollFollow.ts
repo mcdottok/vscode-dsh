@@ -57,7 +57,7 @@ export interface ScrollFollowResult {
   /** Capture the current position for a guarded prepend restoration. */
   readonly captureScrollAnchor: () => ScrollAnchor | undefined
   /** Restore a captured prepend position only while the reader is still there. */
-  readonly restoreScrollAnchor: (anchor: ScrollAnchor, allowLayoutShift?: boolean) => boolean
+  readonly restoreScrollAnchor: (anchor: ScrollAnchor, row?: HTMLElement) => boolean
   /** Apply a virtualizer's measured-height delta without changing reader mode. */
   readonly applyScrollAdjustment: (delta: number) => void
   /** Whether the latest scroll was caused by an active reader gesture. */
@@ -183,27 +183,33 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     }, USER_SCROLL_IDLE_MS)
   }, [])
 
-  const restoreReaderPosition = useCallback((allowDuringGesture = false): boolean => {
-    const element = scrollRef.current
-    const savedScrollTop = lastReaderScrollTopRef.current
-    if (
-      element === null ||
-      savedScrollTop === undefined ||
-      stickToBottomRef.current ||
-      (userScrollActiveRef.current && !allowDuringGesture)
-    )
-      return false
-
-    const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight)
-    if (savedScrollTop > 1 && maxScrollTop <= 1) return false
-    const nextScrollTop = Math.min(maxScrollTop, Math.max(0, savedScrollTop))
-    if (Math.abs(element.scrollTop - nextScrollTop) > 0.5) {
-      internalScrollTopRef.current = nextScrollTop
-      element.scrollTop = nextScrollTop
-    } else internalScrollTopRef.current = undefined
-    lastReaderScrollTopRef.current = nextScrollTop
-    return true
+  const writeScrollTop = useCallback((element: HTMLDivElement, top: number, claimPosition = false): void => {
+    const previous = element.scrollTop
+    if (top !== previous) element.scrollTop = top
+    // The browser can round or clamp the requested position during layout.
+    const applied = element.scrollTop
+    if (applied !== previous || claimPosition) internalScrollTopRef.current = applied
+    lastReaderScrollTopRef.current = applied
   }, [])
+
+  const restoreReaderPosition = useCallback(
+    (allowDuringGesture = false): void => {
+      const element = scrollRef.current
+      const savedScrollTop = lastReaderScrollTopRef.current
+      if (
+        element === null ||
+        savedScrollTop === undefined ||
+        stickToBottomRef.current ||
+        (userScrollActiveRef.current && !allowDuringGesture)
+      )
+        return
+
+      const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight)
+      if (savedScrollTop > 1 && maxScrollTop <= 1) return
+      writeScrollTop(element, Math.min(maxScrollTop, Math.max(0, savedScrollTop)))
+    },
+    [writeScrollTop],
+  )
 
   const applyScrollAdjustment = useCallback(
     (delta: number): void => {
@@ -228,12 +234,9 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       const baseScrollTop = isCollapsedFreeReader ? (savedScrollTop ?? 0) : element.scrollTop
       const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight)
       if (isCollapsedFreeReader && maxScrollTop <= 1) return
-      const nextScrollTop = Math.min(maxScrollTop, Math.max(0, baseScrollTop + delta))
-      internalScrollTopRef.current = nextScrollTop
-      element.scrollTop = nextScrollTop
-      lastReaderScrollTopRef.current = nextScrollTop
+      writeScrollTop(element, Math.min(maxScrollTop, Math.max(0, baseScrollTop + delta)))
     },
-    [smoothTailGrowth],
+    [smoothTailGrowth, writeScrollTop],
   )
 
   const scrollToLatest = useCallback((): void => {
@@ -249,14 +252,10 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     measuredTailRef.current = maxScrollTop
     // Retain ownership even if layout already clamped to this offset. Chromium
     // can still deliver the pending scroll event after the resize callback.
-    internalScrollTopRef.current = maxScrollTop
-    if (Math.abs(element.scrollTop - maxScrollTop) > 0.5) {
-      element.scrollTop = maxScrollTop
-    }
-    lastReaderScrollTopRef.current = maxScrollTop
+    writeScrollTop(element, maxScrollTop, true)
     viewportHeightRef.current = element.clientHeight
     setShowJumpToLatest(false)
-  }, [cancelScheduledFollow, cancelTailMotion, clearUserScrollLock])
+  }, [cancelScheduledFollow, cancelTailMotion, clearUserScrollLock, writeScrollTop])
 
   const settleInitialPlacement = useCallback((): void => {
     const element = scrollRef.current
@@ -347,15 +346,13 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
         follow.position + MAX_FOLLOW_SPEED_PX_PER_MS * elapsed,
         Math.max(follow.position, easedPosition),
       )
-      internalScrollTopRef.current = follow.position
-      lastReaderScrollTopRef.current = follow.position
-      element.scrollTop = follow.position
+      writeScrollTop(element, follow.position)
       if (follow.position < follow.target) follow.frame = window.requestAnimationFrame(tick)
       else tailMotionRef.current = undefined
     }
     viewportHeightRef.current = viewportHeight
     tailMotionRef.current = { frame: window.requestAnimationFrame(tick), target, position: scrollTop }
-  }, [cancelTailMotion, scrollToLatest, smoothTailGrowth])
+  }, [cancelTailMotion, scrollToLatest, smoothTailGrowth, writeScrollTop])
 
   const userScrollToLatest = useCallback((): void => {
     interactionGenerationRef.current += 1
@@ -378,9 +375,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       stickToBottomRef.current = false
       setIsPinnedToBottom(false)
       const next = Math.min(Math.max(0, element.scrollHeight - element.clientHeight), Math.max(0, offset))
-      internalScrollTopRef.current = next
-      lastReaderScrollTopRef.current = next
-      element.scrollTop = next
+      writeScrollTop(element, next, true)
       updateJumpVisibility()
     },
     [
@@ -390,6 +385,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       clearLayoutProtection,
       clearUserScrollLock,
       updateJumpVisibility,
+      writeScrollTop,
     ],
   )
 
@@ -492,35 +488,31 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     updateJumpVisibility,
   ])
 
-  const restoreScrollAnchor = useCallback((anchor: ScrollAnchor, allowLayoutShift = false): boolean => {
-    const element = scrollRef.current
-    if (element === null || anchor.interactionGeneration !== interactionGenerationRef.current) return false
+  const restoreScrollAnchor = useCallback(
+    (anchor: ScrollAnchor, remappedRow?: HTMLElement): boolean => {
+      const element = scrollRef.current
+      if (element === null || anchor.interactionGeneration !== interactionGenerationRef.current) return false
 
-    // A native gesture may have happened before its scroll event reaches
-    // React. Do not overwrite that newer reader position just because an
-    // older history request completed.
-    if (!allowLayoutShift && Math.abs(element.scrollTop - anchor.scrollTop) > 1) return false
-
-    const row =
-      anchor.nodeId === undefined
-        ? undefined
-        : [...element.querySelectorAll<HTMLElement>('[data-node-id]')].find(
-            (node) => node.dataset.nodeId === anchor.nodeId,
-          )
-    const heightDelta =
-      row !== undefined && anchor.nodeOffset !== undefined
-        ? row.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.nodeOffset
-        : element.scrollHeight - anchor.contentHeight
-    const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight)
-    const baseScrollTop = row !== undefined && allowLayoutShift ? element.scrollTop : anchor.scrollTop
-    const nextScrollTop = Math.min(maxScrollTop, Math.max(0, baseScrollTop + heightDelta))
-    if (Math.abs(element.scrollTop - nextScrollTop) > 0.5) {
-      internalScrollTopRef.current = nextScrollTop
-      element.scrollTop = nextScrollTop
-    } else internalScrollTopRef.current = undefined
-    lastReaderScrollTopRef.current = nextScrollTop
-    return true
-  }, [])
+      const row =
+        remappedRow ??
+        (anchor.nodeId === undefined
+          ? undefined
+          : Array.from(element.querySelectorAll<HTMLElement>('[data-node-id]')).find(
+              (node) => node.dataset.nodeId === anchor.nodeId,
+            ))
+      const next =
+        row !== undefined && anchor.nodeOffset !== undefined
+          ? element.scrollTop +
+            row.getBoundingClientRect().top -
+            element.getBoundingClientRect().top -
+            anchor.nodeOffset
+          : anchor.scrollTop + element.scrollHeight - anchor.contentHeight
+      const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight)
+      writeScrollTop(element, Math.min(maxScrollTop, Math.max(0, next)))
+      return true
+    },
+    [writeScrollTop],
+  )
 
   const isUserScrollActive = useCallback((): boolean => userScrollActiveRef.current, [])
 
@@ -726,8 +718,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       if (stickToBottomRef.current && itemCountRef.current > 0) scheduleScrollToLatest()
     }
     // Capture the gesture on the scroll owner itself, before React's delegated
-    // listener and before the browser applies the native scroll offset. The
-    // pointer path also covers scrollbar dragging, which has no wheel event.
+    // listener and before the browser applies the native scroll offset.
     const onScroll = (event: Event): void => {
       if (event.target === element) scrollHandlerRef.current()
     }

@@ -681,15 +681,7 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
             (candidate) => Number(candidate.dataset.index) === historyAnchorIndex,
           )
     if (virtualized.enabled && historyAnchorIndex >= 0 && row === undefined) return
-    restoreScrollAnchor(
-      row?.dataset.nodeId === undefined
-        ? anchor
-        : {
-            ...anchor,
-            nodeId: row.dataset.nodeId,
-          },
-      true,
-    )
+    restoreScrollAnchor(anchor, row)
     prependAnchorRef.current = undefined
     setHistoryAnchorSourceId(undefined)
   }, [

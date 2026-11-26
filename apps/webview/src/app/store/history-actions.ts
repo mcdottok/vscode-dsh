@@ -49,21 +49,21 @@ export function createHistoryActions(deps: {
           }
           if (!isCurrent()) return
           const next = parseTranscript(result)
-          deps.setState((current) => ({ ...installTranscript(current, next), historyLoading: true }))
-          if (
+          const retry =
             attempt === 0 &&
             next.hasMore &&
             next.revision > cursor.revision &&
             next.beforeSequence === beforeSequence
-          ) {
-            cursor = next
-            beforeSequence = next.beforeSequence
-            continue
-          }
-          break
+          deps.setState((current) => ({
+            ...installTranscript(current, next),
+            historyLoading: retry,
+          }))
+          if (!retry) return
+          cursor = next
+          beforeSequence = next.beforeSequence
         }
       } finally {
-        if (requestGeneration === generation)
+        if (requestGeneration === generation && deps.getState().historyLoading)
           deps.setState((current) => ({ ...current, historyLoading: false }))
       }
     },

@@ -1,5 +1,11 @@
 import { useCallback, useMemo, useRef, type RefObject } from 'react'
-import { defaultRangeExtractor, useVirtualizer, type Range, type VirtualItem } from '@tanstack/react-virtual'
+import {
+  defaultRangeExtractor,
+  observeElementOffset,
+  useVirtualizer,
+  type Range,
+  type VirtualItem,
+} from '@tanstack/react-virtual'
 
 /**
  * Keep the small-session DOM simple while bounding the expensive render tree
@@ -88,25 +94,32 @@ export function useVirtualizedCollection<T>(
   const onScrollAdjustmentRef = useRef(options.onScrollAdjustment)
   onScrollAdjustmentRef.current = options.onScrollAdjustment
   const scrollToFn = useCallback(
-    (offset: number, scrollOptions: { readonly adjustments?: number }): void => {
-      const adjustments = scrollOptions.adjustments
-      if (adjustments === undefined) return
-      const element = scrollRef.current
-      if (element === null) return
-      // virtual-core accumulates adjustments until its scroll observer catches
-      // up. Apply only the distance still missing from the intended offset,
-      // otherwise several row measurements add the same correction repeatedly.
-      const delta = offset + adjustments - element.scrollTop
-      if (!Number.isFinite(delta) || Math.abs(delta) <= 0.5) return
-      onScrollAdjustmentRef.current?.(delta)
+    (_offset: number, { adjustments }: { readonly adjustments?: number }): void => {
+      // Virtual-core folds each measured delta into its own offset after this
+      // callback. The scroll owner applies the same delta to the live viewport,
+      // which may already have moved ahead of the virtualizer's scroll event.
+      if (adjustments !== undefined) onScrollAdjustmentRef.current?.(adjustments)
     },
-    [scrollRef],
+    [],
   )
   // virtual-core synchronizes its offset when it attaches and whenever the
   // collection is enabled again. Seed that offset from the scroll owner so an
   // internal lifecycle write cannot reset a reader who is already at the
   // bottom (or intentionally reading elsewhere) to zero.
   const initialOffset = useCallback(() => scrollRef.current?.scrollTop ?? 0, [scrollRef])
+  const observeScrollOffset = useCallback<typeof observeElementOffset>((instance, callback) => {
+    // Use the live viewport for the virtualizer's measurement policy too. A
+    // programmatic scroll has already moved the fold before the scroll event.
+    instance.shouldAdjustScrollPositionOnItemSizeChange = (item) => {
+      const element = instance.scrollElement
+      if (element === null) return false
+      const top = element.scrollTop
+      return instance.itemSizeCache.has(item.key)
+        ? item.end <= top && instance.scrollDirection !== 'backward'
+        : item.start < top
+    }
+    return observeElementOffset(instance, callback)
+  }, [])
   const rangeExtractor = useCallback(
     (range: Range): number[] => {
       const indexes = defaultRangeExtractor(range)
@@ -130,6 +143,7 @@ export function useVirtualizedCollection<T>(
     estimateSize,
     getItemKey,
     initialOffset,
+    observeElementOffset: observeScrollOffset,
     overscan,
     rangeExtractor,
     scrollToFn,

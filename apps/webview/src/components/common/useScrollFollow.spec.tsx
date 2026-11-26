@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import type { ReactElement } from 'react'
+import { useCallback, type ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useScrollFollow } from './useScrollFollow.js'
+import { useVirtualizedCollection } from './useVirtualizedCollection.js'
 
 describe('useScrollFollow user jump', () => {
   it('does not schedule extra React renders for unchanged jump visibility during streaming', async () => {
@@ -58,6 +59,63 @@ describe('useScrollFollow user jump', () => {
       await Promise.resolve()
     })
     expect(viewport.scrollTop).toBe(800)
+  })
+
+  it('applies row measurements to the restored position before the next scroll event', () => {
+    const items = ['first', 'retained']
+    let measuredHeight = 96
+    let anchorStart = 20
+    function Conversation(): ReactElement {
+      const follow = useScrollFollow({ contentKey: 'history', itemCount: items.length })
+      const { measureElement, remeasureItem } = useVirtualizedCollection({
+        items,
+        enabled: true,
+        scrollRef: follow.scrollRef,
+        onScrollAdjustment: follow.applyScrollAdjustment,
+      })
+      const measureFirst = useCallback(
+        (row: HTMLDivElement | null): void => {
+          if (row !== null)
+            Object.defineProperty(row, 'offsetHeight', { configurable: true, get: () => measuredHeight })
+          measureElement(row)
+        },
+        [measureElement],
+      )
+      return (
+        <>
+          <div ref={follow.scrollRef} data-testid="viewport">
+            <div ref={measureFirst} data-index={0} />
+            <div data-node-id="retained" data-testid="retained" />
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              const anchor = follow.captureScrollAnchor()
+              if (anchor === undefined) throw new Error('Missing scroll anchor')
+              anchorStart = 520
+              follow.restoreScrollAnchor(anchor)
+              measuredHeight = 120
+              remeasureItem(0)
+              measuredHeight = 128
+              remeasureItem(0)
+            }}
+          >
+            Prepend history
+          </button>
+        </>
+      )
+    }
+
+    render(<Conversation />)
+    const viewport = screen.getByTestId<HTMLDivElement>('viewport')
+    setScrollMetrics(viewport, 20, 4_800, 300)
+    vi.spyOn(screen.getByTestId('retained'), 'getBoundingClientRect').mockImplementation(
+      () => new DOMRect(0, anchorStart - viewport.scrollTop, 240, 96),
+    )
+    fireEvent.wheel(viewport, { deltaY: -24 })
+    fireEvent.scroll(viewport)
+    fireEvent.click(screen.getByRole('button', { name: 'Prepend history' }))
+    expect(viewport.scrollTop).toBe(552)
   })
 
   it('eases to the growing tail through reply completion and yields to an upward wheel', async () => {
