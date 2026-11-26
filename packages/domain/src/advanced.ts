@@ -224,6 +224,12 @@ export interface DshSettingsNamespaceMeta {
   readonly revision: number
   readonly userFields: readonly string[]
   readonly secrets: readonly { readonly field: string; readonly set: boolean }[]
+  /**
+   * Reasoning-effort keys a hand-declared model entry on this namespace
+   * accepts, in the schema's escalation order. Absent when the namespace
+   * declares no model reasoning schema, so a consumer must not invent one.
+   */
+  readonly modelReasoningLevels?: readonly string[]
 }
 
 export interface SessionExportOptions {

@@ -10,6 +10,8 @@ import type { DshSettingsSnapshot } from '../../app/store.js'
 import { useI18n, type Translate } from '../../i18n.js'
 import { SelectMenu } from '../../components/common/SelectMenu.js'
 import { ModelListEditor, type EditableModel } from './ModelListEditor.js'
+import { validateReasoningEfforts } from './ModelReasoningEfforts.js'
+import { protocolReasoningLevels } from './provider-helpers.js'
 
 export type ProviderSettingChange =
   | { readonly kind: 'set'; readonly path: string; readonly value: unknown }
@@ -19,10 +21,14 @@ export interface ProviderSettingsEditorProps {
   readonly provider: ModelProvider
   readonly catalogModels?: readonly ModelDescriptor[]
   readonly settings: DshSettingsSnapshot
+  /** Levels the provider namespace's model schema accepts, when the host describes them. */
+  readonly reasoningLevels?: readonly string[] | undefined
   readonly writable: boolean
   readonly saving: boolean
   /** Materialize a dormant catalog provider even when no field changed yet. */
   readonly forceSave?: boolean
+  /** Explain that credentials are configured after adding, not by this form. */
+  readonly credentialHint?: boolean
   readonly onSave: (changes: readonly ProviderSettingChange[], expectedRevision: number) => Promise<void>
   readonly onDiscover: (input: Omit<ModelDiscoveryInput, 'apiKey'>) => Promise<readonly DiscoveredModel[]>
   readonly onClose: (changed: boolean) => void
@@ -77,12 +83,13 @@ export function ProviderSettingsEditor(props: ProviderSettingsEditorProps): Reac
   const [models, setModels] = useState<EditableModel[]>(() => initialModels.map(copyModel))
   const [error, setError] = useState<string | undefined>(undefined)
 
+  const routeReasoning = protocolReasoningLevels(api, props.reasoningLevels)
   const disabled = !props.writable || props.saving
   const apiOptions =
     apiField?.enumValues === undefined || apiField.enumValues.length === 0
       ? []
       : [
-          ...(api === '' ? [{ value: '', label: t('settings.notSet') }] : []),
+          ...(api === '' ? [{ value: '', label: t('settings.providerApiDefault') }] : []),
           ...(api !== '' && !apiField.enumValues.includes(api) ? [{ value: api, label: api }] : []),
           ...apiField.enumValues.map((value) => ({ value, label: value })),
         ]
@@ -100,6 +107,14 @@ export function ProviderSettingsEditor(props: ProviderSettingsEditorProps): Reac
     const modelFailure = validateModels(normalizedModels, inputField)
     if (modelFailure !== undefined) {
       setError(modelFailureMessage(modelFailure, t))
+      return
+    }
+    const reasoningFailure =
+      props.reasoningLevels === undefined
+        ? undefined
+        : validateReasoningEfforts(normalizedModels, routeReasoning.levels, routeReasoning.levelsOnly)
+    if (reasoningFailure !== undefined) {
+      setError(t(`settings.${reasoningFailure.key}`))
       return
     }
     const changes: ProviderSettingChange[] = []
@@ -141,65 +156,80 @@ export function ProviderSettingsEditor(props: ProviderSettingsEditorProps): Reac
         </p>
       ) : (
         <>
+          {props.credentialHint === true ? (
+            <p className="dsh-settings__advanced-hint">{t('settings.providerAddCredentialHint')}</p>
+          ) : null}
           {baseUrlPath === undefined && apiPath === undefined && !hasModelList ? (
             <p className="dsh-settings__advanced-hint">{t('settings.providerNoEditableFields')}</p>
           ) : null}
-          {baseUrlPath === undefined ? null : (
-            <label className="dsh-settings__provider-editor-field">
-              <span>{t('settings.providerBaseUrl')}</span>
-              <input
-                type="url"
-                value={baseUrl}
-                disabled={disabled}
-                placeholder={settingsNs === 'llm-deepseek' ? 'https://api.deepseek.com' : undefined}
-                onChange={(event) => setBaseUrl(event.target.value)}
-              />
-            </label>
-          )}
-          {apiPath === undefined ? null : (
-            <label className="dsh-settings__provider-editor-field">
-              <span>{t('settings.providerApi')}</span>
-              {apiField?.enumValues === undefined || apiField.enumValues.length === 0 ? (
-                <input
-                  type="text"
-                  value={api}
-                  disabled={disabled}
-                  onChange={(event) => setApi(event.target.value)}
-                />
-              ) : (
-                <SelectMenu
-                  className="dsh-settings__provider-api-select"
-                  icon="settings"
-                  menuMode="flow"
-                  label={api === '' ? t('settings.notSet') : api}
-                  ariaLabel={t('settings.providerApi')}
-                  title={t('settings.providerApi')}
-                  value={api}
-                  options={apiOptions}
-                  disabled={disabled}
-                  onChange={setApi}
-                />
-              )}
-            </label>
-          )}
-          {hasModelList ? (
+          {baseUrlPath === undefined && apiPath === undefined && !hasModelList ? null : (
             <details className="dsh-settings__provider-editor-customized" open>
               <summary>{t('settings.customized')}</summary>
-              <ModelListEditor
-                models={models}
-                inputField={inputField}
-                {...(props.catalogModels === undefined ? {} : { catalogModels: props.catalogModels })}
-                providerDefaultInput={providerDefaultInput}
-                writable={props.writable}
-                saving={props.saving}
-                showSave={false}
-                discoveryInput={discoveryInput}
-                onDiscover={props.onDiscover}
-                onChange={(next) => setModels(next.map(copyModel))}
-                onSave={() => Promise.resolve()}
-              />
+              {baseUrlPath === undefined ? null : (
+                <label className="dsh-settings__provider-editor-field">
+                  <span>{t('settings.providerBaseUrl')}</span>
+                  <input
+                    type="url"
+                    value={baseUrl}
+                    disabled={disabled}
+                    placeholder={
+                      settingsNs === 'llm-deepseek'
+                        ? 'https://api.deepseek.com'
+                        : t('settings.providerBaseUrlPlaceholder')
+                    }
+                    onChange={(event) => setBaseUrl(event.target.value)}
+                  />
+                  <span className="dsh-settings__provider-editor-hint">
+                    {t('settings.providerBaseUrlHint')}
+                  </span>
+                </label>
+              )}
+              {apiPath === undefined ? null : (
+                <label className="dsh-settings__provider-editor-field">
+                  <span>{t('settings.providerApi')}</span>
+                  {apiField?.enumValues === undefined || apiField.enumValues.length === 0 ? (
+                    <input
+                      type="text"
+                      value={api}
+                      disabled={disabled}
+                      onChange={(event) => setApi(event.target.value)}
+                    />
+                  ) : (
+                    <SelectMenu
+                      className="dsh-settings__provider-api-select"
+                      icon="settings"
+                      menuMode="flow"
+                      label={api === '' ? t('settings.providerApiDefault') : api}
+                      ariaLabel={t('settings.providerApi')}
+                      title={t('settings.providerApi')}
+                      value={api}
+                      options={apiOptions}
+                      disabled={disabled}
+                      onChange={setApi}
+                    />
+                  )}
+                  <span className="dsh-settings__provider-editor-hint">{t('settings.providerApiHint')}</span>
+                </label>
+              )}
+              {hasModelList ? (
+                <ModelListEditor
+                  models={models}
+                  inputField={inputField}
+                  reasoningLevels={routeReasoning.levels}
+                  reasoningLevelsOnly={routeReasoning.levelsOnly}
+                  {...(props.catalogModels === undefined ? {} : { catalogModels: props.catalogModels })}
+                  providerDefaultInput={providerDefaultInput}
+                  writable={props.writable}
+                  saving={props.saving}
+                  showSave={false}
+                  discoveryInput={discoveryInput}
+                  onDiscover={props.onDiscover}
+                  onChange={(next) => setModels(next.map(copyModel))}
+                  onSave={() => Promise.resolve()}
+                />
+              ) : null}
             </details>
-          ) : null}
+          )}
         </>
       )}
       {error === undefined ? null : (

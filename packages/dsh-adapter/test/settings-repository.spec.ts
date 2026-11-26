@@ -177,6 +177,64 @@ describe('Rc6SettingsRepository schema namespaces', () => {
     })
   })
 
+  it('describes a model schema reasoning-effort declaration as namespace levels', async () => {
+    const fixture = {
+      writable: true,
+      hasDocument: false,
+      namespaces: [
+        {
+          ns: 'llm-pi-ai',
+          schema: {
+            uid: 1,
+            refs: {
+              1: { type: 'object', dict: { providers: 2 } },
+              2: { type: 'dict', inner: 3, sKey: 20 },
+              3: { type: 'object', dict: { api: 4, models: 5 } },
+              4: { type: 'union', list: [21, 22] },
+              5: { type: 'array', inner: 6 },
+              6: { type: 'object', dict: { id: 7, reasoningEfforts: 8 } },
+              7: { type: 'string' },
+              8: { type: 'union', list: [9, 10] },
+              9: { type: 'const', value: false },
+              10: { type: 'dict', inner: 11, sKey: 12 },
+              11: { type: 'string' },
+              12: { type: 'union', list: [13, 14, 15, 16, 17, 18, 19] },
+              13: { type: 'const', value: 'off' },
+              14: { type: 'const', value: 'minimal' },
+              15: { type: 'const', value: 'low' },
+              16: { type: 'const', value: 'medium' },
+              17: { type: 'const', value: 'high' },
+              18: { type: 'const', value: 'xhigh' },
+              19: { type: 'const', value: 'max' },
+              20: { type: 'string' },
+              21: { type: 'const', value: 'openai-completions' },
+              22: { type: 'const', value: 'google-generative-ai' },
+            },
+          },
+          value: {
+            providers: {
+              'acme-cli': {
+                api: 'openai-completions',
+                models: [{ id: 'acme-think', reasoningEfforts: { off: null, high: 'high' } }],
+              },
+            },
+          },
+          applies: 'live',
+          secrets: [],
+          revision: 7,
+        },
+      ],
+    }
+    const repository = new Rc6SettingsRepository(transportFor({ 'settings.describe': fixture }))
+
+    const schema = await repository.schema()
+
+    expect(schema.namespaces[0]).toMatchObject({
+      ns: 'llm-pi-ai',
+      modelReasoningLevels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+    })
+  })
+
   it('rejects missing deployment facts and malformed schema/secret descriptors', async () => {
     const withoutFacts = { namespaces: DESCRIBE_FIXTURE.namespaces }
     const badSchema = {

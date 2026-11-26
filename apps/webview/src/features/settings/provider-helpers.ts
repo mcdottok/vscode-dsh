@@ -100,6 +100,43 @@ export function namespaceInPath(path: string): string {
   return path.split('.', 1)[0] ?? ''
 }
 
+/** pi-ai's Gemini protocol identifier. */
+const GEMINI_PROTOCOL = 'google-generative-ai'
+
+/** The only thinking levels pi-ai's Gemini protocol sends. */
+const GEMINI_LEVELS: readonly string[] = ['minimal', 'low', 'medium', 'high']
+
+/**
+ * The reasoning levels a namespace's model schema declares, in escalation
+ * order. Absent means the connected DSH does not describe them, so the
+ * editor must not invent a control.
+ */
+export function modelReasoningLevels(
+  snapshot: DshSettingsSnapshot,
+  namespace: string | undefined,
+): readonly string[] | undefined {
+  if (namespace === undefined) return undefined
+  return snapshot.schema.namespaces.find((entry) => entry.ns === namespace)?.modelReasoningLevels
+}
+
+/**
+ * Narrow the schema's reasoning levels to what the route's protocol accepts.
+ * pi-ai's Gemini protocol sends only `minimal`/`low`/`medium`/`high` and
+ * fails a request carrying any other value, so a Gemini route offers those
+ * four with fixed values.
+ */
+export function protocolReasoningLevels(
+  protocol: string | undefined,
+  levels: readonly string[] | undefined,
+): { readonly levels: readonly string[]; readonly levelsOnly: boolean } {
+  if (levels === undefined || levels.length === 0) return { levels: [], levelsOnly: false }
+  if (protocol !== GEMINI_PROTOCOL) return { levels, levelsOnly: false }
+  return {
+    levels: levels.filter((level) => GEMINI_LEVELS.some((accepted) => accepted === level)),
+    levelsOnly: true,
+  }
+}
+
 export function settingsNamespaceRevision(
   snapshot: DshSettingsSnapshot,
   namespace: string,

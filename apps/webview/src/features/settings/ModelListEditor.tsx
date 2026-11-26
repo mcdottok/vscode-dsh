@@ -8,6 +8,7 @@ import type {
 import { useDismissibleLayer } from '../../components/common/useDismissibleLayer.js'
 import { Icon } from '../../ui/Icon.js'
 import { useI18n, type Translate } from '../../i18n.js'
+import { ModelReasoningEfforts } from './ModelReasoningEfforts.js'
 
 /** A model draft keeps fields the host may add even when this UI does not edit them. */
 export interface EditableModel {
@@ -35,6 +36,10 @@ export interface ModelListEditorProps {
   readonly inputField?: InputField
   readonly catalogModels?: readonly ModelDescriptor[]
   readonly providerDefaultInput?: readonly ModelInputModality[]
+  /** Levels the schema accepts as `reasoningEfforts` keys; absent hides the control. */
+  readonly reasoningLevels?: readonly string[] | undefined
+  /** Whether the route's protocol accepts only {@link reasoningLevels}, each sent under its own name. */
+  readonly reasoningLevelsOnly?: boolean | undefined
   readonly writable: boolean
   readonly saving: boolean
   readonly showSave?: boolean
@@ -66,6 +71,14 @@ export function ModelListEditor(props: ModelListEditorProps): ReactElement {
   const update = (index: number, patch: ModelPatch): void => {
     setSaved(false)
     const next = draft.map((model, at) => (at === index ? applyPatch(model, patch) : model))
+    setDraft(next)
+    props.onChange?.(next.map(copyModel))
+  }
+
+  /** Replace one row whole, so deleting an optional field actually removes it. */
+  const replace = (index: number, model: EditableModel): void => {
+    setSaved(false)
+    const next = draft.map((existing, at) => (at === index ? model : existing))
     setDraft(next)
     props.onChange?.(next.map(copyModel))
   }
@@ -316,6 +329,17 @@ export function ModelListEditor(props: ModelListEditorProps): ReactElement {
                       ))}
                     </div>
                   </fieldset>
+                  {props.reasoningLevels === undefined || props.reasoningLevels.length === 0 ? null : (
+                    <ModelReasoningEfforts
+                      model={model}
+                      levels={props.reasoningLevels}
+                      levelsOnly={props.reasoningLevelsOnly === true}
+                      position={index + 1}
+                      disabled={!props.writable || props.saving}
+                      t={t}
+                      onChange={(next) => replace(index, next)}
+                    />
+                  )}
                 </div>
               ) : null}
             </li>

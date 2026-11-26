@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../../i18n.js'
 import { CustomProviderCard } from './CustomProviderCard.js'
 
-function renderCard(): Record<string, ReturnType<typeof vi.fn>> {
+function renderCard(reasoningLevels?: readonly string[]): Record<string, ReturnType<typeof vi.fn>> {
   const onCreate = vi.fn().mockResolvedValue({ profileCommitted: true, credentialConfigured: true })
   const onConfigureSecret = vi.fn().mockResolvedValue(true)
   render(
@@ -18,6 +18,7 @@ function renderCard(): Record<string, ReturnType<typeof vi.fn>> {
           revision: 4,
         }}
         providers={[]}
+        reasoningLevels={reasoningLevels}
         writable
         saving={false}
         onClose={vi.fn()}
@@ -63,5 +64,56 @@ describe('CustomProviderCard model validation', () => {
     fireEvent.change(screen.getByLabelText('Max output tokens'), { target: { value: '32K' } })
 
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save provider' }).disabled).toBe(false)
+  })
+
+  it('explains where the API key is entered', () => {
+    renderCard()
+    expect(
+      screen.getByText(
+        'Saving opens a VS Code input box for the API key; leave it blank to use environment variables or provider-native authentication.',
+      ),
+    ).toBeDefined()
+  })
+
+  it('carries the declared reasoning levels into the provider profile', () => {
+    const { onCreate } = renderCard(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
+    fireEvent.change(screen.getByLabelText('Provider ID'), { target: { value: 'my-router' } })
+    fireEvent.change(screen.getByLabelText('Provider base URL'), {
+      target: { value: 'https://api.example.com' },
+    })
+    addModel('model-a')
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced model settings' }))
+    fireEvent.click(screen.getByRole('switch', { name: 'Reasoning effort 1' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save provider' }))
+
+    expect(onCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        models: [
+          expect.objectContaining({
+            id: 'model-a',
+            reasoningEfforts: { off: null, low: 'low', medium: 'medium', high: 'high' },
+          }),
+        ],
+      }),
+    )
+  })
+
+  it('refuses a reasoning declaration that offers no thinking level', () => {
+    renderCard(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
+    fireEvent.change(screen.getByLabelText('Provider ID'), { target: { value: 'my-router' } })
+    fireEvent.change(screen.getByLabelText('Provider base URL'), {
+      target: { value: 'https://api.example.com' },
+    })
+    addModel('model-a')
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced model settings' }))
+    fireEvent.click(screen.getByRole('switch', { name: 'Reasoning effort 1' }))
+    for (const level of ['low', 'medium', 'high']) {
+      fireEvent.click(screen.getByRole('button', { name: `Remove reasoning level ${level}` }))
+    }
+
+    expect(screen.queryAllByText('Declare at least one reasoning level besides off.').length).toBeGreaterThan(
+      0,
+    )
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Save provider' }).disabled).toBe(true)
   })
 })

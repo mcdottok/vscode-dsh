@@ -10,6 +10,7 @@ import { Icon } from '../../ui/Icon.js'
 import { SelectMenu } from '../../components/common/SelectMenu.js'
 import { CustomProviderCard, type CustomProviderTemplate } from './CustomProviderCard.js'
 import { ProviderSettingsEditor, type ProviderSettingChange } from './ProviderSettingsEditor.js'
+import { modelReasoningLevels } from './provider-helpers.js'
 import type { SettingsDrawerProps } from './settings-drawer-props.js'
 import type { DshSettingsState } from './general-controls.js'
 
@@ -80,6 +81,10 @@ export function ModelsSettingsTab(input: ModelsSettingsTabProps): ReactElement {
     pendingProvider,
     removeProvider,
   } = input
+
+  /** The host-described model reasoning levels for one namespace, when any. */
+  const reasoningLevelsFor = (namespace: string | undefined): readonly string[] | undefined =>
+    dshState.status === 'ready' ? modelReasoningLevels(dshState.snapshot, namespace) : undefined
   return (
     <div
       className="dsh-settings__body"
@@ -272,6 +277,7 @@ export function ModelsSettingsTab(input: ModelsSettingsTabProps): ReactElement {
                     provider={provider}
                     catalogModels={providerModels}
                     settings={dshState.snapshot}
+                    reasoningLevels={reasoningLevelsFor(provider.settingsNs)}
                     writable={dshState.snapshot.schema.writable}
                     saving={busyField === `provider:${provider.id}`}
                     onSave={(changes, expectedRevision) =>
@@ -370,6 +376,8 @@ export function ModelsSettingsTab(input: ModelsSettingsTabProps): ReactElement {
                 key={addingProvider.id}
                 provider={addingProvider}
                 settings={dshState.snapshot}
+                reasoningLevels={reasoningLevelsFor(addingProvider.settingsNs)}
+                credentialHint
                 writable={dshState.snapshot.schema.writable}
                 saving={busyField === `provider:${addingProvider.id}`}
                 forceSave={(addingProvider.settingsPath?.length ?? 0) > 0}
@@ -388,6 +396,7 @@ export function ModelsSettingsTab(input: ModelsSettingsTabProps): ReactElement {
             <CustomProviderCard
               template={customProviderTemplate}
               providers={props.providers}
+              reasoningLevels={reasoningLevelsFor(customProviderTemplate.settingsNamespace)}
               writable={dshState.status === 'ready' && dshState.snapshot.schema.writable}
               saving={busyField !== undefined}
               onClose={(changed) => {

@@ -78,6 +78,70 @@ describe('ProviderSettingsEditor write-time validation', () => {
     document.documentElement.lang = 'en'
   })
 
+  it('explains where credentials are configured when adding a provider', () => {
+    render(
+      <I18nProvider>
+        <ProviderSettingsEditor
+          provider={provider}
+          settings={snapshot([{ id: 'model-a' }])}
+          credentialHint
+          writable
+          saving={false}
+          onSave={vi.fn().mockResolvedValue(undefined)}
+          onDiscover={vi.fn().mockResolvedValue([])}
+          onClose={vi.fn()}
+        />
+      </I18nProvider>,
+    )
+
+    expect(
+      screen.getByText(
+        'Add a catalog provider: DSH resolves its address and protocol by default, so both may stay empty. After applying, click Configure on the provider row to enter the API key, or use environment variables.',
+      ),
+    ).toBeDefined()
+    expect(screen.getByPlaceholderText('https://api.deepseek.com')).toBeDefined()
+  })
+
+  it('labels unset catalog address and protocol fields with their fallbacks', () => {
+    const catalogProvider: ModelProvider = {
+      ...provider,
+      id: 'amazon-bedrock',
+      name: 'amazon-bedrock',
+      settingsNs: 'llm-pi-ai',
+      settingsPath: ['providers', 'amazon-bedrock'],
+      fields: [
+        { key: 'baseURL', label: 'Base URL', secret: false, required: false },
+        {
+          key: 'api',
+          label: 'API',
+          secret: false,
+          required: false,
+          enumValues: ['bedrock-converse-stream', 'openai-completions'],
+        },
+      ],
+    }
+    render(
+      <I18nProvider>
+        <ProviderSettingsEditor
+          provider={catalogProvider}
+          settings={snapshot([], 'llm-pi-ai')}
+          credentialHint
+          writable
+          saving={false}
+          onSave={vi.fn().mockResolvedValue(undefined)}
+          onDiscover={vi.fn().mockResolvedValue([])}
+          onClose={vi.fn()}
+        />
+      </I18nProvider>,
+    )
+
+    expect(
+      screen.getByText('DSH resolves catalog provider addresses; fill this only for a custom gateway.'),
+    ).toBeDefined()
+    expect(screen.getByPlaceholderText("Leave blank to use the provider's configured address")).toBeDefined()
+    expect(screen.getByRole('button', { name: 'API protocol: Resolved by the model catalog' })).toBeDefined()
+  })
+
   it('refuses an unparsable capacity instead of sending it to the host', () => {
     const { onSave } = renderEditor()
     expandAdvanced()
@@ -304,6 +368,150 @@ describe('ProviderSettingsEditor write-time validation', () => {
         ],
         3,
       ),
+    )
+  })
+
+  it('writes the declared reasoning efforts for a pi-ai model', async () => {
+    const piProvider: ModelProvider = {
+      id: 'acme-cli',
+      name: 'Acme CLI',
+      kind: 'remote',
+      configurable: true,
+      settingsNs: 'llm-pi-ai',
+      settingsPath: ['providers', 'acme-cli'],
+      fields: [],
+    }
+    const settings: DshSettingsSnapshot = {
+      schema: {
+        version: 'rc6-settings-v2',
+        writable: true,
+        hasDocument: false,
+        fields: [
+          {
+            path: 'llm-pi-ai.providers.acme-cli.models',
+            label: 'models',
+            type: 'array',
+            required: false,
+            restartRequired: false,
+          },
+        ],
+        namespaces: [
+          {
+            ns: 'llm-pi-ai',
+            applies: 'live',
+            revision: 3,
+            userFields: [],
+            secrets: [],
+            modelReasoningLevels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+          },
+        ],
+      },
+      values: {
+        'llm-pi-ai': { providers: { 'acme-cli': { models: [{ id: 'acme-think' }] } } },
+      },
+    }
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    render(
+      <I18nProvider>
+        <ProviderSettingsEditor
+          provider={piProvider}
+          settings={settings}
+          reasoningLevels={['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']}
+          writable
+          saving={false}
+          onSave={onSave as (changes: readonly ProviderSettingChange[]) => Promise<void>}
+          onDiscover={vi.fn().mockResolvedValue([])}
+          onClose={vi.fn()}
+        />
+      </I18nProvider>,
+    )
+
+    expandAdvanced()
+    fireEvent.click(screen.getByRole('switch', { name: 'Reasoning effort 1' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith(
+        [
+          {
+            kind: 'set',
+            path: 'llm-pi-ai.providers.acme-cli.models',
+            value: [
+              {
+                id: 'acme-think',
+                reasoningEfforts: { off: null, low: 'low', medium: 'medium', high: 'high' },
+              },
+            ],
+          },
+        ],
+        3,
+      ),
+    )
+  })
+
+  it('refuses a reasoning declaration that offers no thinking level', () => {
+    const piProvider: ModelProvider = {
+      id: 'acme-cli',
+      name: 'Acme CLI',
+      kind: 'remote',
+      configurable: true,
+      settingsNs: 'llm-pi-ai',
+      settingsPath: ['providers', 'acme-cli'],
+      fields: [],
+    }
+    const settings: DshSettingsSnapshot = {
+      schema: {
+        version: 'rc6-settings-v2',
+        writable: true,
+        hasDocument: false,
+        fields: [
+          {
+            path: 'llm-pi-ai.providers.acme-cli.models',
+            label: 'models',
+            type: 'array',
+            required: false,
+            restartRequired: false,
+          },
+        ],
+        namespaces: [
+          {
+            ns: 'llm-pi-ai',
+            applies: 'live',
+            revision: 3,
+            userFields: [],
+            secrets: [],
+            modelReasoningLevels: ['off', 'low', 'medium', 'high'],
+          },
+        ],
+      },
+      values: { 'llm-pi-ai': { providers: { 'acme-cli': { models: [{ id: 'acme-think' }] } } } },
+    }
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    render(
+      <I18nProvider>
+        <ProviderSettingsEditor
+          provider={piProvider}
+          settings={settings}
+          reasoningLevels={['off', 'low', 'medium', 'high']}
+          writable
+          saving={false}
+          onSave={onSave as (changes: readonly ProviderSettingChange[]) => Promise<void>}
+          onDiscover={vi.fn().mockResolvedValue([])}
+          onClose={vi.fn()}
+        />
+      </I18nProvider>,
+    )
+
+    expandAdvanced()
+    fireEvent.click(screen.getByRole('switch', { name: 'Reasoning effort 1' }))
+    for (const level of ['low', 'medium', 'high']) {
+      fireEvent.click(screen.getByRole('button', { name: `Remove reasoning level ${level}` }))
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+
+    expect(onSave).not.toHaveBeenCalled()
+    expect(screen.getByRole('alert').textContent).toContain(
+      'Declare at least one reasoning level besides off.',
     )
   })
 })

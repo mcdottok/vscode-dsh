@@ -192,7 +192,10 @@ export function isSettingsNamespace(value: unknown): value is DshSettingsSchema[
         object(secret) !== undefined &&
         typeof object(secret)?.field === 'string' &&
         typeof object(secret)?.set === 'boolean',
-    )
+    ) &&
+    (namespace.modelReasoningLevels === undefined ||
+      (Array.isArray(namespace.modelReasoningLevels) &&
+        namespace.modelReasoningLevels.every((level) => typeof level === 'string' && level.trim() !== '')))
   )
 }
 

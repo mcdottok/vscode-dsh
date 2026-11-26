@@ -9,6 +9,8 @@ import type { DshTransport } from '../contracts.js'
 import { callRpc, unavailable } from '../versions/rc6/rpc.js'
 import {
   schemasteryChildEntries,
+  schemasteryDictKeyValues,
+  schemasteryNodeAtPath,
   schemasteryObjectEntries,
   schemasteryUnionMembers,
   type SerializedSchemaNode,
@@ -55,17 +57,38 @@ function settingsSchema(value: SettingsDescription): DshSettingsSchema {
         ),
       ]
     }),
-    namespaces: value.namespaces.map((namespace) => ({
-      ns: namespace.ns,
-      applies: namespace.applies,
-      revision: namespace.revision,
-      userFields: userFieldPaths(namespace),
-      secrets: namespace.secrets.map((secret) => ({
-        field: secret.path.join('.'),
-        set: secret.set,
-      })),
-    })),
+    namespaces: value.namespaces.map((namespace) => {
+      const reasoningLevels = modelReasoningLevels(namespace.schema)
+      return {
+        ns: namespace.ns,
+        applies: namespace.applies,
+        revision: namespace.revision,
+        userFields: userFieldPaths(namespace),
+        secrets: namespace.secrets.map((secret) => ({
+          field: secret.path.join('.'),
+          set: secret.set,
+        })),
+        ...(reasoningLevels === undefined ? {} : { modelReasoningLevels: reasoningLevels }),
+      }
+    }),
   }
+}
+
+/**
+ * The pinned llm-pi-ai shape: provider profiles under `providers` declare a
+ * `models` array whose entries accept `reasoningEfforts` as either `false` or
+ * a dict of effort levels. Namespace and route keys are placeholders because
+ * Schemastery walks a dict through its value schema, so the same probe works
+ * for every namespace that declares the shape and yields nothing elsewhere.
+ */
+const MODEL_REASONING_PATH = ['providers', 'route', 'models', '0', 'reasoningEfforts'] as const
+
+/** The reasoning efforts a namespace's model schema accepts, or none. */
+function modelReasoningLevels(schema: unknown): readonly string[] | undefined {
+  const node = schemasteryNodeAtPath(schema, MODEL_REASONING_PATH)
+  if (node === undefined) return undefined
+  const efforts = schemasteryUnionMembers(schema, node).find((member) => member.type === 'dict')
+  return efforts === undefined ? undefined : schemasteryDictKeyValues(schema, efforts)
 }
 
 function settingsValues(value: SettingsDescription): Readonly<Record<string, unknown>> {

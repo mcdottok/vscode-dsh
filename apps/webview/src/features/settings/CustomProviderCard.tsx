@@ -11,6 +11,8 @@ import { Icon } from '../../ui/Icon.js'
 import { useI18n } from '../../i18n.js'
 import { SelectMenu } from '../../components/common/SelectMenu.js'
 import { ModelListEditor, type EditableModel } from './ModelListEditor.js'
+import { validateReasoningEfforts } from './ModelReasoningEfforts.js'
+import { protocolReasoningLevels } from './provider-helpers.js'
 
 export interface CustomProviderTemplate {
   readonly settingsNamespace: string
@@ -25,6 +27,8 @@ export interface CustomProviderTemplate {
 export interface CustomProviderCardProps {
   readonly template: CustomProviderTemplate
   readonly providers: readonly ModelProvider[]
+  /** Levels the template namespace's model schema accepts, when the host describes them. */
+  readonly reasoningLevels?: readonly string[] | undefined
   readonly writable: boolean
   readonly saving: boolean
   readonly onClose: (changed: boolean) => void
@@ -57,6 +61,11 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactElement
   const routeInvalid = routeValue !== '' && !isValidCustomProviderId(routeValue)
   const routeTaken = props.providers.some((provider) => provider.id === routeValue)
   const modelFailure = validateModels(models)
+  const routeReasoning = protocolReasoningLevels(apiValue, props.reasoningLevels)
+  const reasoningFailure =
+    routeReasoning.levels.length === 0
+      ? undefined
+      : validateReasoningEfforts(models, routeReasoning.levels, routeReasoning.levelsOnly)
   const normalizedModels = models.map(normalizeModel)
   const ready =
     props.template.protocols.length > 0 &&
@@ -66,7 +75,8 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactElement
     baseUrlValue !== '' &&
     apiValue !== '' &&
     normalizedModels.length > 0 &&
-    modelFailure === undefined
+    modelFailure === undefined &&
+    reasoningFailure === undefined
   const disabled = !props.writable || props.saving || busy
   const profileDisabled = disabled || committed
   const canSubmit = !disabled && (committed || ready)
@@ -209,6 +219,8 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactElement
       <ModelListEditor
         models={models}
         inputField="input"
+        reasoningLevels={routeReasoning.levels}
+        reasoningLevelsOnly={routeReasoning.levelsOnly}
         writable={props.writable && !committed}
         saving={props.saving || busy}
         showSave={false}
@@ -225,6 +237,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactElement
           {error}
         </p>
       )}
+      <p className="dsh-settings__advanced-hint">{t('settings.providerApiKeyHint')}</p>
       <button
         className="dsh-button dsh-button--primary dsh-button--compact"
         type="button"

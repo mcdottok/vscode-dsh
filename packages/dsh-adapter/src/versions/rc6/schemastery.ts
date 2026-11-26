@@ -64,6 +64,25 @@ export function schemasteryUnionMembers(
   return node.list.map((reference) => schemaReference(envelope, reference))
 }
 
+/**
+ * The constant strings a dict node accepts as keys, read from its `sKey`
+ * schema. A dict without a declared key union accepts arbitrary keys and has
+ * no enumerable answer, so it returns `undefined` rather than guessing.
+ */
+export function schemasteryDictKeyValues(
+  serialized: unknown,
+  node: SerializedSchemaNode,
+): readonly string[] | undefined {
+  if (node.type !== 'dict' || !Number.isSafeInteger(node.sKey)) return undefined
+  const envelope = schemaEnvelope(serialized)
+  const key = schemaReference(envelope, node.sKey)
+  if (key.type !== 'union' || !Array.isArray(key.list)) return undefined
+  const values = key.list.map((reference) => schemaReference(envelope, reference).value)
+  return values.length > 0 && values.every((value): value is string => typeof value === 'string')
+    ? values
+    : undefined
+}
+
 function objectEntries(
   envelope: SerializedSchemaEnvelope,
   node: SerializedSchemaNode,

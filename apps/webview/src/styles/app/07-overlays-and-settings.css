@@ -396,6 +396,12 @@
   word-break: normal;
 }
 
+.dsh-settings__provider-editor-hint {
+  color: var(--dsh-muted);
+  font-size: var(--dsh-font-size-xs);
+  line-height: 1.4;
+}
+
 .dsh-settings__field-state--ok {
   color: var(--dsh-success);
 }
