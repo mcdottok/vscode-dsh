@@ -88,6 +88,8 @@
 
 包含菜单的表面不能在入场后保留动画 transform：即使是单位矩阵，也会把内层 fixed 菜单的坐标系改为祖先容器。共享入场动画使用 `backwards` 释放变换，由 motion 规格防止 `both` / `forwards` 回归；退场动画仍保留最终状态直到卸载。
 
+切换会话时，正文淡入使用 `backwards`。淡入结束后释放由动画创建的层叠上下文。
+
 `prefers-reduced-motion: reduce` 关闭平滑滚动、把过渡缩短到可忽略时间并停止循环；JavaScript 的滚动行为在 `useScrollFollow` 同步降级。Esc、点击外部、焦点陷阱、焦点恢复与 `aria-live` 不等待动画。Drawer 退场时立刻停止交互并标记隐藏，视觉收尾不延迟语义关闭。
 
 ## 表面与交接

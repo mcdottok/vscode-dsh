@@ -437,7 +437,7 @@ button.dsh-timeline__presented-file-reveal:hover {
 }
 
 .dsh-timeline__content--session-enter {
-  animation: dsh-overlay-fade-in var(--dsh-motion-duration-fast) var(--dsh-motion-ease-enter) both;
+  animation: dsh-overlay-fade-in var(--dsh-motion-duration-fast) var(--dsh-motion-ease-enter) backwards;
 }
 
 .dsh-runtime-status__loading-indicator {
