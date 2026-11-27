@@ -224,7 +224,6 @@
   :is(
     .dsh-tool-code-preview,
     .dsh-tool-diff-preview,
-    .dsh-tool-terminal-preview,
     .dsh-tool-search-preview,
     .dsh-tool-web-preview,
     .dsh-markdown pre
@@ -242,12 +241,7 @@
 }
 
 .dsh-app[data-conversation-layout='focused']
-  :is(
-    .dsh-tool-code-preview__toolbar,
-    .dsh-tool-terminal-preview__header,
-    .dsh-tool-search-preview__header,
-    .dsh-tool-web-preview__fetch-meta
-  ) {
+  :is(.dsh-tool-code-preview__toolbar, .dsh-tool-search-preview__header, .dsh-tool-web-preview__fetch-meta) {
   min-height: 32px;
   padding: 6px 12px;
   border-bottom: var(--dsh-border);
@@ -255,13 +249,27 @@
 }
 
 .dsh-app[data-conversation-layout='focused']
-  :is(
-    .dsh-tool-terminal-preview__body,
-    .dsh-tool-search-preview__body,
-    .dsh-tool-diff-preview__body,
-    .dsh-tool-code-preview__body
-  ) {
+  :is(.dsh-tool-search-preview__body, .dsh-tool-diff-preview__body, .dsh-tool-code-preview__body) {
   line-height: 22px;
+}
+
+.dsh-app[data-conversation-layout='focused'] .dsh-tool-terminal-preview {
+  border: 0;
+  border-inline-start: var(--dsh-border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.dsh-app[data-conversation-layout='focused'] .dsh-tool-terminal-preview__header {
+  padding-block: 0;
+  padding-inline: var(--dsh-space-2);
+  background: transparent;
+}
+
+.dsh-app[data-conversation-layout='focused']
+  :is(.dsh-tool-terminal-preview__body, .dsh-tool-terminal-preview__empty) {
+  padding-block: var(--dsh-space-1);
+  padding-inline: var(--dsh-space-2);
 }
 
 .dsh-app[data-conversation-layout='focused']
