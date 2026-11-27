@@ -488,9 +488,16 @@ describe('MarkdownContent', () => {
     expect(container.querySelector('[data-dsh-markdown-tail="true"]')?.textContent).toContain('growing now')
     expect(container.querySelector('[data-dsh-markdown-frozen="true"] p')).toBe(frozenParagraph)
 
-    rerender(<MarkdownContent markdown={'First paragraph.\n\nSecond paragraph is complete.'} />)
+    const twoParagraphs = 'First paragraph.\n\nSecond paragraph is complete.'
+    rerender(<MarkdownContent streaming markdown={`${twoParagraphs}\n\nThird paragraph is still growing`} />)
+    const completed = container.querySelectorAll('[data-dsh-markdown-frozen="true"] p')
+    expect(completed).toHaveLength(2)
+    expect(completed[0]).toBe(frozenParagraph)
+
+    rerender(<MarkdownContent markdown={`${twoParagraphs}\n\nThird paragraph is complete.`} />)
     expect(container.querySelector('p')).toBe(frozenParagraph)
-    expect(container.querySelectorAll('p')[1]?.textContent).toBe('Second paragraph is complete.')
+    expect(container.querySelectorAll('p')[1]).toBe(completed[1])
+    expect(container.querySelectorAll('p')[2]?.textContent).toBe('Third paragraph is complete.')
   })
 
   it('uses the complete Markdown structure when a list crosses the streaming split', () => {
@@ -500,6 +507,17 @@ describe('MarkdownContent', () => {
     rerender(<MarkdownContent markdown={markdown} />)
     expect(container.querySelectorAll('ul')).toHaveLength(1)
     expect(container.querySelectorAll('ul > li')).toHaveLength(2)
+  })
+
+  it('resolves a reference in an earlier paragraph once the definition arrives', () => {
+    const markdown = 'See [the guide][docs].\n\nContinuation.'
+    const { rerender } = render(<MarkdownContent markdown={markdown} streaming />)
+    expect(screen.queryByRole('link', { name: 'the guide' })).toBeNull()
+
+    rerender(<MarkdownContent markdown={`${markdown}\n\n[docs]: https://example.com/`} />)
+    expect(screen.getByRole('link', { name: 'the guide' }).getAttribute('data-dsh-link')).toBe(
+      'https://example.com/',
+    )
   })
 
   it('eventually catches up long streaming Markdown after deferred renders', async () => {
