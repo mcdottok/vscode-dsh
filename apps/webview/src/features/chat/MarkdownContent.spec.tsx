@@ -3,6 +3,7 @@
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode } from 'react'
+import { motionScale } from '../../app/motion.js'
 import { MarkdownContent } from './MarkdownContent.js'
 import { useStreamingTextFade } from './useStreamingTextFade.js'
 import {
@@ -91,7 +92,8 @@ describe('MarkdownContent', () => {
     const contentRef = { current: container }
     const existingText = '已显示。'.repeat(48)
     container.innerHTML = `<p>${existingText}</p>`
-    const clock = vi.spyOn(performance, 'now').mockReturnValue(100)
+    const scale = motionScale()
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(100 * scale)
     const { rerender } = renderHook(
       ({ revision, streaming }) => useStreamingTextFade(contentRef, revision, streaming, true),
       { initialProps: { revision: 'original', streaming: true } },
@@ -100,25 +102,25 @@ describe('MarkdownContent', () => {
       Array.from(registry.get(`dsh-stream-fade-${stage}`) ?? [], (range) => range.toString())
     expect(highlightedText('initial')).toEqual([existingText.slice(-160)])
 
-    clock.mockReturnValue(625)
+    clock.mockReturnValue(625 * scale)
     container.innerHTML = `<p>${existingText} <strong>First</strong> batch.</p>`
     rerender({ revision: 'first', streaming: true })
     expect(highlightedText('initial')).toEqual([' ', 'First', ' batch.'])
 
-    clock.mockReturnValue(700)
+    clock.mockReturnValue(700 * scale)
     container.innerHTML = `<p>${existingText} <strong>First</strong> batch. Second <code>skip()</code>.</p>`
     rerender({ revision: 'second', streaming: true })
     expect(highlightedText('early')).toEqual([' ', 'First', ' batch.'])
     expect(highlightedText('initial')).toEqual([' Second ', '.'])
 
-    clock.mockReturnValue(720)
+    clock.mockReturnValue(720 * scale)
     container.innerHTML = `<p>${existingText} <strong>First</strong> batch. Second <code>skip()</code>. Done.</p>`
     rerender({ revision: 'complete', streaming: false })
     expect(highlightedText('initial')).toEqual([' Second ', '.', ' Done.'])
 
-    nextFrame?.(1130)
+    nextFrame?.(1130 * scale)
     expect(highlightedText('end')).toEqual([' Second ', '.', ' Done.'])
-    nextFrame?.(1220)
+    nextFrame?.(1220 * scale)
     expect([...registry.values()].every((highlight) => highlight.size === 0)).toBe(true)
   })
 

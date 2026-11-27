@@ -15,20 +15,17 @@ const webviewStyles = webviewStylePaths.map((path) => readStylesheet(new URL(pat
 describe('motion system', () => {
   it('keeps the shared motion tokens stable and complete', () => {
     const tokens = {
-      '--dsh-motion-duration-fast': '120ms',
-      '--dsh-motion-duration-standard': '180ms',
-      '--dsh-motion-duration-slow': '240ms',
-      '--dsh-motion-duration-loop-shimmer': '1.4s',
-      '--dsh-motion-duration-loop-pulse': '1.8s',
-      '--dsh-motion-duration-loop-breathe': '2.8s',
-      '--dsh-motion-ease-standard': 'cubic-bezier(0.2, 0, 0, 1)',
-      '--dsh-motion-ease-enter': 'cubic-bezier(0, 0, 0, 1)',
+      '--dsh-motion-base-fast': '120ms',
+      '--dsh-motion-base-standard': '180ms',
+      '--dsh-motion-base-slow': '240ms',
+      '--dsh-motion-base-loop-shimmer': '1.4s',
+      '--dsh-motion-base-loop-pulse': '1.8s',
+      '--dsh-motion-base-loop-breathe': '2.8s',
+      '--dsh-motion-ease-standard': 'cubic-bezier(0.22, 0.75, 0.2, 1)',
+      '--dsh-motion-ease-enter': 'cubic-bezier(0.16, 1, 0.3, 1)',
       '--dsh-motion-ease-exit': 'cubic-bezier(0.3, 0, 1, 1)',
-      '--dsh-motion-ease-emphasized-enter': 'cubic-bezier(0.05, 0.7, 0.1, 1)',
+      '--dsh-motion-ease-emphasized-enter': 'var(--dsh-motion-ease-enter)',
       '--dsh-motion-ease-pop': 'cubic-bezier(0.34, 1.56, 0.64, 1)',
-      '--dsh-motion-scale-from': '0.97',
-      '--dsh-motion-scale-press': '0.98',
-      '--dsh-motion-scale-pulse': '0.75',
     }
 
     for (const [name, value] of Object.entries(tokens)) {
@@ -66,12 +63,14 @@ describe('motion system', () => {
     expect(webviewStyles.join('\n')).not.toMatch(/prefers-reduced-motion\s*:\s*reduce/u)
   })
 
-  it('disables transitions instead of adding a nonzero transition to every element', () => {
+  it('uses categorized timing tokens to disable spatial motion without modifying every element', () => {
     // A universal duration paired with the default transition-property: all
     // animated hidden -> visible at menu mount and made Chromium reject focus.
     const reduced = uiStyles.slice(uiStyles.indexOf('@media (prefers-reduced-motion: reduce)'))
-    expect(reduced).toContain('transition: none !important;')
+    expect(reduced).toContain('--dsh-motion-system-factor: 0;')
+    expect(reduced).toContain('--dsh-motion-loop-iterations: 1;')
     expect(reduced).not.toContain('transition-duration:')
+    expect(uiStyles).toContain('var(--dsh-motion-duration-factor, 1)')
   })
 
   it('releases entry transforms so nested fixed menus keep viewport coordinates', () => {
@@ -95,7 +94,7 @@ describe('motion system', () => {
     expect(compatibility).toBeDefined()
     if (compatibility === undefined) return
     expect(compatibility.replace(/\s+/gu, ' ')).toContain(
-      'animation: dsh-retry-shimmer var(--dsh-motion-duration-loop-shimmer) var(--dsh-motion-ease-standard) infinite;',
+      'animation: dsh-retry-shimmer var(--dsh-motion-duration-loop-shimmer) var(--dsh-motion-ease-standard) var(--dsh-motion-loop-iterations, infinite);',
     )
   })
 })

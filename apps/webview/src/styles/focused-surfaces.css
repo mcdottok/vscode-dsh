@@ -534,8 +534,8 @@
 @media (prefers-reduced-motion: no-preference) {
   .dsh-focused-turn__footer[data-visible] {
     transition:
-      grid-template-rows var(--dsh-motion-duration-standard) var(--dsh-motion-ease-standard),
-      opacity var(--dsh-motion-duration-standard) var(--dsh-motion-ease-standard);
+      grid-template-rows var(--dsh-motion-duration-disclosure) var(--dsh-motion-ease-standard),
+      opacity var(--dsh-motion-duration-disclosure) var(--dsh-motion-ease-standard);
   }
 }
 

@@ -54,7 +54,7 @@
   align-items: center;
   min-width: 0;
   gap: var(--dsh-space-2);
-  animation: dsh-rise-in var(--dsh-motion-duration-standard) var(--dsh-motion-ease-enter) backwards;
+  animation: dsh-rise-in var(--dsh-motion-duration-message) var(--dsh-motion-ease-enter) backwards;
 }
 
 .dsh-scroll-to-latest__content > span {

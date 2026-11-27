@@ -272,9 +272,9 @@
   color: var(--dsh-input-text, var(--dsh-control-foreground));
   background: var(--dsh-input-bg, var(--dsh-surface-raised));
   transition:
-    border-color var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard),
-    box-shadow var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard),
-    background-color var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard);
+    border-color var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard),
+    box-shadow var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard),
+    background-color var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard);
 }
 
 .dsh-plugin-inventory__search:focus-within {

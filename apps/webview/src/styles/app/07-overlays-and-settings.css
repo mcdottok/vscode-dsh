@@ -457,7 +457,7 @@
   background: var(--dsh-muted);
   transition:
     transform var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard),
-    background-color var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard);
+    background-color var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard);
 }
 
 .dsh-settings__switch:is([aria-checked='true'], :has(> input:checked)) {

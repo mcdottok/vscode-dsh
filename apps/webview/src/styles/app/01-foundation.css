@@ -110,9 +110,9 @@ button {
   background: var(--dsh-secondary);
   cursor: pointer;
   transition:
-    background-color var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard),
-    border-color var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard),
-    color var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard),
+    background-color var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard),
+    border-color var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard),
+    color var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard),
     opacity var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard);
 }
 

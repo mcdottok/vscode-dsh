@@ -464,7 +464,7 @@
   border-color: color-mix(in srgb, var(--dsh-accent-line) 48%, var(--dsh-border-color));
   border-radius: var(--dsh-radius-md);
   background: var(--dsh-surface-soft);
-  transition: border-color var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard);
+  transition: border-color var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard);
   animation: dsh-surface-enter var(--dsh-motion-duration-standard) var(--dsh-motion-ease-standard) backwards;
 }
 

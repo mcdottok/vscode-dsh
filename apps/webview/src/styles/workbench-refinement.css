@@ -122,7 +122,8 @@
   height: 24px;
 }
 .dsh-runtime-connection__emblem[data-loading='true'] .dsh-icon {
-  animation: dsh-spin var(--dsh-motion-duration-loop-shimmer) linear infinite;
+  animation: dsh-spin var(--dsh-motion-duration-loop-shimmer) linear
+    var(--dsh-motion-loop-iterations, infinite);
 }
 .dsh-runtime-connection__subtitle {
   color: var(--dsh-muted);

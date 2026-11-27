@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react'
+import { useMotionScale } from '../../app/motion.js'
 
 const DEFAULT_FRAME_MS = 1000 / 60
 const MAX_REVEAL_MS = 36
@@ -18,6 +19,7 @@ export function useStreamingReveal(
   markdown: string,
   enabled: boolean,
 ): { readonly text: string; readonly refreshHz: number | undefined } {
+  const motion = useMotionScale()
   const [revealed, setRevealed] = useState(markdown)
   const [refreshHz, setRefreshHz] = useState<number>()
   const playback = useRef<RevealPlayback>({
@@ -32,7 +34,6 @@ export function useStreamingReveal(
     const state = playback.current
     const previousTarget = state.target
     state.target = markdown
-    const motion = enabled ? window.matchMedia?.('(prefers-reduced-motion: reduce)') : undefined
     let frame: number | undefined
 
     const finish = (): void => {
@@ -42,7 +43,7 @@ export function useStreamingReveal(
       state.text = markdown
       setRevealed(markdown)
     }
-    const canAnimate = (): boolean => document.visibilityState !== 'hidden' && motion?.matches !== true
+    const canAnimate = (): boolean => document.visibilityState !== 'hidden' && motion > 0
 
     if (!enabled || typeof window.requestAnimationFrame !== 'function' || !canAnimate()) {
       state.arrivedAt = undefined
@@ -69,7 +70,8 @@ export function useStreamingReveal(
 
     // Keep an existing deadline when several packets arrive during the same reveal.
     // The next frame catches up if the renderer was busy or the window was throttled.
-    const deadline = (state.deadline ??= now + Math.min(MAX_REVEAL_MS, Math.max(12, arrivalGap)))
+    const duration = Math.min(72, Math.min(MAX_REVEAL_MS, Math.max(12, arrivalGap)) * motion)
+    const deadline = (state.deadline ??= now + duration)
     let shown = 0
     let revealSteps = 0
     let previousFrame: number | undefined
@@ -118,17 +120,15 @@ export function useStreamingReveal(
       if (!canAnimate()) finish()
     }
     document.addEventListener('visibilitychange', onMotionChange)
-    motion?.addEventListener('change', onMotionChange)
     frame = window.requestAnimationFrame(tick)
     return () => {
       if (frame !== undefined) window.cancelAnimationFrame(frame)
       document.removeEventListener('visibilitychange', onMotionChange)
-      motion?.removeEventListener('change', onMotionChange)
     }
-  }, [enabled, markdown])
+  }, [enabled, markdown, motion])
 
   return {
-    text: enabled && revealed !== '' && markdown.startsWith(revealed) ? revealed : markdown,
-    refreshHz: enabled ? refreshHz : undefined,
+    text: enabled && motion > 0 && revealed !== '' && markdown.startsWith(revealed) ? revealed : markdown,
+    refreshHz: enabled && motion > 0 ? refreshHz : undefined,
   }
 }

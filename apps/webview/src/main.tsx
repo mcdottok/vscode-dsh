@@ -18,10 +18,12 @@ import { App } from './App.js'
 import { readThemePreference } from './app/ui-preferences.js'
 import { I18nProvider } from './i18n.js'
 import { ConversationLayoutProvider } from './app/ConversationLayoutProvider.js'
+import { initializeMotion } from './app/motion.js'
 
 // Set the theme before React paints so a persisted light preference does not
 // flash the host's dark palette during Webview startup.
 document.documentElement.dataset.dshTheme = readThemePreference()
+initializeMotion()
 
 const rootElement = document.getElementById('root')
 if (rootElement === null) throw new Error('Missing #root element')

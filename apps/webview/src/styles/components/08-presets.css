@@ -9,7 +9,7 @@
   border-radius: var(--dsh-radius-md);
   background: var(--dsh-surface-raised);
   text-align: start;
-  transition: border-color var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard);
+  transition: border-color var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard);
 }
 
 .dsh-preset-card:hover,

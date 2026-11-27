@@ -159,7 +159,7 @@
   padding: 2px;
   border-radius: var(--dsh-radius-md);
   background: var(--dsh-input-bg);
-  transition: background-color var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard);
+  transition: background-color var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard);
 }
 
 .dsh-unified-composer .dsh-composer__quick-attach,
@@ -216,11 +216,13 @@
   border-radius: 50%;
   content: '';
   pointer-events: none;
-  animation: dsh-spin var(--dsh-motion-duration-loop-shimmer) linear infinite;
+  animation: dsh-spin var(--dsh-motion-duration-loop-shimmer) linear
+    var(--dsh-motion-loop-iterations, infinite);
 }
 
 .dsh-composer__quick-tools button[aria-busy='true'] > .dsh-icon {
-  animation: dsh-spin var(--dsh-motion-duration-loop-shimmer) linear infinite;
+  animation: dsh-spin var(--dsh-motion-duration-loop-shimmer) linear
+    var(--dsh-motion-loop-iterations, infinite);
 }
 
 .dsh-unified-composer .dsh-composer__textarea:focus-visible {
@@ -358,8 +360,8 @@
   padding: var(--dsh-space-2);
   border-radius: var(--dsh-radius-md);
   transition:
-    background-color var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard),
-    color var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard),
+    background-color var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard),
+    color var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard),
     transform var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard);
 }
 

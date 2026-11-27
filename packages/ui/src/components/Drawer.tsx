@@ -8,9 +8,7 @@ export interface DrawerProps extends PropsWithChildren {
   readonly onClose: () => void
 }
 
-// The fallback is intentionally a little longer than the slow entrance token:
-// it is an unload safety net, not an animation duration. It protects the DOM
-// when a browser does not dispatch animationend for an interrupted exit.
+// A fallback for environments without the Web Animations inspection API.
 const CLOSE_FALLBACK_MS = 360
 
 type DrawerPhase = 'closed' | 'open' | 'closing'
@@ -42,6 +40,22 @@ export function Drawer(props: DrawerProps): ReactElement | null {
 
   useEffect(() => {
     if (!closing) return
+    const animations = dialogRef.current?.getAnimations?.()
+    if (animations !== undefined) {
+      if (animations.length === 0) {
+        finishClose()
+        return
+      }
+      let observing = true
+      // Animation.finished tracks a running CSS exit even if its timing
+      // changes. Cancellation also completes the non-interactive exit.
+      void Promise.allSettled(animations.map((animation) => animation.finished)).then(() => {
+        if (observing) finishClose()
+      })
+      return () => {
+        observing = false
+      }
+    }
     fallbackTimerRef.current = window.setTimeout(finishClose, CLOSE_FALLBACK_MS)
     return () => {
       if (fallbackTimerRef.current !== undefined) window.clearTimeout(fallbackTimerRef.current)
@@ -78,6 +92,7 @@ export function Drawer(props: DrawerProps): ReactElement | null {
         aria-modal="true"
         aria-labelledby="dsh-drawer-title"
         aria-hidden={closing || undefined}
+        inert={closing || undefined}
         tabIndex={-1}
         onAnimationEnd={(event) => {
           if (closing && event.target === dialogRef.current) finishClose()

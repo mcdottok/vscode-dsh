@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import type { Translate } from '../../i18n.js'
+import { motionScale, subscribeToMotion } from '../../app/motion.js'
 import whaleMotions from './whale-motions.json'
 
 const { stem, poses, clips } = whaleMotions
@@ -28,11 +29,12 @@ function WhaleTail(): ReactElement {
     const path = pathRef.current
     if (typeof path?.animate !== 'function' || !window.CSS?.supports('d', restPath)) return
 
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
     let animation: Animation | undefined
     let previousIndex = -1
 
     const playNext = (): void => {
+      const scale = motionScale()
+      if (scale === 0 || document.visibilityState === 'hidden') return
       const count = whaleClips.length
       const index =
         previousIndex === -1
@@ -43,9 +45,12 @@ function WhaleTail(): ReactElement {
 
       previousIndex = index
       const playing = path.animate(clip.frames, clip.duration)
+      playing.playbackRate = 1 / scale
       animation = playing
       playing.onfinish = () => {
-        if (animation === playing) playNext()
+        if (animation !== playing) return
+        animation = undefined
+        playNext()
       }
     }
     const stop = (): void => {
@@ -54,13 +59,16 @@ function WhaleTail(): ReactElement {
       playing?.cancel()
     }
     const syncMotion = (): void => {
-      stop()
-      if (!reducedMotion.matches) playNext()
+      const scale = motionScale()
+      if (scale === 0 || document.visibilityState === 'hidden') stop()
+      else if (animation === undefined) playNext()
     }
-    reducedMotion.addEventListener('change', syncMotion)
+    const unsubscribe = subscribeToMotion(syncMotion)
+    document.addEventListener('visibilitychange', syncMotion)
     syncMotion()
     return () => {
-      reducedMotion.removeEventListener('change', syncMotion)
+      unsubscribe()
+      document.removeEventListener('visibilitychange', syncMotion)
       stop()
     }
   }, [])

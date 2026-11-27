@@ -31,7 +31,7 @@
   );
   background-size: 200% 100%;
   animation: dsh-retry-shimmer var(--dsh-motion-duration-loop-shimmer) var(--dsh-motion-ease-standard)
-    infinite;
+    var(--dsh-motion-loop-iterations, infinite);
 }
 
 .dsh-todo-list__toggle {

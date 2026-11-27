@@ -105,7 +105,7 @@ html[data-dsh-theme='dark']:has(body:is(.vscode-dark, .vscode-high-contrast)) .d
   pointer-events: none;
   visibility: hidden;
   opacity: 0;
-  transition: opacity 120ms ease;
+  transition: opacity var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard);
 }
 
 .dsh-settings__feedback-anchor:is(:hover, :focus-within) .dsh-settings__feedback-tip {
@@ -156,8 +156,8 @@ html[data-dsh-theme='dark']:has(body:is(.vscode-dark, .vscode-high-contrast)) .d
   font-size: var(--dsh-font-size-sm);
   font-weight: 400;
   transition:
-    background-color 120ms ease,
-    color 120ms ease;
+    background-color var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard),
+    color var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard);
 }
 
 .dsh-app .dsh-settings .dsh-settings__tab:hover {
@@ -357,8 +357,8 @@ html[data-dsh-theme='dark']:has(body:is(.vscode-dark, .vscode-high-contrast)) .d
   border-radius: 10px;
   background: var(--stg-card);
   transition:
-    border-color 120ms ease,
-    background-color 120ms ease;
+    border-color var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard),
+    background-color var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard);
 }
 
 #dsh-settings-panel-models .dsh-settings__provider:hover {
@@ -652,9 +652,9 @@ html[data-dsh-theme='dark']:has(body:is(.vscode-dark, .vscode-high-contrast)) .d
   font-size: var(--dsh-font-size-xs);
   font-weight: 400;
   transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    color 120ms ease;
+    background-color var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard),
+    border-color var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard),
+    color var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard);
 }
 
 #dsh-settings-panel-models .dsh-settings__provider-add:hover:not(:disabled) {
@@ -739,7 +739,7 @@ html[data-dsh-theme='dark']:has(body:is(.vscode-dark, .vscode-high-contrast)) .d
   border: 1px solid var(--stg-line);
   border-radius: 10px;
   background: var(--stg-card);
-  transition: border-color 120ms ease;
+  transition: border-color var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard);
 }
 
 #dsh-settings-panel-presets .dsh-preset-card:hover,
@@ -1026,7 +1026,7 @@ html[data-dsh-theme='dark']:has(body:is(.vscode-dark, .vscode-high-contrast)) .d
   padding: 0;
   border-radius: 4px;
   text-align: start;
-  transition: background-color 120ms ease;
+  transition: background-color var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard);
 }
 
 /* A section header is a 44px row, so its label sits as far from the rule above
@@ -1192,7 +1192,7 @@ html[data-dsh-theme='dark']:has(body:is(.vscode-dark, .vscode-high-contrast)) .d
   border: 1px solid var(--stg-line-soft);
   border-radius: 7px;
   background: transparent;
-  transition: border-color 120ms ease;
+  transition: border-color var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard);
 }
 
 #dsh-settings-panel-plugins .dsh-plugin-inventory__card:hover {

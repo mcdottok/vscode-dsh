@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Drawer } from './Drawer.js'
 
@@ -21,7 +21,9 @@ describe('Drawer', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
 
     view.rerender(<Drawer title="Settings" open={false} onClose={onClose} />)
-    expect(screen.getByRole('dialog').parentElement?.getAttribute('data-state')).toBe('closing')
+    expect(screen.getByRole('dialog', { hidden: true }).parentElement?.getAttribute('data-state')).toBe(
+      'closing',
+    )
   })
 
   it('keeps the surface mounted while an exit animation is finishing', () => {
@@ -42,10 +44,11 @@ describe('Drawer', () => {
       </Drawer>,
     )
 
-    expect(screen.getByRole('dialog').getAttribute('aria-hidden')).toBe('true')
-    expect(screen.getByRole('dialog').parentElement?.getAttribute('data-state')).toBe('closing')
-    fireEvent.animationEnd(screen.getByRole('dialog'))
-    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(dialog.getAttribute('aria-hidden')).toBe('true')
+    expect(dialog.hasAttribute('inert')).toBe(true)
+    expect(dialog.parentElement?.getAttribute('data-state')).toBe('closing')
+    fireEvent.animationEnd(dialog)
+    expect(screen.queryByRole('dialog', { hidden: true })).toBeNull()
   })
 
   it('uses the unload fallback when the browser omits animationend', () => {
@@ -54,10 +57,32 @@ describe('Drawer', () => {
     const view = render(<Drawer title="Settings" open onClose={onClose} />)
 
     view.rerender(<Drawer title="Settings" open={false} onClose={onClose} />)
-    expect(screen.getByRole('dialog')).toBeDefined()
+    expect(screen.getByRole('dialog', { hidden: true })).toBeDefined()
 
-    vi.advanceTimersByTime(361)
-    expect(screen.queryByRole('dialog')).toBeNull()
+    act(() => {
+      vi.advanceTimersByTime(361)
+    })
+    expect(screen.queryByRole('dialog', { hidden: true })).toBeNull()
+  })
+
+  it('uses the actual exit instead of cutting off a longer motion setting', async () => {
+    vi.useFakeTimers()
+    const onClose = vi.fn()
+    const view = render(<Drawer title="Settings" open onClose={onClose} />)
+    const dialog = screen.getByRole('dialog')
+    let finish: () => void = () => undefined
+    const finished = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    Object.defineProperty(dialog, 'getAnimations', { value: () => [{ finished }] })
+
+    view.rerender(<Drawer title="Settings" open={false} onClose={onClose} />)
+    act(() => {
+      vi.advanceTimersByTime(500)
+    })
+    expect(dialog.isConnected).toBe(true)
+    await act(async () => finish())
+    expect(dialog.isConnected).toBe(false)
   })
 
   it('restores focus when closing starts and ignores backdrop input during exit', () => {

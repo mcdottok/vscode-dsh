@@ -1,4 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { motionScale } from '../../app/motion.js'
 
 const DEFAULT_BOTTOM_THRESHOLD = 64
 const WHEEL_TAIL_DISTANCE = 32
@@ -329,7 +330,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       !smoothTailGrowth ||
       document.visibilityState === 'hidden' ||
       typeof window.requestAnimationFrame !== 'function' ||
-      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
+      motionScale() === 0
     ) {
       scrollToLatest()
       return
@@ -363,7 +364,12 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
         cancelTailMotion()
         return
       }
-      const elapsed = Math.min(32, Math.max(0, timestamp - previousFrame))
+      const scale = motionScale()
+      if (scale === 0) {
+        scrollToLatest()
+        return
+      }
+      const elapsed = Math.min(32, Math.max(0, timestamp - previousFrame)) / scale
       previousFrame = timestamp
       const remaining = follow.target - follow.position
       // A critically damped spring starts gently and keeps its velocity

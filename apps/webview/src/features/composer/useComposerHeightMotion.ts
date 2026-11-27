@@ -1,4 +1,5 @@
 import { useLayoutEffect, type RefObject } from 'react'
+import { motionScale, subscribeToMotion } from '../../app/motion.js'
 
 const POPUP =
   '.dsh-select-menu--open, .dsh-model-picker__menu, .dsh-composer__extras-panel, .dsh-composer__context-preview-dialog'
@@ -8,7 +9,6 @@ export function useComposerHeightMotion(ref: RefObject<HTMLFormElement | null>):
   useLayoutEffect(() => {
     const form = ref.current
     if (form === null || typeof form.animate !== 'function' || typeof ResizeObserver === 'undefined') return
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
     const originalHeight = form.style.height
     let animation: Animation | undefined
     let previousHeight: number | undefined
@@ -51,7 +51,8 @@ export function useComposerHeightMotion(ref: RefObject<HTMLFormElement | null>):
       previousHeight = naturalHeight
       const insetAdjustment = style.boxSizing === 'border-box' ? 0 : insets
       const targetHeight = `${Math.max(0, naturalHeight - insetAdjustment)}px`
-      if (from === undefined || widthChanged || reduceMotion.matches || form.querySelector(POPUP) !== null) {
+      const scale = motionScale()
+      if (from === undefined || widthChanged || scale === 0 || form.querySelector(POPUP) !== null) {
         cancel()
         form.style.height = targetHeight
         return
@@ -62,7 +63,7 @@ export function useComposerHeightMotion(ref: RefObject<HTMLFormElement | null>):
         form.style.height = targetHeight
         return
       }
-      const durationToken = style.getPropertyValue('--dsh-motion-duration-standard').trim()
+      const durationToken = style.getPropertyValue('--dsh-motion-base-standard').trim()
       const duration = px(durationToken) * (durationToken.endsWith('ms') ? 1 : 1000)
       const easing = style.getPropertyValue('--dsh-motion-ease-standard').trim() || 'ease-out'
       if (duration <= 0) {
@@ -79,6 +80,7 @@ export function useComposerHeightMotion(ref: RefObject<HTMLFormElement | null>):
           easing,
         },
       )
+      next.playbackRate = 1 / scale
       animation = next
       form.style.height = targetHeight
       void next.finished.then(
@@ -116,13 +118,15 @@ export function useComposerHeightMotion(ref: RefObject<HTMLFormElement | null>):
     }
     form.addEventListener('pointerdown', cancel, true)
     form.addEventListener('keydown', onKeyDown, true)
-    reduceMotion.addEventListener('change', cancel)
+    const unsubscribe = subscribeToMotion(() => {
+      if (motionScale() === 0) cancel()
+    })
     return () => {
       resize.disconnect()
       mutations.disconnect()
       form.removeEventListener('pointerdown', cancel, true)
       form.removeEventListener('keydown', onKeyDown, true)
-      reduceMotion.removeEventListener('change', cancel)
+      unsubscribe()
       cancel()
       form.style.height = originalHeight
     }

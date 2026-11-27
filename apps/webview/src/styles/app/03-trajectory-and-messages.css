@@ -340,7 +340,7 @@
 }
 
 .dsh-timeline__row--enter > * {
-  animation: dsh-rise-in var(--dsh-motion-duration-standard) var(--dsh-motion-ease-enter) backwards;
+  animation: dsh-rise-in var(--dsh-motion-duration-message) var(--dsh-motion-ease-enter) backwards;
 }
 
 .dsh-timeline__message-stack {

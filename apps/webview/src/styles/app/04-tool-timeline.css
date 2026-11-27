@@ -657,7 +657,7 @@ button.dsh-timeline__presented-file-reveal:hover {
 }
 
 .dsh-timeline__tool-group[open] > .dsh-timeline__tool-group-list {
-  animation: dsh-surface-enter var(--dsh-motion-duration-standard) var(--dsh-motion-ease-standard) backwards;
+  animation: dsh-overlay-fade-in var(--dsh-motion-duration-disclosure) var(--dsh-motion-ease-enter) backwards;
 }
 
 .dsh-timeline__tool-group-disclosure {
@@ -735,8 +735,8 @@ button.dsh-timeline__presented-file-reveal:hover {
   background: transparent;
   cursor: pointer;
   transition:
-    color var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard),
-    background var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard);
+    color var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard),
+    background var(--dsh-motion-duration-feedback) var(--dsh-motion-ease-standard);
 }
 
 .dsh-timeline__produced-page .dsh-icon {

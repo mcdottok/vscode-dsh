@@ -62,7 +62,7 @@ function harness(reduced = false): MotionHarness {
             border: '1px solid',
             rowGap: '4px',
             boxSizing: 'border-box',
-            '--dsh-motion-duration-standard': '180ms',
+            '--dsh-motion-base-standard': '180ms',
             '--dsh-motion-ease-standard': 'ease-out',
           } as CSSProperties
         }

@@ -82,7 +82,9 @@
 
 ## 动效
 
-动效只反馈状态、层级和操作结果，不用于装饰；TSX 只切换 class 或 `data-*`，不注入 `<style>` 或动画 `style`，不新增动画运行时。持续时间、缓动、缩放、共享 keyframes 和 Reduced Motion 降级都由 `packages/ui/src/styles.css` 拥有。小控件使用 fast、轻量披露和提示使用 standard、大表面使用 slow；退场比入场短一档。循环 token 只用于当前等待或进行中状态，完成和历史项保持静态。
+动效反馈状态、层级和操作结果。Webview 固定使用舒缓节奏。`app/motion.ts` 为 CSS 和 JavaScript 应用同一个舒缓倍率，界面使用一致的缓动曲线。
+
+`packages/ui/src/styles.css` 定义基础时长、缓动、位移和共享 keyframes。界面样式消费 `--dsh-motion-duration-*` 的生效时长。逐帧和 Web Animations 执行路径读取 `motionScale`，并响应系统动效偏好。自动滚动按浏览器绘制时钟推进。小控件使用 fast、轻量披露使用 disclosure、大表面使用 slow，退场比入场短一档。循环动效限于等待和进行中，完成和历史项保持静态。
 
 轻量常驻内容可用 `dsh-disclosure` 的 grid 行过渡；其折叠区必须同步不可聚焦。工具详情、diff 和代码块等重量内容继续条件挂载。只动画 `transform`、`opacity`、`background-position`、`color` 和 `border-color`；小披露的 `grid-template-rows` 是唯一已评审的结构性例外。虚拟化行的定位 transform 不得被入场类覆盖，首屏、会话切换和历史回填不做逐行动画。
 
@@ -90,7 +92,7 @@
 
 切换会话时，正文淡入使用 `backwards`。淡入结束后释放由动画创建的层叠上下文。
 
-`prefers-reduced-motion: reduce` 关闭平滑滚动、把过渡缩短到可忽略时间并停止循环；JavaScript 的滚动行为在 `useScrollFollow` 同步降级。Esc、点击外部、焦点陷阱、焦点恢复与 `aria-live` 不等待动画。Drawer 退场时立刻停止交互并标记隐藏，视觉收尾不延迟语义关闭。
+`prefers-reduced-motion: reduce` 优先关闭空间动效、平滑滚动、流式文字渐显和循环动画，保留按钮的非空间反馈。Esc、点击外部、焦点陷阱、焦点恢复与 `aria-live` 立即生效。Drawer 退场时立刻停止交互并标记隐藏。用户接管滚动、缩放时对齐尾部、恢复阅读锚点和安装历史页均由交互规则决定。
 
 ## 表面与交接
 

@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, type RefObject } from 'react'
+import { useMotionScale } from '../../app/motion.js'
 
 // Each visible batch eases out on its own clock, even when the next batch arrives.
 const FADE_DURATION_MS = 500
@@ -25,6 +26,7 @@ export function useStreamingTextFade(
   streaming: boolean,
   enabled: boolean,
 ): void {
+  const motion = useMotionScale()
   const previous = useRef<{ text: string; batches: readonly FadeBatch[] } | undefined>(undefined)
 
   useLayoutEffect(() => {
@@ -33,10 +35,10 @@ export function useStreamingTextFade(
     const registry = globalThis.CSS?.highlights
     if (
       !enabled ||
+      motion === 0 ||
       registry === undefined ||
       typeof Highlight !== 'function' ||
-      window.matchMedia?.('(prefers-reduced-motion: no-preference) and (forced-colors: none)').matches ===
-        false
+      window.matchMedia?.('(forced-colors: active)').matches === true
     ) {
       previous.current = undefined
       return
@@ -57,7 +59,9 @@ export function useStreamingTextFade(
     const prior = previous.current
     const now = performance.now()
     const append = prior !== undefined && text.startsWith(prior.text)
-    const batches = append ? prior.batches.filter(({ arrivedAt }) => now - arrivedAt < FADE_DURATION_MS) : []
+    const batches = append
+      ? prior.batches.filter(({ arrivedAt }) => now - arrivedAt < FADE_DURATION_MS * motion)
+      : []
     let start = append ? prior.text.length : text.length
     if (streaming && prior === undefined) {
       // A reply can mount with its first packet already present. Bound the
@@ -94,7 +98,7 @@ export function useStreamingTextFade(
     let frame: number | undefined
     const paint = (timestamp: number): void => {
       for (const { range, arrivedAt } of ranges) {
-        const stage = FADE_STAGES.find(({ until }) => timestamp - arrivedAt < until)
+        const stage = FADE_STAGES.find(({ until }) => timestamp - arrivedAt < until * motion)
         let highlight = stage === undefined ? undefined : registry.get(stage.name)
         if (stage !== undefined && highlight === undefined) {
           highlight = new Highlight()
@@ -116,5 +120,5 @@ export function useStreamingTextFade(
       if (frame !== undefined) window.cancelAnimationFrame(frame)
       for (const [range, highlight] of active) highlight.delete(range)
     }
-  }, [contentRef, renderedTail, streaming, enabled])
+  }, [contentRef, renderedTail, streaming, enabled, motion])
 }

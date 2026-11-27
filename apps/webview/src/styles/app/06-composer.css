@@ -616,7 +616,8 @@ occupancy so the overflow is visible without opening the details. */
 }
 
 .dsh-runtime-connection__spinner {
-  animation: dsh-spin var(--dsh-motion-duration-loop-shimmer) linear infinite;
+  animation: dsh-spin var(--dsh-motion-duration-loop-shimmer) linear
+    var(--dsh-motion-loop-iterations, infinite);
 }
 
 .dsh-runtime-connection__arc {
@@ -625,7 +626,8 @@ occupancy so the overflow is visible without opening the details. */
   stroke-width: 3;
   stroke-linecap: round;
   stroke-dasharray: 90, 126;
-  animation: dsh-progress-arc var(--dsh-motion-duration-loop-shimmer) var(--dsh-motion-ease-standard) infinite;
+  animation: dsh-progress-arc var(--dsh-motion-duration-loop-shimmer) var(--dsh-motion-ease-standard)
+    var(--dsh-motion-loop-iterations, infinite);
 }
 
 .dsh-runtime-connection__result {
@@ -856,5 +858,6 @@ occupancy so the overflow is visible without opening the details. */
 .dsh-composer__sending circle {
   stroke-dasharray: 42 15;
   transform-origin: center;
-  animation: dsh-spin var(--dsh-motion-duration-loop-shimmer) linear infinite;
+  animation: dsh-spin var(--dsh-motion-duration-loop-shimmer) linear
+    var(--dsh-motion-loop-iterations, infinite);
 }
