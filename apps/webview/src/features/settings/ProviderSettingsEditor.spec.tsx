@@ -84,7 +84,7 @@ describe('ProviderSettingsEditor write-time validation', () => {
         <ProviderSettingsEditor
           provider={provider}
           settings={snapshot([{ id: 'model-a' }])}
-          credentialHint
+          addingFromCatalog
           writable
           saving={false}
           onSave={vi.fn().mockResolvedValue(undefined)}
@@ -96,9 +96,13 @@ describe('ProviderSettingsEditor write-time validation', () => {
 
     expect(
       screen.getByText(
-        'Add a catalog provider: DSH resolves its address and protocol by default, so both may stay empty. After applying, click Configure on the provider row to enter the API key, or use environment variables.',
+        'After clicking Add, click Configure on the provider row above to enter the API key.',
+        {
+          selector: 'strong',
+        },
       ),
     ).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Add' })).toBeDefined()
     expect(screen.getByPlaceholderText('https://api.deepseek.com')).toBeDefined()
   })
 
@@ -125,7 +129,7 @@ describe('ProviderSettingsEditor write-time validation', () => {
         <ProviderSettingsEditor
           provider={catalogProvider}
           settings={snapshot([], 'llm-pi-ai')}
-          credentialHint
+          addingFromCatalog
           writable
           saving={false}
           onSave={vi.fn().mockResolvedValue(undefined)}

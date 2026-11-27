@@ -12,7 +12,7 @@
 
 ## 绝对禁止
 
-- Webview 直接 fetch DSH，或接收 endpoint、PID、Cookie、API key、Secret、绝对路径及原始诊断正文。
+- Webview 直接 fetch DSH，或从 Host 接收 endpoint、PID、Cookie、API key、Secret、绝对路径及原始诊断正文。
 - Domain 引入 VS Code、React、HTTP、子进程或平台 API；DSH Adapter 调用 `vscode.*`；上游 wire 类型向 Application/Webview 泄漏。
 - 解析 TUI/ANSI，或从模型文本猜测工具、审批、Goal、Job、Workflow 等状态。
 - `auto` 发现完成前启动 DSH；停止、重启、kill 或接管外部 DSH；仅凭 PID 推断进程所有权。
@@ -27,7 +27,7 @@
 
 移除一个 `unimplemented` 调用，必须同时覆盖原 TODO 的每项行为、适用的成功/业务错误/协议错误/超时/取消/畸形响应/资源释放测试，更新矩阵状态与证据，执行 `pnpm check && pnpm build`。涉及真实 DSH 的核心能力还需记录目标版本、平台、步骤和结果；缺少现场证据时维持 `PARTIAL`，不能标 `DONE`。
 
-Secret 只经 VS Code 密码输入或 SecretStorage 由 Extension Host 处理；Webview 只显示 configured/missing。日志采用 allowlist，prompt、body、response、工具输入输出、key、token、authorization、secret 和 password 默认脱敏。附件、导出和文件选择通过用户操作及 Host 的 VS Code API 完成。
+Secret 由 Extension Host 处理。桌面连接地址和自定义服务商新建表单可通过遮挡输入框向 Host 单向提交用户刚填写的值；其他凭据使用 VS Code 原生密码框。表单关闭后清理输入，Host 不向 Webview 回传已存凭据，界面只显示配置状态。日志采用 allowlist，prompt、body、response、工具输入输出、key、token、authorization、secret 和 password 默认脱敏。附件、导出和文件选择通过用户操作及 Host 的 VS Code API 完成。
 
 用户协作偏好：默认只快速修改代码，由用户自行编译；除非用户明确要求，不主动执行编译、打包或安装。Superpowers 技能仅在用户明确要求时使用，不自动或间接调用。
 

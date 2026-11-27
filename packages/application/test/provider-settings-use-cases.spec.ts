@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
+import { AppError } from '@dsh-vscode/domain'
 import type {
   CustomProviderDraft,
   DshBackend,
   ModelProvider,
   SettingsPathOperation,
+  SettingsRepository,
 } from '@dsh-vscode/domain'
 import { BackendService } from '../src/services/backend-service.js'
 import { ProviderSettingsUseCases } from '../src/use-cases/provider-settings-use-cases.js'
@@ -46,7 +48,7 @@ type SettingsMutate = (
 type SetReference = (ref: string, value: string, signal?: AbortSignal) => Promise<void>
 
 function providerUseCasesFor(
-  settings: { readonly mutate: SettingsMutate },
+  settings: { readonly mutate: SettingsMutate; readonly readSnapshot?: SettingsRepository['readSnapshot'] },
   credentials: { readonly setReference: SetReference },
   providers: readonly ModelProvider[] = [templateProvider],
 ): ProviderSettingsUseCases {
@@ -175,6 +177,47 @@ describe('ProviderSettingsUseCases', () => {
     })
     expect(mutate).toHaveBeenCalledOnce()
     expect(setReference).toHaveBeenCalledOnce()
+  })
+
+  it('rechecks a lost write and completes the credential without writing the profile again', async () => {
+    const failure = new AppError({ code: 'BACKEND_UNREACHABLE', message: 'Timed out.', retryable: true })
+    const mutate = vi.fn<SettingsMutate>().mockRejectedValue(failure)
+    const setReference = vi.fn<SetReference>().mockResolvedValue(undefined)
+    const readSnapshot = vi
+      .fn<SettingsRepository['readSnapshot']>()
+      .mockRejectedValueOnce(failure)
+      .mockResolvedValue({
+        schema: {
+          version: 'rc6-settings-v2',
+          hasDocument: true,
+          writable: true,
+          fields: [],
+          namespaces: [{ ns: 'llm-pi-ai', revision: 8, applies: 'live', userFields: [], secrets: [] }],
+        },
+        values: {
+          'llm-pi-ai': {
+            providers: {
+              gateway: {
+                displayName: draft.displayName,
+                apiKeyEnv: 'GATEWAY_API_KEY',
+                baseURL: draft.baseUrl,
+                api: draft.api,
+                models: draft.models,
+              },
+            },
+          },
+        },
+      })
+    const useCases = providerUseCasesFor({ mutate, readSnapshot }, { setReference })
+    await expect(useCases.createCustomProvider(draft, 'fixture-key')).rejects.toMatchObject({
+      context: { customProviderWriteUnconfirmed: true },
+    })
+    await expect(useCases.createCustomProvider(draft, 'fixture-key', undefined, true)).resolves.toEqual({
+      profileCommitted: true,
+      credentialConfigured: true,
+    })
+    expect(mutate).toHaveBeenCalledOnce()
+    expect(setReference).toHaveBeenCalledExactlyOnceWith('GATEWAY_API_KEY', 'fixture-key', undefined)
   })
 
   it('rejects collisions, unsupported protocols, and an unadvertised settings collection', async () => {

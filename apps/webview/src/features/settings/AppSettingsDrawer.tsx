@@ -140,7 +140,7 @@ export function AppSettingsDrawer({
       onUpdateDshSetting={updateDshSettingFromDrawer}
       onUnsetDshSetting={unsetDshSettingFromDrawer}
       onMutateDshSettings={mutateDshSettingsFromDrawer}
-      onCreateCustomProvider={(draft) => store.createCustomProvider(draft)}
+      onCreateCustomProvider={(draft, draftId, apiKey) => store.createCustomProvider(draft, draftId, apiKey)}
       onDiscoverModels={(input) => store.discoverModels(input)}
       onDiscoverCustomModels={(input) => store.discoverCustomProviderModels(input)}
       onConfigureSecret={(providerId, field) => store.configureProviderSecret(providerId, field)}

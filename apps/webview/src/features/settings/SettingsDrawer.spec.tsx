@@ -1491,7 +1491,7 @@ describe('SettingsDrawer', () => {
     expect(rows[1]?.textContent).toContain('DeepSeek')
   })
 
-  it('restores separate catalog-provider and custom-provider add actions', async () => {
+  it('switches between catalog and custom forms in the shared add panel', async () => {
     const wholeSection: ModelProvider = {
       ...baseProvider,
       id: 'deepseek-official',
@@ -1536,21 +1536,51 @@ describe('SettingsDrawer', () => {
     })
 
     fireEvent.click(screen.getByRole('tab', { name: 'Models' }))
-    const addProvider = await screen.findByRole('button', { name: 'Add provider' })
-    expect((addProvider as HTMLButtonElement).disabled).toBe(false)
-    const addCustomProvider = screen.getByRole<HTMLButtonElement>('button', {
-      name: 'Add custom provider',
-    })
-    expect(addCustomProvider.disabled).toBe(false)
+    const addProvider = await screen.findByRole<HTMLButtonElement>('button', { name: 'Add provider' })
+    expect(addProvider.disabled).toBe(false)
+    expect(screen.queryByRole('tab', { name: 'Custom provider' })).toBeNull()
     fireEvent.click(addProvider)
 
-    const card = screen.getByRole('region', { name: 'Add provider' })
+    const tabs = screen.getByRole('tablist', { name: 'Add provider' })
+    const catalogTab = within(tabs).getByRole('tab', { name: 'Add provider', selected: true })
+    expect(document.activeElement).toBe(catalogTab)
+
+    fireEvent.keyDown(catalogTab, { key: 'ArrowRight' })
+    const customTab = within(tabs).getByRole('tab', { name: 'Custom provider', selected: true })
+    expect(document.activeElement).toBe(customTab)
+    const customCard = screen.getByRole('tabpanel', { name: 'Custom provider' })
+    fireEvent.change(within(customCard).getByRole('textbox', { name: 'Provider ID' }), {
+      target: { value: 'gateway' },
+    })
+
+    const pointer = { pointerId: 1, pointerType: 'touch', isPrimary: true }
+    fireEvent.pointerDown(tabs, { ...pointer, clientX: 60, clientY: 20 })
+    fireEvent.pointerUp(tabs, { ...pointer, clientX: 65, clientY: 120 })
+    expect(customTab.getAttribute('aria-selected')).toBe('true')
+    fireEvent.pointerDown(tabs, { ...pointer, clientX: 60, clientY: 20 })
+    fireEvent.pointerUp(tabs, { ...pointer, clientX: 140, clientY: 22 })
+    expect(catalogTab.getAttribute('aria-selected')).toBe('true')
+    expect(screen.queryByRole('tabpanel', { name: 'Custom provider' })).toBeNull()
+    fireEvent.pointerDown(tabs, { ...pointer, clientX: 140, clientY: 20 })
+    fireEvent.pointerUp(tabs, { ...pointer, clientX: 60, clientY: 22 })
+    expect(customTab.getAttribute('aria-selected')).toBe('true')
+    expect(within(customCard).getByRole('textbox', { name: 'Provider ID' })).toHaveProperty(
+      'value',
+      'gateway',
+    )
+    fireEvent.click(catalogTab)
+    fireEvent.wheel(tabs, { deltaX: 25 })
+    fireEvent.wheel(tabs, { deltaX: 25 })
+    expect(customTab.getAttribute('aria-selected')).toBe('true')
+    fireEvent.click(catalogTab)
+
+    const card = screen.getByRole('tabpanel', { name: 'Add provider' })
     const selector = within(card).getByRole('button', { name: 'Provider: DeepSeek' })
     fireEvent.click(selector)
     expect(within(card).getAllByRole('option')).toHaveLength(3)
     fireEvent.click(within(card).getByRole('option', { name: 'OpenAI' }))
     expect(screen.getByRole('button', { name: 'Provider: OpenAI' })).toBeDefined()
-    fireEvent.click(within(card).getByRole('button', { name: 'Apply' }))
+    fireEvent.click(within(card).getByRole('button', { name: 'Add' }))
     await waitFor(() =>
       expect(onMutateDshSettings).toHaveBeenCalledWith(
         'llm-pi-ai',
@@ -1559,8 +1589,8 @@ describe('SettingsDrawer', () => {
       ),
     )
 
-    fireEvent.click(screen.getByRole('button', { name: 'Add provider' }))
-    const reopenedCard = screen.getByRole('region', { name: 'Add provider' })
+    fireEvent.click(await screen.findByRole('button', { name: 'Add provider' }))
+    const reopenedCard = screen.getByRole('tabpanel', { name: 'Add provider' })
     fireEvent.click(within(reopenedCard).getByRole('button', { name: 'Cancel' }))
     expect(onMutateDshSettings).toHaveBeenCalledTimes(1)
   })
@@ -1739,7 +1769,8 @@ describe('SettingsDrawer', () => {
     })
     await screen.findByRole('group', { name: 'Appearance' })
     fireEvent.click(screen.getByRole('tab', { name: 'Models' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Add custom provider' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add provider' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Custom provider' }))
     const card = screen.getByRole('region', { name: 'Add custom provider' })
     expect(within(card).queryByRole('combobox')).toBeNull()
     const apiMenu = within(card).getByRole('button', { name: 'API protocol: openai-completions' })
@@ -1749,7 +1780,7 @@ describe('SettingsDrawer', () => {
     fireEvent.change(within(card).getByRole('textbox', { name: 'Provider ID' }), {
       target: { value: 'gateway' },
     })
-    fireEvent.change(within(card).getByRole('textbox', { name: 'Provider base URL' }), {
+    fireEvent.change(within(card).getByRole('textbox', { name: 'API URL' }), {
       target: { value: 'http://127.0.0.1:9000/v1' },
     })
     fireEvent.click(within(card).getByRole('button', { name: 'Add model' }))
@@ -1758,22 +1789,25 @@ describe('SettingsDrawer', () => {
     })
     fireEvent.click(within(card).getByRole('button', { name: 'Save provider' }))
     await waitFor(() =>
-      expect(onCreateCustomProvider).toHaveBeenCalledWith({
-        settingsNamespace: 'llm-pi-ai',
-        collectionPath: ['providers'],
-        providerId: 'gateway',
-        api: 'openai-completions',
-        baseUrl: 'http://127.0.0.1:9000/v1',
-        models: [{ id: 'gateway-chat' }],
-        expectedRevision: 7,
-      }),
+      expect(onCreateCustomProvider).toHaveBeenCalledWith(
+        {
+          settingsNamespace: 'llm-pi-ai',
+          collectionPath: ['providers'],
+          providerId: 'gateway',
+          api: 'openai-completions',
+          baseUrl: 'http://127.0.0.1:9000/v1',
+          models: [{ id: 'gateway-chat' }],
+          expectedRevision: 7,
+        },
+        expect.stringMatching(/^[a-f\d-]{36}$/u),
+        '',
+      ),
     )
-    // A committed create closes the editor by itself; the Close button stays
-    // disabled until the save settles, so clicking it here is a race.
+    // A committed create closes the shared panel after the save settles.
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Add custom provider' })).toBeNull())
   })
 
-  it('retries only the credential after a committed custom profile reports a key failure', async () => {
+  it('submits the same draft and key after a committed custom profile reports a key failure', async () => {
     const provider: ModelProvider = {
       ...baseProvider,
       id: 'openai',
@@ -1791,35 +1825,41 @@ describe('SettingsDrawer', () => {
       settingsNs: 'llm-pi-ai',
       settingsPath: ['providers', 'openai'],
     }
-    const onCreateCustomProvider = vi.fn().mockResolvedValue({
-      profileCommitted: true,
-      credentialConfigured: false,
-      credentialError: 'The API key could not be stored. Try again from the provider row.',
-    })
+    const onCreateCustomProvider = vi
+      .fn()
+      .mockResolvedValueOnce({
+        profileCommitted: true,
+        credentialConfigured: false,
+        credentialError: 'The API key could not be stored. Try again from the provider row.',
+      })
+      .mockResolvedValueOnce({ profileCommitted: true, credentialConfigured: true })
     const onConfigureSecret = vi.fn().mockResolvedValue(true)
     renderDrawer({ providers: [provider], onCreateCustomProvider, onConfigureSecret })
     await screen.findByRole('group', { name: 'Appearance' })
     fireEvent.click(screen.getByRole('tab', { name: 'Models' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Add custom provider' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add provider' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Custom provider' }))
     const card = screen.getByRole('region', { name: 'Add custom provider' })
     fireEvent.change(within(card).getByRole('textbox', { name: 'Provider ID' }), {
       target: { value: 'gateway' },
     })
-    fireEvent.change(within(card).getByRole('textbox', { name: 'Provider base URL' }), {
+    fireEvent.change(within(card).getByRole('textbox', { name: 'API URL' }), {
       target: { value: 'http://127.0.0.1:9000/v1' },
     })
+    fireEvent.change(within(card).getByLabelText('API key (optional)'), { target: { value: 'fixture-key' } })
     fireEvent.click(within(card).getByRole('button', { name: 'Add model' }))
     fireEvent.change(within(card).getByRole('textbox', { name: 'Model ID' }), {
       target: { value: 'gateway-chat' },
     })
     fireEvent.click(within(card).getByRole('button', { name: 'Save provider' }))
 
-    await waitFor(() => expect(onCreateCustomProvider).toHaveBeenCalledOnce())
-    expect(within(card).getByRole('button', { name: 'Configure API key again' })).toBeDefined()
-    fireEvent.click(within(card).getByRole('button', { name: 'Configure API key again' }))
-
-    await waitFor(() => expect(onConfigureSecret).toHaveBeenCalledWith('gateway', 'apiKeyEnv'))
+    const retry = await within(card).findByRole('button', { name: 'Retry saving API key' })
     expect(onCreateCustomProvider).toHaveBeenCalledOnce()
+    fireEvent.click(retry)
+
+    await waitFor(() => expect(onCreateCustomProvider).toHaveBeenCalledTimes(2))
+    expect(onCreateCustomProvider.mock.calls[1]).toEqual(onCreateCustomProvider.mock.calls[0])
+    expect(onConfigureSecret).not.toHaveBeenCalled()
     await waitFor(() => expect(screen.queryByRole('region', { name: 'Add custom provider' })).toBeNull())
   })
 
@@ -1849,12 +1889,13 @@ describe('SettingsDrawer', () => {
     renderDrawer({ providers: [provider], onCreateCustomProvider, onRefreshCatalog })
     await screen.findByRole('group', { name: 'Appearance' })
     fireEvent.click(screen.getByRole('tab', { name: 'Models' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Add custom provider' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add provider' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Custom provider' }))
     const card = screen.getByRole('region', { name: 'Add custom provider' })
     fireEvent.change(within(card).getByRole('textbox', { name: 'Provider ID' }), {
       target: { value: 'gateway' },
     })
-    fireEvent.change(within(card).getByRole('textbox', { name: 'Provider base URL' }), {
+    fireEvent.change(within(card).getByRole('textbox', { name: 'API URL' }), {
       target: { value: 'http://127.0.0.1:9000/v1' },
     })
     fireEvent.click(within(card).getByRole('button', { name: 'Add model' }))
@@ -1973,7 +2014,8 @@ describe('SettingsDrawer', () => {
     renderDrawer({ providers: [provider], onOpenChange })
     await screen.findByRole('group', { name: 'Appearance' })
     fireEvent.click(screen.getByRole('tab', { name: 'Models' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Add custom provider' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add provider' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Custom provider' }))
     const card = screen.getByRole('region', { name: 'Add custom provider' })
     fireEvent.change(within(card).getByRole('textbox', { name: 'Provider ID' }), {
       target: { value: 'gateway' },

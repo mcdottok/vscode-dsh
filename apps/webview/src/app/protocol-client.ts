@@ -58,6 +58,7 @@ const SESSION_EXPORT_TIMEOUT_MS = 180_000
 // These requests wait for a native file/password dialog, not just an RPC.
 // Give the user time to choose or cancel while retaining a bounded lifetime.
 const NATIVE_DIALOG_TIMEOUT_MS = 600_000
+const CUSTOM_PROVIDER_TIMEOUT_MS = 60_000
 const PLUGIN_INSTALL_TIMEOUT_MS = 600_000
 
 /** Per-type host budgets; any request not listed keeps the ordinary timeout. */
@@ -67,6 +68,8 @@ const EXTENDED_TIMEOUT_MS: Readonly<Record<string, number>> = {
   'workspace.addFolder': NATIVE_DIALOG_TIMEOUT_MS,
   'attachment.pick': NATIVE_DIALOG_TIMEOUT_MS,
   'provider.secret.configure': NATIVE_DIALOG_TIMEOUT_MS,
+  'provider.custom.create': CUSTOM_PROVIDER_TIMEOUT_MS,
+  'models.discover.custom': CUSTOM_PROVIDER_TIMEOUT_MS,
   'plugin.credential.configure': NATIVE_DIALOG_TIMEOUT_MS,
   'plugin.bundle.install': PLUGIN_INSTALL_TIMEOUT_MS,
   'plugin.bundle.waitForInstall': PLUGIN_INSTALL_TIMEOUT_MS,
@@ -88,7 +91,10 @@ function timeoutMsFor(ordinaryTimeoutMs: number, type: string): number {
 const timeoutError = (requestType: string): Error => {
   const promptRequest = requestType === 'session.sendPrompt' || requestType === 'subagent.send'
   const error = new Error(translate(promptRequest ? 'app.error.promptTimeout' : 'app.error.timeout'))
-  Object.assign(error, { retryable: true })
+  Object.assign(error, {
+    retryable: true,
+    ...(requestType === 'provider.custom.create' ? { code: 'BACKEND_UNREACHABLE' } : {}),
+  })
   publicRequestErrors.add(error)
   return error
 }
@@ -173,6 +179,7 @@ export class ProtocolClient {
         if (
           parsed.type === 'session.sendPrompt' ||
           parsed.type === 'subagent.send' ||
+          parsed.type === 'models.discover.custom' ||
           parsed.type === 'mods.band.read' ||
           parsed.type === 'mods.band.press'
         )

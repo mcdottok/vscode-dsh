@@ -7,6 +7,7 @@ import {
   settingsRevision,
   settingsOperationSchema,
   customProviderModelSchema,
+  customProviderApiKey,
 } from './request-common.js'
 
 export const settingsRequestSchemas = [
@@ -31,12 +32,14 @@ export const settingsRequestSchemas = [
       ...requestBase,
       payload: z
         .object({
+          draftId: z.uuid().optional(),
           settingsNamespace: id,
           collectionPath: z.array(id).min(1).max(32),
           providerId: id,
           displayName: z.string().max(512).optional(),
           api: z.string().min(1).max(128),
           baseUrl: z.string().min(1).max(2048),
+          apiKey: customProviderApiKey,
           models: z.array(customProviderModelSchema).min(1).max(1024),
           expectedRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
         })

@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { budgetFailure } from './protocol-budget.js'
 export const id = z.string().min(1).max(256)
+// Write-only input for custom-provider requests.
+export const customProviderApiKey = z.string().max(8192).optional()
 export const wireVersion = z.literal(1)
 export const requestBase = { requestId: id }
 

@@ -388,6 +388,29 @@
   min-width: 0;
   gap: var(--dsh-space-1);
 }
+.dsh-settings__custom-provider-key {
+  display: grid;
+  gap: var(--dsh-space-1);
+  min-width: 0;
+}
+.dsh-settings__custom-provider-key-input {
+  display: flex;
+  position: relative;
+  align-items: center;
+}
+.dsh-settings__custom-provider-grid .dsh-settings__custom-provider-key-input input {
+  width: 100%;
+  min-width: 0;
+  padding-inline-end: 2.5rem;
+}
+.dsh-settings__custom-provider-key-input .dsh-icon-button {
+  position: absolute;
+  inset-inline-end: 2px;
+  inline-size: calc(var(--dsh-control-height-compact) - 4px);
+  block-size: calc(var(--dsh-control-height-compact) - 4px);
+  min-inline-size: 0;
+  min-block-size: 0;
+}
 .dsh-settings__provider-kind,
 .dsh-settings__field-state {
   min-width: 0;

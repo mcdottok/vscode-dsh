@@ -87,7 +87,7 @@ Job 输出的 `at`/`next` 是 UTF-8 字节偏移，首次数据帧可合法重�
 - DSH 网络目标仅限经规范化校验的 HTTP(S) origin 和合法端口：本机发现默认只接受 `127.0.0.1`/`localhost`，`custom` 模式允许用户显式配置的远程地址；Webview 不直接联网、读文件或启动进程。
 - Extension Host 打包时拒绝 Schemastery 从字符串恢复回调，保留依赖代码定义的函数回调。设置的序列化 schema 仅作为数据读取。
 - Webview CSP 使用 nonce，禁止远程脚本、`unsafe-eval`、内联事件和任意 frame；模型 Markdown 禁止原始 HTML，链接只接受安全 scheme 并由 Host 打开。
-- Secret 经 VS Code 密码输入或 SecretStorage 交给 Extension Host 和本机 DSH；Webview 只见 configured/missing，Secret 不进入日志、状态、fixture 或剪贴板。
+- Secret 由 Extension Host 和相应凭据服务处理。桌面连接地址和自定义服务商新建表单允许用户通过遮挡输入框向 Host 单向提交刚填写的值。自定义 API 密钥仅随手动获取模型和保存请求提交，保存后存于 DSH 凭据服务。Host 不回传已存凭据，界面状态只保留配置状态，密钥不进入日志或持久化 Webview 状态。
 - 日志以字段 allowlist 为准，对 prompt、body、response、工具输入输出、token、authorization、password、secret 和路径做递归脱敏；诊断只发布有界的版本、状态、来源类别、可重连标志及脱敏日志。完整 endpoint、PID、环境变量和堆栈不外传。
 - 子进程直接 spawn 固定 executable 与参数数组，不使用 shell。附件、导出、文件打开和选择经用户操作与 VS Code API，由 Host 校验 Uri、工作区信任、路径穿越、符号链接、Zip Slip 和覆盖意图。
 - Permission、Plugin、安装、重启、删除、导出等副作用须由用户显式触发；未授予 Workspace Trust 时不自动启动高权限 Agent。

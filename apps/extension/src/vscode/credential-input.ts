@@ -19,26 +19,6 @@ export function requestProviderSecret(
   )
 }
 
-/**
- * Collect an optional provider key for a custom route or one-off discovery.
- * The value is consumed only by the Host/DSH call; it is never placed in a
- * Webview request or response. An empty input (and the native input-box
- * cancel result) means that the provider's ambient authentication may be
- * used.
- */
-export async function requestOptionalProviderApiKey(
-  window: typeof vscode.window,
-  provider: string,
-): Promise<string | undefined> {
-  const value = await window.showInputBox({
-    title: `Configure ${provider} API key (optional)`,
-    prompt: 'Leave blank to use provider-native authentication. The key stays in the Extension Host.',
-    password: true,
-    ignoreFocusOut: true,
-  })
-  return normalizeOptionalProviderApiKey(value)
-}
-
 /** Normalize and reject common pasted environment/configuration mistakes. */
 export function normalizeOptionalProviderApiKey(value: string | undefined): string | undefined {
   if (value === undefined) return undefined

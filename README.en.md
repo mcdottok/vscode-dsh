@@ -111,6 +111,10 @@ npm install --global @deepseek-ai/dsh
 3. Run `node --version` in the SSH window's integrated terminal. Install Node.js on the host if needed, then install the DSH CLI using the npm command above. Run `dsh --version` to verify the CLI is available.
 4. In the DSH panel, select **DSH CLI** and choose **Start and connect**. If the extension cannot find the CLI, run `command -v dsh` in the SSH window's terminal. If it returns an executable path, enter it as `dsh.runtime.executablePath` under **Remote [SSH: hostname]** in VS Code Settings. Choose **Recheck DSH** and retry the connection.
 
+### Configure a custom provider
+
+Under **Settings → Models → Add provider → Custom provider**, enter the API key in the form. Fetching models and saving the provider use the same field. Leave it blank if you use an environment variable or provider-native authentication.
+
 ## Development and feedback
 
 - For local development, see the [build instructions](BUILD.md), [contribution guide](CONTRIBUTING.md), and [developer documentation](docs/README.md).

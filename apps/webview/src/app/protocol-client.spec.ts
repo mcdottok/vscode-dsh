@@ -3,6 +3,7 @@ import {
   PROTOCOL_VERSION,
   splitProjectionBaseline,
   type ProtocolEnvelope,
+  type WebviewRequest,
 } from '@dsh-vscode/webview-protocol'
 import { ProtocolClient, publicProtocolErrorMessage } from './protocol-client.js'
 
@@ -334,6 +335,49 @@ describe('ProtocolClient', () => {
         message: { type: 'response', requestId: 'slow-start', ok: true, payload: { connected: true } },
       })
       await connection
+    } finally {
+      client.dispose()
+      vi.useRealTimers()
+    }
+  })
+
+  it('gives custom provider requests time for model discovery or profile and credential writes', async () => {
+    vi.useFakeTimers()
+    const client = new ProtocolClient({
+      postMessage: () => undefined,
+      getState: () => undefined,
+      setState: () => undefined,
+    })
+    const requests = [
+      {
+        type: 'models.discover.custom',
+        requestId: 'custom-models',
+        payload: { settingsNamespace: 'llm-pi-ai' },
+      },
+      {
+        type: 'provider.custom.create',
+        requestId: 'custom-save',
+        payload: {
+          settingsNamespace: 'llm-pi-ai',
+          collectionPath: ['providers'],
+          providerId: 'sample',
+          api: 'openai-completions',
+          baseUrl: 'https://api.example.test/v1',
+          models: [{ id: 'sample-model' }],
+          expectedRevision: 1,
+        },
+      },
+    ] satisfies readonly WebviewRequest[]
+    try {
+      const outcomes = requests.map((request) => expect(client.request(request)).resolves.toBeDefined())
+      await vi.advanceTimersByTimeAsync(45_000)
+      for (const request of requests) {
+        client.handle({
+          protocolVersion: PROTOCOL_VERSION,
+          message: { type: 'response', requestId: request.requestId, ok: true, payload: {} },
+        })
+      }
+      await Promise.all(outcomes)
     } finally {
       client.dispose()
       vi.useRealTimers()

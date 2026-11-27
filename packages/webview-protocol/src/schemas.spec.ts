@@ -96,7 +96,7 @@ describe('custom provider Webview protocol', () => {
     expect(create({ id: 'gateway-chat', input: 'image' }).success).toBe(false)
   })
 
-  it('rejects API keys in create and custom-discovery payloads', () => {
+  it('accepts a write-only API key for custom create and discovery', () => {
     const create = webviewRequestSchema.safeParse({
       type: 'provider.custom.create',
       requestId: 'request-1',
@@ -108,7 +108,7 @@ describe('custom provider Webview protocol', () => {
         baseUrl: 'http://127.0.0.1:9000/v1',
         models: [{ id: 'gateway-chat' }],
         expectedRevision: 7,
-        apiKey: 'must-stay-in-host',
+        apiKey: 'fixture-key',
       },
     })
     const discover = webviewRequestSchema.safeParse({
@@ -119,12 +119,19 @@ describe('custom provider Webview protocol', () => {
         providerId: 'gateway',
         baseUrl: 'http://127.0.0.1:9000/v1',
         api: 'openai-completions',
-        apiKey: 'must-stay-in-host',
+        apiKey: 'fixture-key',
       },
     })
 
-    expect(create.success).toBe(false)
-    expect(discover.success).toBe(false)
+    expect(create.success).toBe(true)
+    expect(discover.success).toBe(true)
+    expect(
+      webviewRequestSchema.safeParse({
+        type: 'models.discover',
+        requestId: 'request-3',
+        payload: { settingsNamespace: 'llm-pi-ai', apiKey: 'fixture-key' },
+      }).success,
+    ).toBe(false)
   })
 
   it('rejects an empty model list and a non-integral CAS revision', () => {

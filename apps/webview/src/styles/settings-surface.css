@@ -629,15 +629,17 @@ html[data-dsh-theme='dark']:has(body:is(.vscode-dark, .vscode-high-contrast)) .d
   border-top: 1px solid var(--stg-line);
 }
 
-#dsh-settings-panel-models .dsh-settings__provider-add-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 2px;
+#dsh-settings-panel-models
+  :is(.dsh-settings__provider-editor, .dsh-settings__custom-provider)
+  .dsh-settings__advanced-hint
+  strong {
+  color: var(--dsh-text);
+  font-weight: 600;
 }
 
 #dsh-settings-panel-models .dsh-settings__provider-add {
   display: inline-flex;
+  width: 100%;
   align-items: center;
   justify-content: center;
   gap: 6px;
@@ -669,12 +671,6 @@ html[data-dsh-theme='dark']:has(body:is(.vscode-dark, .vscode-high-contrast)) .d
 #dsh-settings-panel-models .dsh-settings__provider-add:disabled {
   border-color: var(--stg-line);
   color: color-mix(in srgb, var(--dsh-muted) 60%, transparent);
-}
-
-@media (max-width: 38rem) {
-  #dsh-settings-panel-models .dsh-settings__provider-add-actions {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 
 /* --------------------------------------------------------------- Presets -- */
@@ -1285,6 +1281,99 @@ html[data-dsh-theme='dark']:has(body:is(.vscode-dark, .vscode-high-contrast)) .d
   border: 1px solid var(--stg-line);
   border-radius: 12px;
   background: var(--stg-card);
+  touch-action: pan-y pinch-zoom;
+}
+
+#dsh-settings-panel-models .dsh-settings__provider-add-tabs {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  inline-size: min(100%, 19rem);
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--stg-hover);
+  user-select: none;
+}
+
+#dsh-settings-panel-models .dsh-settings__provider-add-tabs::before {
+  position: absolute;
+  z-index: -1;
+  inset: 3px auto 3px 3px;
+  inline-size: calc(50% - 3px);
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--dsh-text) 12%, var(--stg-card));
+  content: '';
+}
+
+#dsh-settings-panel-models .dsh-settings__provider-add-tabs[data-active-mode='custom']::before {
+  transform: translateX(100%);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  #dsh-settings-panel-models .dsh-settings__provider-add-tabs::before {
+    transition: transform var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard);
+  }
+}
+
+#dsh-settings-panel-models .dsh-settings__provider-add-tab {
+  min-width: 0;
+  min-height: 30px;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--dsh-muted);
+  font: inherit;
+  font-size: var(--dsh-font-size-xs);
+  overflow-wrap: anywhere;
+}
+
+#dsh-settings-panel-models .dsh-settings__provider-add-tab:is([aria-selected='true'], :hover:not(:disabled)) {
+  color: var(--dsh-text);
+}
+
+#dsh-settings-panel-models .dsh-settings__provider-add-tab:focus-visible {
+  outline: 1px solid currentColor;
+  outline-offset: -3px;
+}
+
+#dsh-settings-panel-models .dsh-settings__provider-add-tab:disabled {
+  opacity: 0.55;
+}
+
+#dsh-settings-panel-models .dsh-settings__provider-add-card .dsh-settings__custom-provider {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  animation: none;
+}
+
+#dsh-settings-panel-models :is(.dsh-settings__custom-provider-notice, .dsh-settings__custom-provider-error) {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--stg-line);
+  border-radius: 8px;
+  background: var(--stg-hover);
+  color: var(--dsh-muted);
+}
+
+#dsh-settings-panel-models .dsh-settings__custom-provider-notice strong {
+  color: var(--dsh-text);
+  font-weight: 600;
+}
+
+#dsh-settings-panel-models .dsh-settings__custom-provider-error {
+  border-color: var(--dsh-danger);
+  background: var(--dsh-danger-bg);
+  color: var(--dsh-danger);
+}
+
+#dsh-settings-panel-models .dsh-settings__custom-provider .dsh-settings__error {
+  color: var(--dsh-danger);
 }
 
 #dsh-settings-panel-models .dsh-settings__empty,
@@ -1351,6 +1440,7 @@ html[data-dsh-theme='dark']:has(body:is(.vscode-dark, .vscode-high-contrast)) .d
 
   #dsh-settings-panel-models .dsh-settings__provider,
   #dsh-settings-panel-models .dsh-settings__provider-add,
+  #dsh-settings-panel-models .dsh-settings__provider-add-tabs::before,
   #dsh-settings-panel-presets .dsh-preset-card,
   #dsh-settings-panel-plugins .dsh-plugin-inventory__catalog,
   #dsh-settings-panel-plugins .dsh-plugin-inventory__card,

@@ -446,7 +446,11 @@ export interface AppActions {
     operations: readonly SettingsPathOperation[],
     expectedRevision: number,
   ): Promise<void>
-  createCustomProvider(draft: CustomProviderDraft): Promise<CustomProviderCreateResult>
+  createCustomProvider(
+    draft: CustomProviderDraft,
+    draftId?: string,
+    apiKey?: string,
+  ): Promise<CustomProviderCreateResult>
   configureProviderSecret(providerId: string, field: string): Promise<boolean>
   removeProviderSecret(providerId: string, field: string): Promise<void>
   /** Configure a plugin-owned credential without carrying the secret in the Webview. */
@@ -460,10 +464,8 @@ export interface AppActions {
   refreshSessionModels(sessionId?: string): Promise<void>
   /** Discover provider models through the Host without carrying credentials in the Webview. */
   discoverModels(input: Omit<ModelDiscoveryInput, 'apiKey'>): Promise<readonly DiscoveredModel[]>
-  /** Discover models for a new provider through a Host-only optional key prompt. */
-  discoverCustomProviderModels(
-    input: Omit<ModelDiscoveryInput, 'apiKey'>,
-  ): Promise<readonly DiscoveredModel[]>
+  /** Discover models through the Host using the unsaved provider form. */
+  discoverCustomProviderModels(input: ModelDiscoveryInput): Promise<readonly DiscoveredModel[]>
   /** Read the preset roster with the adapter's management and display capabilities. */
   loadPresetRoster(): Promise<AgentPresetRoster | undefined>
   /** Open one shipped preset's composition in the read-only viewer. */

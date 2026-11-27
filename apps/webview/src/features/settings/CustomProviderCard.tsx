@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from 'react'
+import { useId, useRef, useState, type ReactElement } from 'react'
 import type {
   CustomProviderCreateResult,
   CustomProviderDraft,
@@ -7,9 +7,10 @@ import type {
   ModelProvider,
 } from '@dsh-vscode/domain'
 import { isValidCustomProviderId } from '@dsh-vscode/domain'
-import { Icon } from '../../ui/Icon.js'
 import { useI18n } from '../../i18n.js'
 import { SelectMenu } from '../../components/common/SelectMenu.js'
+import { publicProtocolErrorCode } from '../../app/protocol-client.js'
+import { Icon } from '../../ui/Icon.js'
 import { ModelListEditor, type EditableModel } from './ModelListEditor.js'
 import { validateReasoningEfforts } from './ModelReasoningEfforts.js'
 import { protocolReasoningLevels } from './provider-helpers.js'
@@ -32,16 +33,21 @@ export interface CustomProviderCardProps {
   readonly writable: boolean
   readonly saving: boolean
   readonly onClose: (changed: boolean) => void
-  /** The Host collects the optional key and performs the two-stage create. */
-  readonly onCreate: (draft: CustomProviderDraft) => Promise<CustomProviderCreateResult>
-  /** Retry the credential stage without resending the already committed profile. */
-  readonly onConfigureSecret: (providerId: string, field: string) => Promise<boolean>
-  /** Custom discovery may prompt for an optional Host-only key. */
-  readonly onDiscover: (input: Omit<ModelDiscoveryInput, 'apiKey'>) => Promise<readonly DiscoveredModel[]>
+  readonly onCreate: (
+    draft: CustomProviderDraft,
+    draftId: string,
+    apiKey: string,
+  ) => Promise<CustomProviderCreateResult>
+  readonly onDiscover: (input: ModelDiscoveryInput) => Promise<readonly DiscoveredModel[]>
 }
 
 export function CustomProviderCard(props: CustomProviderCardProps): ReactElement {
   const { t } = useI18n()
+  const saveHintId = useId()
+  const apiKeyId = useId()
+  const apiKeyInput = useRef<HTMLInputElement>(null)
+  const [keyVisible, setKeyVisible] = useState(false)
+  const [draftId] = useState(() => crypto.randomUUID())
   // The write is checked against the exact revision that was visible when the
   // card opened. A route added in another window must become a conflict.
   const [openedAt] = useState(() => props.template.revision)
@@ -52,14 +58,21 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactElement
   const [models, setModels] = useState<EditableModel[]>([])
   const [error, setError] = useState<string | undefined>(undefined)
   const [busy, setBusy] = useState(false)
+  const [discovering, setDiscovering] = useState(false)
   const [committed, setCommitted] = useState(false)
+  const [unconfirmedDraft, setUnconfirmedDraft] = useState<CustomProviderDraft>()
+  const [retryWithLatestRevision, setRetryWithLatestRevision] = useState(false)
 
   const routeValue = route.trim()
   const displayNameValue = displayName.trim()
   const baseUrlValue = baseUrl.trim()
   const apiValue = api.trim()
   const routeInvalid = routeValue !== '' && !isValidCustomProviderId(routeValue)
-  const routeTaken = props.providers.some((provider) => provider.id === routeValue)
+  const resolving = unconfirmedDraft !== undefined
+  const routeTaken =
+    !busy && !committed && !resolving && props.providers.some((provider) => provider.id === routeValue)
+  const hasDiscoveryTarget =
+    routeValue !== '' && !routeInvalid && !routeTaken && baseUrlValue !== '' && apiValue !== ''
   const modelFailure = validateModels(models)
   const routeReasoning = protocolReasoningLevels(apiValue, props.reasoningLevels)
   const reasoningFailure =
@@ -69,17 +82,14 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactElement
   const normalizedModels = models.map(normalizeModel)
   const ready =
     props.template.protocols.length > 0 &&
-    routeValue !== '' &&
-    !routeInvalid &&
-    !routeTaken &&
-    baseUrlValue !== '' &&
-    apiValue !== '' &&
+    hasDiscoveryTarget &&
     normalizedModels.length > 0 &&
     modelFailure === undefined &&
     reasoningFailure === undefined
-  const disabled = !props.writable || props.saving || busy
-  const profileDisabled = disabled || committed
-  const canSubmit = !disabled && (committed || ready)
+  const saving = props.saving || busy
+  const disabled = !props.writable || saving
+  const profileDisabled = disabled || discovering || committed || resolving
+  const canSubmit = !saving && !discovering && (committed || (props.writable && (resolving || ready)))
   const apiOptions = [
     ...(api !== '' && !props.template.protocols.includes(api) ? [{ value: api, label: api }] : []),
     ...props.template.protocols.map((protocol) => ({ value: protocol, label: protocol })),
@@ -94,43 +104,44 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactElement
 
   const save = async (): Promise<void> => {
     if (!canSubmit) return
+    const draft: CustomProviderDraft = unconfirmedDraft ?? {
+      settingsNamespace: props.template.settingsNamespace,
+      collectionPath: [...props.template.collectionPath],
+      providerId: routeValue,
+      ...(displayNameValue === '' ? {} : { displayName: displayNameValue }),
+      api: apiValue,
+      baseUrl: baseUrlValue,
+      models: normalizedModels.map((model) => ({ ...model })),
+      expectedRevision: retryWithLatestRevision ? props.template.revision : openedAt,
+    }
+    setKeyVisible(false)
     setBusy(true)
     setError(undefined)
     try {
-      if (committed) {
-        const configured = await props.onConfigureSecret(routeValue, 'apiKeyEnv')
-        if (!configured) {
-          setError(t('settings.providerCredentialCancelled'))
-          return
-        }
-        props.onClose(true)
-        return
-      }
-
-      const outcome = await props.onCreate({
-        settingsNamespace: props.template.settingsNamespace,
-        collectionPath: [...props.template.collectionPath],
-        providerId: routeValue,
-        ...(displayNameValue === '' ? {} : { displayName: displayNameValue }),
-        api: apiValue,
-        baseUrl: baseUrlValue,
-        models: normalizedModels.map((model) => ({ ...model })),
-        expectedRevision: openedAt,
-      })
+      const outcome = await props.onCreate(draft, draftId, apiKeyInput.current?.value ?? '')
+      setUnconfirmedDraft(undefined)
       if (!outcome.profileCommitted) {
         setError(t('settings.providerCreateIncomplete'))
         return
       }
-      // Once the profile lands, retrying the entire operation would reuse the
-      // superseded revision and can never repair a credential-only failure.
       setCommitted(true)
       if (outcome.credentialError !== undefined) {
-        setError(outcome.credentialError)
+        setUnconfirmedDraft(draft)
+        setError(t('settings.customProviderCredentialRetry'))
         return
       }
+      if (apiKeyInput.current !== null) apiKeyInput.current.value = ''
       props.onClose(true)
     } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : t('settings.updateFailed'))
+      const code = publicProtocolErrorCode(reason)
+      if (!committed && (code === 'BACKEND_UNREACHABLE' || (resolving && code === 'BACKEND_BUSY'))) {
+        setUnconfirmedDraft(draft)
+        setError(t('settings.customProviderSaveUnconfirmed'))
+      } else {
+        if (!committed) setUnconfirmedDraft(undefined)
+        if (code === 'SETTINGS_CONFLICT') setRetryWithLatestRevision(true)
+        setError(reason instanceof Error ? reason.message : t('settings.updateFailed'))
+      }
     } finally {
       setBusy(false)
     }
@@ -138,26 +149,13 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactElement
 
   return (
     <section className="dsh-settings__custom-provider" aria-label={t('settings.customProvider')}>
-      <div className="dsh-settings__custom-provider-head">
-        <div>
-          <strong>{t('settings.customProvider')}</strong>
-        </div>
-        <button
-          className="dsh-icon-button"
-          type="button"
-          aria-label={t('settings.closeEditor')}
-          title={t('settings.closeEditor')}
-          disabled={disabled}
-          onClick={() => props.onClose(committed)}
-        >
-          <Icon name="close" />
-        </button>
-      </div>
       <div className="dsh-settings__custom-provider-grid">
         <label>
           <span>{t('settings.providerId')}</span>
           <input
             type="text"
+            required
+            aria-invalid={routeInvalid || routeTaken || undefined}
             value={route}
             disabled={profileDisabled}
             onChange={(event) => {
@@ -179,6 +177,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactElement
           <span>{t('settings.providerBaseUrl')}</span>
           <input
             type="url"
+            required
             value={baseUrl}
             disabled={profileDisabled}
             onChange={(event) => setBaseUrl(event.target.value)}
@@ -199,6 +198,38 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactElement
             onChange={setApi}
           />
         </label>
+        <div className="dsh-settings__custom-provider-key">
+          <label htmlFor={apiKeyId}>{t('settings.customProviderApiKey')}</label>
+          <div className="dsh-settings__custom-provider-key-input">
+            <input
+              id={apiKeyId}
+              ref={apiKeyInput}
+              type={keyVisible ? 'text' : 'password'}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              maxLength={8192}
+              disabled={profileDisabled}
+              aria-describedby={committed || resolving ? undefined : saveHintId}
+              onChange={() => setError(undefined)}
+            />
+            <button
+              className="dsh-icon-button"
+              type="button"
+              aria-label={t('settings.showCustomProviderApiKey')}
+              aria-pressed={keyVisible}
+              aria-controls={apiKeyId}
+              title={t(
+                keyVisible ? 'settings.hideCustomProviderApiKey' : 'settings.showCustomProviderApiKey',
+              )}
+              disabled={profileDisabled}
+              onClick={() => setKeyVisible(!keyVisible)}
+            >
+              <Icon name={keyVisible ? 'eye-closed' : 'eye'} />
+            </button>
+          </div>
+        </div>
       </div>
       {routeInvalid ? <p className="dsh-settings__error">{t('settings.providerRouteInvalid')}</p> : null}
       {routeTaken ? <p className="dsh-settings__error">{t('settings.providerRouteTaken')}</p> : null}
@@ -216,16 +247,32 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactElement
       {modelFailure?.kind === 'input' ? (
         <p className="dsh-settings__error">{t('settings.modelInputRequired')}</p>
       ) : null}
+      {committed || resolving ? null : (
+        <p id={saveHintId} className="dsh-settings__custom-provider-notice">
+          <strong>{t('settings.customProviderModelHint')}</strong>
+          {t('settings.customProviderModelFollowup')}
+        </p>
+      )}
       <ModelListEditor
         models={models}
         inputField="input"
         reasoningLevels={routeReasoning.levels}
         reasoningLevelsOnly={routeReasoning.levelsOnly}
-        writable={props.writable && !committed}
-        saving={props.saving || busy}
+        writable={props.writable && !committed && !resolving}
+        saving={saving}
+        discoveryDisabled={!hasDiscoveryTarget}
         showSave={false}
         discoveryInput={discoveryInput}
-        onDiscover={props.onDiscover}
+        onDiscover={async (input) => {
+          setKeyVisible(false)
+          setDiscovering(true)
+          setError(undefined)
+          try {
+            return await props.onDiscover({ ...input, apiKey: apiKeyInput.current?.value ?? '' })
+          } finally {
+            setDiscovering(false)
+          }
+        }}
         onChange={(next) => setModels(next.map((model) => ({ ...model })))}
         onSave={(next) => {
           setModels(next.map((model) => ({ ...model })))
@@ -233,19 +280,47 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactElement
         }}
       />
       {error === undefined ? null : (
-        <p className="dsh-settings__error" role="alert">
+        <p className="dsh-settings__custom-provider-error" role="alert">
           {error}
         </p>
       )}
-      <p className="dsh-settings__advanced-hint">{t('settings.providerApiKeyHint')}</p>
-      <button
-        className="dsh-button dsh-button--primary dsh-button--compact"
-        type="button"
-        disabled={!canSubmit}
-        onClick={() => void save()}
-      >
-        {committed ? t('settings.retryProviderCredential') : t('settings.saveProvider')}
-      </button>
+      {!saving && !discovering && !committed && !resolving && !ready && error === undefined ? (
+        <p className="dsh-settings__advanced-hint">
+          {t(
+            hasDiscoveryTarget
+              ? 'settings.customProviderSaveNeedsModel'
+              : 'settings.customProviderSaveNeedsTarget',
+          )}
+        </p>
+      ) : null}
+      <footer className="dsh-settings__provider-editor-actions">
+        <button
+          className="dsh-button dsh-button--secondary dsh-button--compact"
+          type="button"
+          disabled={saving}
+          onClick={() => {
+            if (apiKeyInput.current !== null) apiKeyInput.current.value = ''
+            props.onClose(committed)
+          }}
+        >
+          {t('settings.cancel')}
+        </button>
+        <button
+          className="dsh-button dsh-button--primary dsh-button--compact"
+          type="button"
+          aria-describedby={committed || resolving ? undefined : saveHintId}
+          disabled={!canSubmit}
+          onClick={() => void save()}
+        >
+          {busy
+            ? t('settings.savingProvider')
+            : committed
+              ? t('settings.retryProviderCredential')
+              : resolving
+                ? t('settings.retryProviderSave')
+                : t('settings.saveProvider')}
+        </button>
+      </footer>
     </section>
   )
 }

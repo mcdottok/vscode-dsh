@@ -9,6 +9,7 @@ import type { Translate } from '../../i18n.js'
 import { Icon } from '../../ui/Icon.js'
 import { SelectMenu } from '../../components/common/SelectMenu.js'
 import { CustomProviderCard, type CustomProviderTemplate } from './CustomProviderCard.js'
+import { ProviderAddCard, type ProviderAddMode } from './ProviderAddCard.js'
 import { ProviderSettingsEditor, type ProviderSettingChange } from './ProviderSettingsEditor.js'
 import { modelReasoningLevels } from './provider-helpers.js'
 import type { SettingsDrawerProps } from './settings-drawer-props.js'
@@ -28,7 +29,8 @@ interface ModelsSettingsTabProps {
   readonly editingProviderId: string | undefined
   readonly setEditingProviderId: Dispatch<SetStateAction<string | undefined>>
   readonly setAddingProviderId: Dispatch<SetStateAction<string | undefined>>
-  readonly setAddingCustomProvider: Dispatch<SetStateAction<boolean>>
+  readonly setAddingProviderMode: (mode: ProviderAddMode) => void
+  readonly closeProviderAddition: () => void
   readonly setRemovingProviderId: Dispatch<SetStateAction<string | undefined>>
   readonly removeProviderTriggerRef: RefObject<HTMLElement | null>
   readonly removeDialogRef: RefObject<HTMLDivElement | null>
@@ -40,12 +42,14 @@ interface ModelsSettingsTabProps {
     ensureProvider?: boolean,
   ) => Promise<void>
   readonly addableProviders: readonly ModelProvider[]
-  readonly canAddCustomProvider: boolean
   readonly addingProvider: ModelProvider | undefined
-  readonly addingCustomProvider: boolean
+  readonly addingProviderMode: ProviderAddMode | undefined
   readonly customProviderTemplate: CustomProviderTemplate | undefined
-  readonly saveCustomProvider: (draft: CustomProviderDraft) => Promise<CustomProviderCreateResult>
-  readonly configureCustomProviderSecret: (providerId: string, field: string) => Promise<boolean>
+  readonly saveCustomProvider: (
+    draft: CustomProviderDraft,
+    draftId?: string,
+    apiKey?: string,
+  ) => Promise<CustomProviderCreateResult>
   readonly pendingProvider: ModelProvider | undefined
   readonly removeProvider: (provider: ModelProvider) => Promise<void>
 }
@@ -65,19 +69,18 @@ export function ModelsSettingsTab(input: ModelsSettingsTabProps): ReactElement {
     editingProviderId,
     setEditingProviderId,
     setAddingProviderId,
-    setAddingCustomProvider,
+    setAddingProviderMode,
+    closeProviderAddition,
     setRemovingProviderId,
     removeProviderTriggerRef,
     removeDialogRef,
     runSecretAction,
     saveProviderChanges,
     addableProviders,
-    canAddCustomProvider,
     addingProvider,
-    addingCustomProvider,
+    addingProviderMode,
     customProviderTemplate,
     saveCustomProvider,
-    configureCustomProviderSecret,
     pendingProvider,
     removeProvider,
   } = input
@@ -188,8 +191,7 @@ export function ModelsSettingsTab(input: ModelsSettingsTabProps): ReactElement {
                         disabled={!dshSettingsSnapshotFresh || (busyField !== undefined && !isEditing)}
                         onClick={() => {
                           setSaveError(undefined)
-                          setAddingCustomProvider(false)
-                          setAddingProviderId(undefined)
+                          closeProviderAddition()
                           setEditingProviderId(isEditing ? undefined : provider.id)
                         }}
                       >
@@ -295,58 +297,18 @@ export function ModelsSettingsTab(input: ModelsSettingsTabProps): ReactElement {
           })}
         </ul>
       )}
-      {addableProviders.length === 0 && !canAddCustomProvider ? null : (
-        <>
-          <div className="dsh-settings__provider-add-actions">
-            <button
-              className="dsh-settings__provider-add"
-              type="button"
-              disabled={
-                busyField !== undefined ||
-                dshState.status !== 'ready' ||
-                !dshSettingsSnapshotFresh ||
-                !dshState.snapshot.schema.writable ||
-                addableProviders.length === 0
-              }
-              onClick={() => {
-                const firstProvider = addableProviders[0]
-                if (firstProvider === undefined) return
-                setSaveError(undefined)
-                setEditingProviderId(undefined)
-                setAddingCustomProvider(false)
-                setAddingProviderId((current) => (current === undefined ? firstProvider.id : undefined))
-              }}
-            >
-              <Icon name="add" />
-              {t('settings.addProvider')}
-            </button>
-            <button
-              className="dsh-settings__provider-add"
-              type="button"
-              disabled={
-                busyField !== undefined ||
-                dshState.status !== 'ready' ||
-                !dshSettingsSnapshotFresh ||
-                !dshState.snapshot.schema.writable ||
-                !canAddCustomProvider
-              }
-              onClick={() => {
-                setSaveError(undefined)
-                setEditingProviderId(undefined)
-                setAddingProviderId(undefined)
-                setAddingCustomProvider((current) => !current)
-              }}
-            >
-              <Icon name="add" />
-              {t('settings.addCustomProvider')}
-            </button>
-          </div>
-          {addingProvider === undefined || dshState.status !== 'ready' ? null : (
-            <section
-              className="dsh-settings__provider-add-card"
-              role="region"
-              aria-label={t('settings.addProvider')}
-            >
+      <ProviderAddCard
+        t={t}
+        mode={addingProviderMode}
+        disabled={busyField !== undefined}
+        onModeChange={(mode) => {
+          setSaveError(undefined)
+          setEditingProviderId(undefined)
+          setAddingProviderMode(mode)
+        }}
+        catalog={
+          addingProvider === undefined || dshState.status !== 'ready' ? null : (
+            <>
               <div className="dsh-settings__provider-add-select">
                 <span>{t('settings.addProviderSelect')}</span>
                 <SelectMenu
@@ -377,8 +339,8 @@ export function ModelsSettingsTab(input: ModelsSettingsTabProps): ReactElement {
                 provider={addingProvider}
                 settings={dshState.snapshot}
                 reasoningLevels={reasoningLevelsFor(addingProvider.settingsNs)}
-                credentialHint
-                writable={dshState.snapshot.schema.writable}
+                addingFromCatalog
+                writable={dshSettingsSnapshotFresh && dshState.snapshot.schema.writable}
                 saving={busyField === `provider:${addingProvider.id}`}
                 forceSave={(addingProvider.settingsPath?.length ?? 0) > 0}
                 onSave={(changes, expectedRevision) =>
@@ -386,30 +348,34 @@ export function ModelsSettingsTab(input: ModelsSettingsTabProps): ReactElement {
                 }
                 onDiscover={props.onDiscoverModels}
                 onClose={(changed) => {
-                  setAddingProviderId(undefined)
+                  closeProviderAddition()
                   if (!changed) setSaveError(undefined)
                 }}
               />
-            </section>
-          )}
-          {addingCustomProvider && customProviderTemplate !== undefined ? (
+            </>
+          )
+        }
+        custom={
+          customProviderTemplate === undefined ? null : (
             <CustomProviderCard
               template={customProviderTemplate}
               providers={props.providers}
               reasoningLevels={reasoningLevelsFor(customProviderTemplate.settingsNamespace)}
-              writable={dshState.status === 'ready' && dshState.snapshot.schema.writable}
+              writable={
+                dshState.status === 'ready' && dshSettingsSnapshotFresh && dshState.snapshot.schema.writable
+              }
               saving={busyField !== undefined}
               onClose={(changed) => {
-                setAddingCustomProvider(false)
+                closeProviderAddition()
                 if (!changed) setSaveError(undefined)
               }}
               onCreate={saveCustomProvider}
-              onConfigureSecret={configureCustomProviderSecret}
               onDiscover={props.onDiscoverCustomModels}
             />
-          ) : null}
-        </>
-      )}
+          )
+        }
+        canOpen={dshState.status === 'ready' && dshSettingsSnapshotFresh && dshState.snapshot.schema.writable}
+      />
       {pendingProvider === undefined ? null : (
         <div
           ref={removeDialogRef}

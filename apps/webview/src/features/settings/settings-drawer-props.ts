@@ -63,13 +63,15 @@ export interface SettingsDrawerProps {
     operations: readonly SettingsPathOperation[],
     expectedRevision: number,
   ) => Promise<void>
-  readonly onCreateCustomProvider: (draft: CustomProviderDraft) => Promise<CustomProviderCreateResult>
+  readonly onCreateCustomProvider: (
+    draft: CustomProviderDraft,
+    draftId?: string,
+    apiKey?: string,
+  ) => Promise<CustomProviderCreateResult>
   readonly onDiscoverModels: (
     input: Omit<ModelDiscoveryInput, 'apiKey'>,
   ) => Promise<readonly DiscoveredModel[]>
-  readonly onDiscoverCustomModels: (
-    input: Omit<ModelDiscoveryInput, 'apiKey'>,
-  ) => Promise<readonly DiscoveredModel[]>
+  readonly onDiscoverCustomModels: (input: ModelDiscoveryInput) => Promise<readonly DiscoveredModel[]>
   readonly onConfigureSecret: (providerId: string, field: string) => Promise<boolean>
   readonly onRemoveSecret: (providerId: string, field: string) => Promise<void>
   /** Host-mediated plugin credential actions; the secret never enters the Webview. */

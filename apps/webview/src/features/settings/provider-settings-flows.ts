@@ -22,7 +22,6 @@ export interface ProviderSettingsFlowsDependencies {
   readonly onRefreshCatalog: SettingsDrawerProps['onRefreshCatalog']
   readonly onMutateDshSettings: SettingsDrawerProps['onMutateDshSettings']
   readonly onCreateCustomProvider: SettingsDrawerProps['onCreateCustomProvider']
-  readonly onConfigureSecret: SettingsDrawerProps['onConfigureSecret']
   readonly onUnsetDshSetting: SettingsDrawerProps['onUnsetDshSetting']
   readonly onRemoveSecret: SettingsDrawerProps['onRemoveSecret']
   readonly setSaveError: (value: string | undefined) => void
@@ -30,8 +29,7 @@ export interface ProviderSettingsFlowsDependencies {
   readonly setDshState: (value: DshSettingsState) => void
   readonly setDshSettingsSnapshotFresh: (value: boolean) => void
   readonly setEditingProviderId: (value: string | undefined) => void
-  readonly setAddingProviderId: (value: string | undefined) => void
-  readonly setAddingCustomProvider: (value: boolean) => void
+  readonly closeProviderAddition: () => void
   readonly setRemovingProviderId: (value: string | undefined) => void
 }
 
@@ -43,8 +41,11 @@ export interface ProviderSettingsFlows {
     expectedRevision: number,
     ensureProvider?: boolean,
   ) => Promise<void>
-  readonly saveCustomProvider: (draft: CustomProviderDraft) => Promise<CustomProviderCreateResult>
-  readonly configureCustomProviderSecret: (providerId: string, field: string) => Promise<boolean>
+  readonly saveCustomProvider: (
+    draft: CustomProviderDraft,
+    draftId?: string,
+    apiKey?: string,
+  ) => Promise<CustomProviderCreateResult>
   readonly removeProvider: (provider: ModelProvider) => Promise<void>
 }
 
@@ -106,7 +107,7 @@ export function useProviderSettingsFlows(deps: ProviderSettingsFlowsDependencies
               !isKnownRejectedSettingsWrite(reason)
             ) {
               deps.setEditingProviderId(undefined)
-              if (ensureProvider) deps.setAddingProviderId(undefined)
+              if (ensureProvider) deps.closeProviderAddition()
             }
             deps.setSaveError(reason instanceof Error ? reason.message : deps.t('settings.updateFailed'))
           }
@@ -118,7 +119,7 @@ export function useProviderSettingsFlows(deps: ProviderSettingsFlowsDependencies
           deps.setDshState({ status: 'unavailable' })
           deps.setDshSettingsSnapshotFresh(false)
           deps.setEditingProviderId(undefined)
-          if (ensureProvider) deps.setAddingProviderId(undefined)
+          if (ensureProvider) deps.closeProviderAddition()
           return
         }
         deps.setDshState({ status: 'ready', snapshot })
@@ -131,7 +132,7 @@ export function useProviderSettingsFlows(deps: ProviderSettingsFlowsDependencies
           // catalog refresh failure cannot invite a duplicate write at its old
           // revision.
           deps.setEditingProviderId(undefined)
-          if (ensureProvider) deps.setAddingProviderId(undefined)
+          if (ensureProvider) deps.closeProviderAddition()
           deps.setSaveError(reason instanceof Error ? reason.message : deps.t('settings.updateFailed'))
         }
       } finally {
@@ -140,75 +141,45 @@ export function useProviderSettingsFlows(deps: ProviderSettingsFlowsDependencies
     },
   )
 
+  // Readback and catalog refresh are follow-ups to a committed operation.
+  // Their errors must not turn a successful write into a duplicate retry.
+  const refreshAfterCustomProviderWrite = async (epoch: number): Promise<void> => {
+    if (deps.openEpochRef.current !== epoch) return
+    const snapshot = await deps.onLoadDshSettings().catch(() => undefined)
+    if (deps.openEpochRef.current !== epoch) return
+    deps.setDshSettingsSnapshotFresh(snapshot !== undefined)
+    if (snapshot === undefined) deps.setSaveError(deps.t('settings.updateFailed'))
+    else deps.setDshState({ status: 'ready', snapshot })
+    try {
+      await deps.onRefreshCatalog()
+    } catch (reason: unknown) {
+      if (deps.openEpochRef.current === epoch)
+        deps.setSaveError(reason instanceof Error ? reason.message : deps.t('settings.updateFailed'))
+    }
+  }
+
   const saveCustomProvider = useStableCallback(
-    async (draft: CustomProviderDraft): Promise<CustomProviderCreateResult> => {
-      if (deps.busyField !== undefined || !deps.dshSettingsSnapshotFresh)
-        throw new Error(deps.t('settings.updateFailed'))
+    async (
+      draft: CustomProviderDraft,
+      draftId?: string,
+      apiKey?: string,
+    ): Promise<CustomProviderCreateResult> => {
+      if (deps.busyField !== undefined) throw new Error(deps.t('settings.updateFailed'))
       deps.setSaveError(undefined)
       const path = [draft.settingsNamespace, ...draft.collectionPath, draft.providerId].join('.')
       deps.setBusyField(`provider:${path}`)
       const epoch = deps.openEpochRef.current
       try {
-        const result = await deps.onCreateCustomProvider(draft)
-        if (deps.openEpochRef.current !== epoch) return result
-        // The Host operation is CAS-protected and may already have committed the
-        // profile when a follow-up refresh fails. Keep the committed result so
-        // the card can enter its credential-only retry state instead of asking
-        // the user to repeat a profile write with a stale revision.
-        try {
-          const snapshot = await deps.onLoadDshSettings()
-          if (deps.openEpochRef.current !== epoch) return result
-          if (snapshot !== undefined) {
-            deps.setDshState({ status: 'ready', snapshot })
-            deps.setDshSettingsSnapshotFresh(true)
-          } else {
-            deps.setDshState({ status: 'unavailable' })
-            deps.setDshSettingsSnapshotFresh(false)
-            deps.setAddingCustomProvider(false)
-            return result
-          }
-          await deps.onRefreshCatalog()
-        } catch (reason: unknown) {
-          if (deps.openEpochRef.current !== epoch) return result
-          deps.setSaveError(reason instanceof Error ? reason.message : deps.t('settings.updateFailed'))
-        }
+        const result = await deps.onCreateCustomProvider(draft, draftId, apiKey)
+        if (result.profileCommitted) await refreshAfterCustomProviderWrite(epoch)
         return result
       } catch (reason: unknown) {
-        if (deps.openEpochRef.current === epoch) {
-          deps.setSaveError(reason instanceof Error ? reason.message : deps.t('settings.updateFailed'))
-        }
-        throw reason
-      } finally {
-        deps.setBusyField(undefined)
-      }
-    },
-  )
-
-  const configureCustomProviderSecret = useStableCallback(
-    async (providerId: string, field: string): Promise<boolean> => {
-      if (deps.busyField !== undefined) throw new Error(deps.t('settings.updateFailed'))
-      deps.setSaveError(undefined)
-      deps.setBusyField(`provider:${providerId}:credential`)
-      const epoch = deps.openEpochRef.current
-      try {
-        const configured = await deps.onConfigureSecret(providerId, field)
-        if (configured) {
-          const snapshot = await deps.onLoadDshSettings()
-          if (deps.openEpochRef.current === epoch) {
-            if (snapshot !== undefined) {
-              deps.setDshState({ status: 'ready', snapshot })
-              deps.setDshSettingsSnapshotFresh(true)
-            } else {
-              deps.setDshState({ status: 'unavailable' })
-              deps.setDshSettingsSnapshotFresh(false)
-            }
+        if (isSettingsConflict(reason) && deps.openEpochRef.current === epoch) {
+          const snapshot = await deps.onLoadDshSettings().catch(() => undefined)
+          if (snapshot !== undefined && deps.openEpochRef.current === epoch) {
+            deps.setDshState({ status: 'ready', snapshot })
+            deps.setDshSettingsSnapshotFresh(true)
           }
-          await deps.onRefreshCatalog()
-        }
-        return configured
-      } catch (reason: unknown) {
-        if (deps.openEpochRef.current === epoch) {
-          deps.setSaveError(reason instanceof Error ? reason.message : deps.t('settings.updateFailed'))
         }
         throw reason
       } finally {
@@ -281,7 +252,6 @@ export function useProviderSettingsFlows(deps: ProviderSettingsFlowsDependencies
     runSecretAction,
     saveProviderChanges,
     saveCustomProvider,
-    configureCustomProviderSecret,
     removeProvider,
   }
 }

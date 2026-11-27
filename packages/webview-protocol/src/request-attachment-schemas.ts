@@ -1,5 +1,12 @@
 import { z } from 'zod'
-import { id, requestBase, MAX_PROMPT_ATTACHMENTS, session, attachmentUri } from './request-common.js'
+import {
+  id,
+  requestBase,
+  MAX_PROMPT_ATTACHMENTS,
+  session,
+  attachmentUri,
+  customProviderApiKey,
+} from './request-common.js'
 import { MAX_ATTACHMENT_BASE64_CHARS } from './protocol-budget.js'
 
 export const attachmentRequestSchemas = [
@@ -161,6 +168,7 @@ export const attachmentRequestSchemas = [
           providerId: id.optional(),
           baseUrl: z.string().max(2048).optional(),
           api: z.string().max(128).optional(),
+          apiKey: customProviderApiKey,
         })
         .strict(),
     })

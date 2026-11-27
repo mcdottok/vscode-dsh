@@ -9,9 +9,10 @@ import { DshWebviewViewProvider } from '../view/dsh-webview-view-provider.js'
 import { EditorChatSurfaceManager } from '../view/editor-chat-surface-manager.js'
 import { WebviewMessageRouter } from '../view/message-router.js'
 import { publicWorkspaceSummary } from '../view/public-value.js'
-import { requestOptionalProviderApiKey, requestProviderSecret } from '../vscode/credential-input.js'
+import { requestProviderSecret } from '../vscode/credential-input.js'
 import { VSIX_UPDATE_SETTING } from '../vscode/extension-updates.js'
 import { createAttachmentRequestHandler, isAttachmentRequest } from './attachment-request-handler.js'
+import { CustomProviderRequests } from './custom-provider-requests.js'
 import {
   publicValue as projectPublicValue,
   publicDiagnosticsSnapshot,
@@ -116,6 +117,17 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
     stopAllJobFollows,
     editorContextProvider,
   } = deps
+  const customProviders = new CustomProviderRequests({
+    requireBackend: () => backendService.requireBackend(),
+    discover: (input, signal) => modelUseCases.discoverModels(input, signal),
+    create: ({ draftId: _draftId, displayName, ...draft }, key, signal, retryUnconfirmedWrite) =>
+      providerSettingsUseCases.createCustomProvider(
+        { ...draft, ...(displayName === undefined ? {} : { displayName }) },
+        key,
+        signal,
+        retryUnconfirmedWrite,
+      ),
+  })
   const publicValue = (value: unknown): unknown =>
     projectPublicValue(value, [
       ...currentWorkspaceFolders().map((folder) => folder.uri.fsPath),
@@ -557,25 +569,8 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
           signal,
         ),
       )
-    if (request.type === 'models.discover.custom') {
-      backendService.requireBackend()
-      const apiKey = await requestOptionalProviderApiKey(
-        vscode.window,
-        request.payload.providerId ?? 'custom provider',
-      )
-      return publicList(
-        await modelUseCases.discoverModels(
-          {
-            settingsNamespace: request.payload.settingsNamespace,
-            ...(request.payload.providerId === undefined ? {} : { providerId: request.payload.providerId }),
-            ...(request.payload.baseUrl === undefined ? {} : { baseUrl: request.payload.baseUrl }),
-            ...(request.payload.api === undefined ? {} : { api: request.payload.api }),
-            ...(apiKey === undefined ? {} : { apiKey }),
-          },
-          signal,
-        ),
-      )
-    }
+    if (request.type === 'models.discover.custom')
+      return publicList(await customProviders.discover(request.payload, signal))
     if (request.type === 'permissions.presets.list')
       return publicList(await modelUseCases.listPermissionPresets(signal))
     if (request.type === 'providers.list') return publicList(await modelUseCases.listProviders(signal))
@@ -594,28 +589,8 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
       return backendService
         .requireBackend()
         .credentials.removeSecret(request.payload.providerId, request.payload.field, signal)
-    if (request.type === 'provider.custom.create') {
-      backendService.requireBackend()
-      const apiKey = await requestOptionalProviderApiKey(vscode.window, request.payload.providerId)
-      return publicValue(
-        await providerSettingsUseCases.createCustomProvider(
-          {
-            settingsNamespace: request.payload.settingsNamespace,
-            collectionPath: request.payload.collectionPath,
-            providerId: request.payload.providerId,
-            ...(request.payload.displayName === undefined
-              ? {}
-              : { displayName: request.payload.displayName }),
-            api: request.payload.api,
-            baseUrl: request.payload.baseUrl,
-            models: request.payload.models,
-            expectedRevision: request.payload.expectedRevision,
-          },
-          apiKey,
-          signal,
-        ),
-      )
-    }
+    if (request.type === 'provider.custom.create')
+      return publicValue(await customProviders.save(request.payload, surfaceId, signal))
     if (request.type === 'plugin.credential.configure') {
       const value = await requestProviderSecret(vscode.window, 'plugin', request.payload.ref)
       if (value === undefined) return { configured: false, cancelled: true }
@@ -884,6 +859,7 @@ export function createRequestGateway(deps: RequestGatewayDependencies): RequestG
     editorContextProvider.dispose()
   }
   const onSurfaceWorkCancelled = (disposedSurfaceId: string): void => {
+    customProviders.clearSurface(disposedSurfaceId)
     deps.transcript.remove(disposedSurfaceId)
     router.cancelSurface(disposedSurfaceId)
     runSharedSurfaceTeardownIfIdle()

@@ -27,8 +27,8 @@ export interface ProviderSettingsEditorProps {
   readonly saving: boolean
   /** Materialize a dormant catalog provider even when no field changed yet. */
   readonly forceSave?: boolean
-  /** Explain that credentials are configured after adding, not by this form. */
-  readonly credentialHint?: boolean
+  /** Use the catalog add action and explain where to configure credentials. */
+  readonly addingFromCatalog?: boolean
   readonly onSave: (changes: readonly ProviderSettingChange[], expectedRevision: number) => Promise<void>
   readonly onDiscover: (input: Omit<ModelDiscoveryInput, 'apiKey'>) => Promise<readonly DiscoveredModel[]>
   readonly onClose: (changed: boolean) => void
@@ -85,6 +85,10 @@ export function ProviderSettingsEditor(props: ProviderSettingsEditorProps): Reac
 
   const routeReasoning = protocolReasoningLevels(api, props.reasoningLevels)
   const disabled = !props.writable || props.saving
+  const submitLabel =
+    props.addingFromCatalog === true
+      ? t(props.saving ? 'settings.providerAdding' : 'settings.providerAddSubmit')
+      : t(props.saving ? 'settings.applying' : 'settings.apply')
   const apiOptions =
     apiField?.enumValues === undefined || apiField.enumValues.length === 0
       ? []
@@ -156,8 +160,11 @@ export function ProviderSettingsEditor(props: ProviderSettingsEditorProps): Reac
         </p>
       ) : (
         <>
-          {props.credentialHint === true ? (
-            <p className="dsh-settings__advanced-hint">{t('settings.providerAddCredentialHint')}</p>
+          {props.addingFromCatalog === true ? (
+            <p className="dsh-settings__advanced-hint">
+              {t('settings.providerAddDefaultsHint')}
+              <strong>{t('settings.providerAddCredentialHint')}</strong>
+            </p>
           ) : null}
           {baseUrlPath === undefined && apiPath === undefined && !hasModelList ? (
             <p className="dsh-settings__advanced-hint">{t('settings.providerNoEditableFields')}</p>
@@ -252,7 +259,7 @@ export function ProviderSettingsEditor(props: ProviderSettingsEditorProps): Reac
           disabled={disabled || !supported}
           onClick={() => void save()}
         >
-          {props.saving ? t('settings.applying') : t('settings.apply')}
+          {submitLabel}
         </button>
       </footer>
     </div>

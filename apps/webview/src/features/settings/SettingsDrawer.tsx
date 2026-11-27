@@ -21,6 +21,7 @@ import type { DshSettingsState, RiskPending } from './general-controls.js'
 import { dshUpdateFailureMessage } from './update-labels.js'
 import { isLocale, settingValueAt, withSettingValue } from './settings-values.js'
 import { ModelsSettingsTab } from './ModelsSettingsTab.js'
+import type { ProviderAddMode } from './ProviderAddCard.js'
 import { ConnectionSettingsTab } from './ConnectionSettingsTab.js'
 import { GeneralSettingsTab } from './GeneralSettingsTab.js'
 import { PluginsSettingsTab, PresetsSettingsTab } from './OtherSettingsTabs.js'
@@ -101,7 +102,11 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
   const dshUpdateCheckStarted = useRef(false)
   const [editingProviderId, setEditingProviderId] = useState<string | undefined>(undefined)
   const [addingProviderId, setAddingProviderId] = useState<string | undefined>(undefined)
-  const [addingCustomProvider, setAddingCustomProvider] = useState(false)
+  const [addingProviderMode, setAddingProviderMode] = useState<ProviderAddMode | undefined>(undefined)
+  const closeProviderAddition = (): void => {
+    setAddingProviderId(undefined)
+    setAddingProviderMode(undefined)
+  }
   const [removingProviderId, setRemovingProviderId] = useState<string | undefined>(undefined)
   const [connectionChoice, setConnectionChoice] = useState<ConnectionChoice>('unchanged')
   const [connectionEndpoint, setConnectionEndpoint] = useState('')
@@ -407,34 +412,27 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
 
   // Provider writes share the epoch guard and the CAS revision dance; the
   // flows live together in one hook so the drawer keeps only the view state.
-  const {
-    runSecretAction,
-    saveProviderChanges,
-    saveCustomProvider,
-    configureCustomProviderSecret,
-    removeProvider,
-  } = useProviderSettingsFlows({
-    t,
-    openEpochRef,
-    dshState,
-    dshSettingsSnapshotFresh,
-    busyField,
-    onLoadDshSettings,
-    onRefreshCatalog: props.onRefreshCatalog,
-    onMutateDshSettings: props.onMutateDshSettings,
-    onCreateCustomProvider: props.onCreateCustomProvider,
-    onConfigureSecret: props.onConfigureSecret,
-    onUnsetDshSetting: props.onUnsetDshSetting,
-    onRemoveSecret: props.onRemoveSecret,
-    setSaveError,
-    setBusyField,
-    setDshState,
-    setDshSettingsSnapshotFresh,
-    setEditingProviderId,
-    setAddingProviderId,
-    setAddingCustomProvider,
-    setRemovingProviderId,
-  })
+  const { runSecretAction, saveProviderChanges, saveCustomProvider, removeProvider } =
+    useProviderSettingsFlows({
+      t,
+      openEpochRef,
+      dshState,
+      dshSettingsSnapshotFresh,
+      busyField,
+      onLoadDshSettings,
+      onRefreshCatalog: props.onRefreshCatalog,
+      onMutateDshSettings: props.onMutateDshSettings,
+      onCreateCustomProvider: props.onCreateCustomProvider,
+      onUnsetDshSetting: props.onUnsetDshSetting,
+      onRemoveSecret: props.onRemoveSecret,
+      setSaveError,
+      setBusyField,
+      setDshState,
+      setDshSettingsSnapshotFresh,
+      setEditingProviderId,
+      closeProviderAddition,
+      setRemovingProviderId,
+    })
   const openSettingsDocument = (): void => {
     if (busyField !== undefined) return
     setDocumentError(undefined)
@@ -511,10 +509,7 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
       ? props.providers.filter((provider) => isAddableProvider(provider, dshState.snapshot))
       : []
   const addingProvider =
-    addingProviderId === undefined
-      ? undefined
-      : addableProviders.find((provider) => provider.id === addingProviderId)
-  const canAddCustomProvider = customProviderTemplate !== undefined
+    addableProviders.find((provider) => provider.id === addingProviderId) ?? addableProviders[0]
   const providerRows =
     dshState.status === 'ready'
       ? props.providers.filter((provider) => isConfiguredProvider(provider, dshState.snapshot))
@@ -607,19 +602,18 @@ export function SettingsDrawer(props: SettingsDrawerProps): ReactElement {
     editingProviderId,
     setEditingProviderId,
     setAddingProviderId,
-    setAddingCustomProvider,
+    setAddingProviderMode,
+    closeProviderAddition,
     setRemovingProviderId,
     removeProviderTriggerRef,
     removeDialogRef,
     runSecretAction,
     saveProviderChanges,
     addableProviders,
-    canAddCustomProvider,
     addingProvider,
-    addingCustomProvider,
+    addingProviderMode,
     customProviderTemplate,
     saveCustomProvider,
-    configureCustomProviderSecret,
     pendingProvider,
     removeProvider,
   }

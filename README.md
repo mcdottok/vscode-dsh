@@ -111,6 +111,10 @@ npm install --global @deepseek-ai/dsh
 3. 在 SSH 窗口的集成终端运行 `node --version`。如果找不到 Node.js，先在远端安装它，再用上面的 npm 命令安装 DSH CLI。运行 `dsh --version` 确认 CLI 可用。
 4. 在 DSH 面板选择 **DSH CLI**，点击 **启动并连接**。如果扩展没检测到 CLI，在 SSH 窗口的终端运行 `command -v dsh`。如果返回了可执行文件路径，把它填入 VS Code 的 **远程 [SSH: 主机名]** 设置 `dsh.runtime.executablePath`，然后点击 **重新检测 DSH** 并重试连接。
 
+### 配置自定义服务商
+
+在 **设置 → 模型 → 添加服务商 → 自定义服务商** 中可以直接填写 API 密钥。获取可用模型和保存服务商会使用同一栏的密钥。使用环境变量或服务商原生认证时可以留空。
+
 ## 开发与反馈
 
 - 本地开发见[构建说明](BUILD.md)、[贡献指南](CONTRIBUTING.md)和[开发者文档](docs/README.md)。

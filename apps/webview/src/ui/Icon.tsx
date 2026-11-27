@@ -18,6 +18,8 @@ export type IconName =
   | 'code'
   | 'copy'
   | 'edit'
+  | 'eye'
+  | 'eye-closed'
   | 'file'
   | 'folder'
   | 'folder-add'
@@ -79,6 +81,15 @@ function renderIcon(name: IconName): ReactElement {
         <>
           <circle cx="12" cy="12" r="9" />
           <path d="M9.5 9a2.5 2.5 0 1 1 4.1 1.9c-1.1.9-1.6 1.4-1.6 2.6M12 16.5h.01" />
+        </>
+      )
+    case 'eye':
+    case 'eye-closed':
+      return (
+        <>
+          <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z" />
+          <circle cx="12" cy="12" r="2.5" />
+          {name === 'eye-closed' ? <path d="m4 4 16 16" /> : null}
         </>
       )
     case 'code':

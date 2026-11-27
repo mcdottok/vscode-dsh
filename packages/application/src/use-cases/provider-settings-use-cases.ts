@@ -5,6 +5,7 @@ import {
   type CustomProviderCreateResult,
   type CustomProviderDraft,
   type ModelProvider,
+  type SettingsRepository,
 } from '@dsh-vscode/domain'
 
 import type { BackendService } from '../services/backend-service.js'
@@ -42,11 +43,10 @@ export class ProviderSettingsUseCases {
     input: CustomProviderDraft,
     apiKey: string | undefined,
     signal?: AbortSignal,
+    retryUnconfirmedWrite = false,
   ): Promise<CustomProviderCreateResult> {
     const draft = validateDraft(input)
     const backend = this.backendService.requireBackend()
-    const providers = await backend.models.listProviders(signal)
-    validateTarget(draft, providers)
 
     const normalizedKey = apiKey === undefined ? undefined : apiKey.trim()
     const keyRef =
@@ -63,18 +63,36 @@ export class ProviderSettingsUseCases {
       models: draft.models.map((model) => ({ ...model })),
     }
 
-    await backend.settings.mutate(
-      draft.settingsNamespace,
-      [
-        {
-          op: 'set',
-          path: [...draft.collectionPath, draft.providerId],
-          value: profile,
-        },
-      ],
-      draft.expectedRevision,
-      signal,
-    )
+    const path = [...draft.collectionPath, draft.providerId]
+    if (
+      !retryUnconfirmedWrite ||
+      !(await matchesSavedProfile(backend.settings, draft, path, profile, signal))
+    ) {
+      validateTarget(draft, await backend.models.listProviders(signal))
+      try {
+        await backend.settings.mutate(
+          draft.settingsNamespace,
+          [{ op: 'set', path, value: profile }],
+          draft.expectedRevision,
+          signal,
+        )
+      } catch (reason: unknown) {
+        if (!(reason instanceof AppError) || reason.code !== 'BACKEND_UNREACHABLE' || signal?.aborted)
+          throw reason
+        // A lost mutate reply can leave the profile present. Verify the exact
+        // target before continuing to credentials or telling the UI to retry.
+        const confirmed = await matchesSavedProfile(backend.settings, draft, path, profile, signal).catch(
+          () => false,
+        )
+        if (!confirmed)
+          throw new AppError({
+            code: reason.code,
+            message: reason.message,
+            retryable: true,
+            context: { customProviderWriteUnconfirmed: true },
+          })
+      }
+    }
 
     if (keyRef === undefined || normalizedKey === undefined || normalizedKey === '')
       return { profileCommitted: true, credentialConfigured: false }
@@ -91,6 +109,51 @@ export class ProviderSettingsUseCases {
       }
     }
   }
+}
+
+async function matchesSavedProfile(
+  settings: SettingsRepository,
+  draft: CustomProviderDraft,
+  path: readonly string[],
+  profile: Readonly<Record<string, unknown>>,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const snapshot = await settings.readSnapshot(signal)
+  const namespace = snapshot.schema.namespaces.find((entry) => entry.ns === draft.settingsNamespace)
+  if (namespace === undefined || namespace.revision <= draft.expectedRevision) return false
+  let value: unknown = snapshot.values
+  for (const segment of [draft.settingsNamespace, ...path]) {
+    if (!isRecord(value) || !Object.hasOwn(value, segment)) return false
+    value = value[segment]
+  }
+  return (
+    isRecord(value) &&
+    value['apiKeyEnv'] === profile['apiKeyEnv'] &&
+    value['displayName'] === profile['displayName'] &&
+    containsSavedValues(value, profile)
+  )
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** DSH may append defaults to the saved profile and model entries. */
+function containsSavedValues(actual: unknown, expected: unknown): boolean {
+  if (Array.isArray(expected))
+    return (
+      Array.isArray(actual) &&
+      actual.length === expected.length &&
+      expected.every((entry: unknown, index) => containsSavedValues(actual[index], entry))
+    )
+  if (isRecord(expected))
+    return (
+      isRecord(actual) &&
+      Object.entries(expected).every(
+        ([key, value]) => Object.hasOwn(actual, key) && containsSavedValues(actual[key], value),
+      )
+    )
+  return actual === expected
 }
 
 function validateDraft(input: CustomProviderDraft): CustomProviderDraft {

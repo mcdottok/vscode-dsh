@@ -106,13 +106,15 @@ export function createSettingsActions(host: SettingsActionHost): SettingsActionM
         },
       })
     },
-    createCustomProvider: async (draft) => {
+    createCustomProvider: async (draft, draftId, apiKey) => {
       const result = parseCustomProviderCreateResult(
         await client.request<unknown>({
           type: 'provider.custom.create',
           requestId: requestId(),
           payload: {
             ...draft,
+            ...(draftId === undefined ? {} : { draftId }),
+            ...(apiKey === undefined ? {} : { apiKey }),
             collectionPath: [...draft.collectionPath],
             models: draft.models.map((model) => ({ ...model })),
           },
