@@ -76,6 +76,26 @@ describe('MarkdownContent', () => {
     expect(nextFrame).toBeUndefined()
   })
 
+  it('shows each rich streaming batch without scheduling intermediate Markdown renders', () => {
+    const requestFrame = vi.fn(() => 1)
+    vi.stubGlobal('requestAnimationFrame', requestFrame)
+    vi.stubGlobal('CSS', undefined)
+    const initial = 'Here is $x^2$.'
+    const { container, rerender } = render(<MarkdownContent markdown={initial} streaming smoothStreaming />)
+
+    const next = `${initial}\n\nNow **compare** $x^3$ with the first value.`
+    rerender(<MarkdownContent markdown={next} streaming smoothStreaming />)
+
+    expect(container.querySelectorAll('.katex')).toHaveLength(2)
+    expect(screen.getByText('compare').tagName).toBe('STRONG')
+    expect(requestFrame).not.toHaveBeenCalled()
+
+    const complete = `${next}\n\n$$x^2$$`
+    rerender(<MarkdownContent markdown={complete} smoothStreaming />)
+    expect(container.querySelectorAll('.katex')).toHaveLength(3)
+    expect(container.querySelectorAll('.katex-display')).toHaveLength(1)
+  })
+
   it('fades only appended prose and lets each batch finish on its original clock', () => {
     const registry = new Map<string, Set<Range>>()
     vi.stubGlobal('CSS', { highlights: registry })

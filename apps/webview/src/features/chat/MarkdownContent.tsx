@@ -36,6 +36,8 @@ const EMPTY_PRODUCED_FILES: readonly string[] = []
 const PLAIN_STREAMING_LINE =
   /^[\p{L}\p{Extended_Pictographic}][\p{L}\p{M}\p{N}\p{Extended_Pictographic}\u200D ,.!?:;，。！？、；：]*$/u
 
+const MAX_STREAMING_MATH_CACHE_LENGTH = 512 * 1024
+
 /**
  * A streaming block is highlighted again once it has grown by this fraction of
  * its own size. Tokenizing a prefix costs as much as the whole block, so a
@@ -96,6 +98,35 @@ markdownRenderer.use(texmath, {
   },
 })
 
+interface MarkdownRenderEnvironment {
+  readonly mathCache?: { readonly entries: Map<string, string>; length: number }
+}
+
+// A new paragraph can require re-rendering the prefix, and the last paragraph
+// can contain math while its prose is still growing. Only the exact same math
+// token can reuse its HTML, including whether it is inline or has a number.
+for (const name of ['math_inline', 'math_inline_double', 'math_block', 'math_block_eqno']) {
+  const renderMath = markdownRenderer.renderer.rules[name]
+  if (renderMath === undefined) continue
+  markdownRenderer.renderer.rules[name] = (tokens, index, options, env: MarkdownRenderEnvironment, self) => {
+    const cache = env.mathCache
+    const token = tokens[index]
+    if (cache === undefined || token === undefined) return renderMath(tokens, index, options, env, self)
+
+    const key = JSON.stringify([name, token.content, token.info])
+    const previous = cache.entries.get(key)
+    if (previous !== undefined) return previous
+
+    const html = renderMath(tokens, index, options, env, self)
+    const length = cache.length + key.length + html.length
+    if (length <= MAX_STREAMING_MATH_CACHE_LENGTH) {
+      cache.entries.set(key, html)
+      cache.length = length
+    }
+    return html
+  }
+}
+
 export interface MarkdownContentProps {
   readonly markdown: string
   /** Streaming messages render completed blocks separately from the tail. */
@@ -118,12 +149,14 @@ export const MarkdownContent = memo(function MarkdownContent({
   const markdownProjector = useMemo(() => createMarkdownProjector(), [])
   const highlightMemory = useRef<HighlightMemory>(new Map())
   const [copyRegions, setCopyRegions] = useState<readonly MountedCopyRegion[]>([])
-  const reveal = useStreamingReveal(markdown, streaming && smoothStreaming)
-  const plainText =
-    smoothStreaming && PLAIN_STREAMING_LINE.test(reveal.text) ? reveal.text.trimEnd() : undefined
+  // Rich text already arrives in paint-sized batches from the store. Each
+  // intermediate reveal would also run the parser and rebuild the live DOM.
+  const isPlainLine = smoothStreaming && PLAIN_STREAMING_LINE.test(markdown)
+  const visibleMarkdown = useStreamingReveal(markdown, streaming && isPlainLine)
+  const plainText = isPlainLine ? visibleMarkdown.trimEnd() : undefined
   const projection = useMemo(
-    () => (plainText === undefined ? markdownProjector(reveal.text, streaming) : undefined),
-    [plainText, reveal.text, markdownProjector, streaming],
+    () => (isPlainLine ? undefined : markdownProjector(visibleMarkdown, streaming)),
+    [isPlainLine, visibleMarkdown, markdownProjector, streaming],
   )
   // Shiki stays off the render path: a missing highlight is requested during
   // render. The highlight cache lives outside React, so the memos below read it
@@ -235,7 +268,7 @@ export const MarkdownContent = memo(function MarkdownContent({
         entry.scrollPort?.removeAttribute('aria-label')
       }
     }
-  }, [markdown, onOpenLink, producedFiles, frozenHtml, tailHtml, streaming, t])
+  }, [onOpenLink, producedFiles, frozenHtml, tailHtml, streaming, t])
 
   const handleClick = (event: MouseEvent<HTMLDivElement>): void => {
     const target = event.target
@@ -263,7 +296,6 @@ export const MarkdownContent = memo(function MarkdownContent({
       <ContentFlow
         ref={contentRef}
         className={`dsh-markdown${streaming ? ' dsh-markdown--streaming' : ''}`}
-        data-stream-refresh-hz={reveal.refreshHz}
         onClick={handleClick}
         onKeyDown={handleKeyDown}
         dangerouslySetInnerHTML={plainText === undefined && tailHtml === null ? primaryMarkup : undefined}
@@ -324,6 +356,11 @@ interface HighlightSlot {
 type HighlightMemory = Map<string, HighlightSlot>
 
 function createMarkdownProjector(): (markdown: string, streaming: boolean) => MarkdownProjection {
+  let mathCache: MarkdownRenderEnvironment['mathCache']
+  // MarkdownIt populates reference definitions on the environment, so share
+  // only the math cache between renders. Each parse still owns its definitions.
+  const render = (markdown: string): string =>
+    markdownRenderer.render(markdown, mathCache === undefined ? {} : { mathCache })
   let previousFrozenSource: string | undefined
   let previousFrozenHtml: string | undefined
   let previousStreamingMarkdown: string | undefined
@@ -334,7 +371,7 @@ function createMarkdownProjector(): (markdown: string, streaming: boolean) => Ma
   return (markdown, streaming) => {
     if (!streaming) {
       if (terminal?.markdown === markdown) return terminal.projection
-      const fullHtml = markdownRenderer.render(markdown)
+      const fullHtml = render(markdown)
       let split = previousProjection
       if (previousStreamingMarkdown !== markdown) {
         const prefix = previousFrozenSource === undefined ? undefined : `${previousFrozenSource}\n\n`
@@ -342,7 +379,7 @@ function createMarkdownProjector(): (markdown: string, streaming: boolean) => Ma
           split !== undefined && prefix !== undefined && markdown.startsWith(prefix)
             ? {
                 primaryHtml: split.primaryHtml,
-                tailHtml: markdownRenderer.render(markdown.slice(prefix.length)),
+                tailHtml: render(markdown.slice(prefix.length)),
               }
             : undefined
       }
@@ -355,10 +392,12 @@ function createMarkdownProjector(): (markdown: string, streaming: boolean) => Ma
       previousStreamingMarkdown = undefined
       previousStreamingBlocks = undefined
       previousProjection = undefined
+      mathCache = undefined
       terminal = { markdown, projection }
       return projection
     }
     terminal = undefined
+    mathCache ??= { entries: new Map(), length: 0 }
     const blocks =
       previousStreamingMarkdown === undefined || previousStreamingBlocks === undefined
         ? splitMarkdownBlocks(markdown)
@@ -368,7 +407,7 @@ function createMarkdownProjector(): (markdown: string, streaming: boolean) => Ma
     previousStreamingBlocks = blocks
     if (blocks.length <= 1) {
       previousProjection = undefined
-      return { primaryHtml: markdownRenderer.render(markdown), tailHtml: null }
+      return { primaryHtml: render(markdown), tailHtml: null }
     }
 
     // The last non-blank block is the only block that can still change as a
@@ -379,11 +418,11 @@ function createMarkdownProjector(): (markdown: string, streaming: boolean) => Ma
     const tail = blocks.slice(stableCount).join('\n\n')
     if (previousFrozenSource !== frozen) {
       previousFrozenSource = frozen
-      previousFrozenHtml = markdownRenderer.render(frozen)
+      previousFrozenHtml = render(frozen)
     }
     previousProjection = {
       primaryHtml: previousFrozenHtml ?? '',
-      tailHtml: tail === '' ? '' : markdownRenderer.render(tail),
+      tailHtml: tail === '' ? '' : render(tail),
     }
     return previousProjection
   }
