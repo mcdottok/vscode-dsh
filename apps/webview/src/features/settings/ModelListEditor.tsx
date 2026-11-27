@@ -7,7 +7,7 @@ import type {
 } from '@dsh-vscode/domain'
 import { useDismissibleLayer } from '../../components/common/useDismissibleLayer.js'
 import { Icon } from '../../ui/Icon.js'
-import { useI18n, type Translate } from '../../i18n.js'
+import { useI18n } from '../../i18n.js'
 import { ModelReasoningEfforts } from './ModelReasoningEfforts.js'
 
 /** A model draft keeps fields the host may add even when this UI does not edit them. */
@@ -31,6 +31,11 @@ type ModelPatch = {
 type CapacityField = 'contextWindow' | 'maxTokens'
 type InputField = 'input' | 'inputModalities'
 
+interface ModelDraftRow {
+  readonly key: number
+  readonly model: EditableModel
+}
+
 export interface ModelListEditorProps {
   readonly models: readonly EditableModel[]
   readonly inputField?: InputField
@@ -47,6 +52,7 @@ export interface ModelListEditorProps {
   readonly onChange?: (models: readonly EditableModel[]) => void
   readonly onSave: (models: readonly EditableModel[]) => Promise<void>
   readonly onDiscover: (input: Omit<ModelDiscoveryInput, 'apiKey'>) => Promise<readonly DiscoveredModel[]>
+  readonly discoveryDisabled?: boolean
 }
 
 const CAPACITY_PATTERN = /^(\d+(?:\.\d+)?)([km])?$/iu
@@ -54,7 +60,11 @@ const CAPACITY_PATTERN = /^(\d+(?:\.\d+)?)([km])?$/iu
 export function ModelListEditor(props: ModelListEditorProps): ReactElement {
   const { t } = useI18n()
   const inputField = props.inputField ?? 'inputModalities'
-  const [draft, setDraft] = useState<EditableModel[]>(() => props.models.map(copyModel))
+  // A draft row keeps its identity even while its model ID is blank or being edited.
+  const [draft, setDraft] = useState<ModelDraftRow[]>(() =>
+    props.models.map((model, key) => ({ key, model: copyModel(model) })),
+  )
+  const nextRowKey = useRef(props.models.length)
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set())
   const [editingCapacity, setEditingCapacity] = useState<ReadonlyMap<string, string>>(new Map())
   const [discovering, setDiscovering] = useState(false)
@@ -63,38 +73,31 @@ export function ModelListEditor(props: ModelListEditorProps): ReactElement {
   const [error, setError] = useState<string | undefined>(undefined)
   const [saved, setSaved] = useState(false)
 
-  const replaceDraft = (next: EditableModel[]): void => {
-    setDraft(next)
-    props.onChange?.(next.map(copyModel))
-  }
-
-  const update = (index: number, patch: ModelPatch): void => {
+  const replaceDraft = (next: ModelDraftRow[]): void => {
     setSaved(false)
-    const next = draft.map((model, at) => (at === index ? applyPatch(model, patch) : model))
     setDraft(next)
-    props.onChange?.(next.map(copyModel))
+    props.onChange?.(next.map(({ model }) => copyModel(model)))
   }
 
   /** Replace one row whole, so deleting an optional field actually removes it. */
   const replace = (index: number, model: EditableModel): void => {
-    setSaved(false)
-    const next = draft.map((existing, at) => (at === index ? model : existing))
-    setDraft(next)
-    props.onChange?.(next.map(copyModel))
+    replaceDraft(draft.map((row, at) => (at === index ? { ...row, model } : row)))
+  }
+
+  const update = (index: number, patch: ModelPatch): void => {
+    const row = draft[index]
+    if (row !== undefined) replace(index, applyPatch(row.model, patch))
   }
 
   const remove = (index: number): void => {
-    setSaved(false)
-    const next = draft.filter((_model, at) => at !== index)
-    setDraft(next)
-    props.onChange?.(next.map(copyModel))
+    replaceDraft(draft.filter((_row, at) => at !== index))
     setExpanded((current) => shiftIndexes(current, index))
     setEditingCapacity((current) => shiftCapacityBuffers(current, index))
   }
 
-  const add = (): void => {
-    setSaved(false)
-    replaceDraft([...draft, { id: '' }])
+  const appendModels = (models: readonly EditableModel[]): void => {
+    const rows = models.map((model) => ({ key: nextRowKey.current++, model }))
+    replaceDraft([...draft, ...rows])
   }
 
   const discover = async (): Promise<void> => {
@@ -107,7 +110,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactElement {
         setError(t('settings.noDiscoveredModels'))
         return
       }
-      const known = new Set(draft.map((model) => model.id.trim()).filter((id) => id !== ''))
+      const known = new Set(draft.map(({ model }) => model.id.trim()).filter((id) => id !== ''))
       setCandidates(found)
       setPicked(new Set(found.filter((model) => !known.has(model.id)).map((model) => model.id)))
     } catch (reason: unknown) {
@@ -135,7 +138,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactElement {
 
   const adopt = (): void => {
     if (candidates === undefined) return
-    const existing = new Set(draft.map((model) => model.id.trim()))
+    const existing = new Set(draft.map(({ model }) => model.id.trim()))
     const additions = candidates
       .filter((model) => picked.has(model.id) && !existing.has(model.id))
       .map((model) => ({
@@ -145,14 +148,14 @@ export function ModelListEditor(props: ModelListEditorProps): ReactElement {
         ...(model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens }),
         ...(model.inputModalities === undefined ? {} : { [inputField]: [...model.inputModalities] }),
       }))
-    setSaved(false)
-    replaceDraft([...draft, ...additions])
+    appendModels(additions)
     closeCandidates()
   }
 
   const save = async (): Promise<void> => {
     setError(undefined)
-    const failure = validateDraft(draft, editingCapacity, inputField)
+    const models = draft.map(({ model }) => model)
+    const failure = validateDraft(models, editingCapacity, inputField)
     if (failure !== undefined) {
       setError(
         failure.kind === 'id'
@@ -165,7 +168,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactElement {
     }
     setSaved(false)
     try {
-      await props.onSave(draft.map((model) => normalizeModel(model, inputField)))
+      await props.onSave(models.map((model) => normalizeModel(model, inputField)))
       setEditingCapacity(new Map())
       setSaved(true)
     } catch (reason: unknown) {
@@ -180,34 +183,23 @@ export function ModelListEditor(props: ModelListEditorProps): ReactElement {
         <div className="dsh-settings__model-editor-actions">
           <button
             ref={discoverTriggerRef}
-            className="dsh-button dsh-button--secondary dsh-button--compact"
+            className="dsh-button dsh-button--ghost dsh-button--compact"
             type="button"
-            disabled={!props.writable || props.saving || discovering}
+            disabled={!props.writable || props.saving || discovering || props.discoveryDisabled === true}
             onClick={() => void discover()}
           >
             <Icon name="refresh" />
             {discovering ? t('settings.fetchingModels') : t('settings.fetchModels')}
           </button>
-          <button
-            className="dsh-button dsh-button--secondary dsh-button--compact"
-            type="button"
-            disabled={!props.writable || props.saving}
-            onClick={add}
-          >
-            <Icon name="add" />
-            {t('settings.addModel')}
-          </button>
         </div>
       </div>
       {draft.length === 0 ? <p className="dsh-settings__empty">{t('settings.noConfiguredModels')}</p> : null}
       <ul className="dsh-settings__editable-models">
-        {draft.map((model, index) => {
+        {draft.map(({ key, model }, index) => {
           const open = expanded.has(index)
-          const explicitInput = explicitInputTypes(model, inputField)
-          const inheritedInput = inheritedInputTypes(model, props)
-          const selectedInput = explicitInput ?? inheritedInput
+          const selectedInput = explicitInputTypes(model, inputField) ?? inheritedInputTypes(model, props)
           return (
-            <li key={`${index}:${model.id}`} className="dsh-settings__editable-model">
+            <li key={key} className="dsh-settings__editable-model">
               <div className="dsh-settings__editable-model-row">
                 <label className="dsh-settings__editable-model-id">
                   <span className="dsh-settings__visually-hidden">{t('settings.modelId')}</span>
@@ -249,7 +241,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactElement {
                   disabled={!props.writable || props.saving}
                   onClick={() => remove(index)}
                 >
-                  <Icon name="close" />
+                  <Icon name="trash" />
                 </button>
               </div>
               {open ? (
@@ -278,34 +270,17 @@ export function ModelListEditor(props: ModelListEditorProps): ReactElement {
                   />
                   <fieldset className="dsh-settings__model-input-types">
                     <legend>{t('settings.inputTypes')}</legend>
-                    {explicitInput === undefined ? (
-                      <span className="dsh-settings__model-input-inherited">
-                        {t('settings.inputTypesInherited', { types: inputTypeNames(inheritedInput, t) })}
-                      </span>
-                    ) : (
-                      <button
-                        className="dsh-button dsh-button--secondary dsh-button--compact"
-                        type="button"
-                        disabled={!props.writable || props.saving}
-                        onClick={() => {
-                          const patch: Record<string, unknown> = { [inputField]: undefined }
-                          if (inputField === 'inputModalities' && !inheritedInput.includes('image')) {
-                            patch.imagePixelBudget = undefined
-                            patch.imageMaxBytes = undefined
-                          }
-                          update(index, patch)
-                        }}
-                      >
-                        {t('settings.useInheritedInputTypes')}
-                      </button>
-                    )}
                     <div className="dsh-settings__model-input-options">
                       {(['text', 'image'] as const).map((modality) => (
                         <label key={modality}>
                           <input
                             type="checkbox"
                             checked={selectedInput.includes(modality)}
-                            disabled={!props.writable || props.saving}
+                            disabled={
+                              !props.writable ||
+                              props.saving ||
+                              (selectedInput.length === 1 && selectedInput.includes(modality))
+                            }
                             onChange={(event) => {
                               const next = new Set(selectedInput)
                               if (event.currentTarget.checked) next.add(modality)
@@ -346,6 +321,15 @@ export function ModelListEditor(props: ModelListEditorProps): ReactElement {
           )
         })}
       </ul>
+      <button
+        className="dsh-button dsh-button--secondary dsh-button--compact dsh-settings__model-add-action"
+        type="button"
+        disabled={!props.writable || props.saving}
+        onClick={() => appendModels([{ id: '' }])}
+      >
+        <Icon name="add" />
+        {t('settings.addModel')}
+      </button>
       {error === undefined ? null : (
         <p className="dsh-settings__error" role="alert">
           {error}
@@ -562,12 +546,6 @@ function validInputTypes(value: unknown): readonly ModelInputModality[] | undefi
 
 function isInputModality(value: unknown): value is ModelInputModality {
   return value === 'text' || value === 'image'
-}
-
-function inputTypeNames(modalities: readonly ModelInputModality[], t: Translate): string {
-  return modalities
-    .map((modality) => t(modality === 'text' ? 'settings.inputText' : 'settings.inputImage'))
-    .join(', ')
 }
 
 function copyModel(model: EditableModel): EditableModel {

@@ -851,7 +851,15 @@ export function createAppStore(client = new ProtocolClient(getVsCodeApi())): App
   const settingsActions = createSettingsActions({
     client,
     setState,
-    refreshModelCatalog: globalCatalogs.refreshModels,
+    refreshModelCatalog: async () => {
+      // The chat picker prefers the session directory. A provider settings
+      // write can change its capabilities without changing the selected route.
+      const sessionId = state.activeSessionId
+      await Promise.all([
+        globalCatalogs.refreshModels(),
+        ...(sessionId === undefined ? [] : [refreshSessionModelDirectoryForSession(sessionId)]),
+      ])
+    },
     applyBusyEnter,
     capturePresetSessionTarget,
     nextPresetRosterGeneration,

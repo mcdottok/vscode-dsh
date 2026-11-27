@@ -492,7 +492,7 @@ describe('ModelPicker seat statements', () => {
   it('says the adapter resolves the effort when it declares no default', () => {
     renderPicker({ value: { providerId: 'deepseek', modelId: 'deepseek-reasoner' } })
 
-    expect(triggerLabel()).toBe('DeepSeek Reasoner · Provider default')
+    expect(triggerLabel()).toBe('DeepSeek Reasoner · Default')
   })
 
   it('shows the level the session stated instead of the declared default', () => {
@@ -517,9 +517,7 @@ describe('ModelPicker seat statements', () => {
     openRoot()
     activate(screen.getByRole('menuitem', { name: /^Reasoning effort/u }))
 
-    expect(screen.getByRole('menuitemradio', { name: 'Provider default' }).getAttribute('aria-checked')).toBe(
-      'true',
-    )
+    expect(screen.getByRole('menuitemradio', { name: 'Default' }).getAttribute('aria-checked')).toBe('true')
     expect(screen.getByRole('menuitemradio', { name: 'Low' }).getAttribute('aria-checked')).toBe('false')
   })
 
@@ -529,7 +527,7 @@ describe('ModelPicker seat statements', () => {
     openRoot()
     activate(screen.getByRole('menuitem', { name: /^Reasoning effort/u }))
 
-    expect(screen.queryByRole('menuitemradio', { name: 'Provider default' })).toBeNull()
+    expect(screen.queryByRole('menuitemradio', { name: 'Default' })).toBeNull()
     expect(screen.getByRole('menuitemradio', { name: 'High' }).getAttribute('aria-checked')).toBe('true')
   })
 
@@ -543,7 +541,7 @@ describe('ModelPicker seat statements', () => {
     openRoot()
     activate(screen.getByRole('menuitem', { name: /^Reasoning effort/u }))
     expect(screen.getByRole('menuitemradio', { name: 'High' }).getAttribute('aria-checked')).toBe('true')
-    activate(screen.getByRole('menuitemradio', { name: 'Provider default' }))
+    activate(screen.getByRole('menuitemradio', { name: 'Default' }))
 
     expect(onChange).toHaveBeenCalledWith({ providerId: 'deepseek', modelId: 'deepseek-reasoner' })
   })

@@ -48,6 +48,25 @@ describe('ModelListEditor state notifications', () => {
     expect(onChange).toHaveBeenCalledWith([{ id: 'model-b' }])
   })
 
+  it('keeps a new model ID input focused while typing and when an earlier row is removed', () => {
+    renderEditor()
+    const add = screen.getByRole('button', { name: 'Add model' })
+    fireEvent.click(add)
+    fireEvent.click(add)
+
+    const input = screen.getAllByRole<HTMLInputElement>('textbox', { name: 'Model ID' })[1]!
+    input.focus()
+    for (const value of ['m', 'mo', 'mod']) {
+      fireEvent.change(input, { target: { value } })
+      expect(document.activeElement).toBe(input)
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove model 1' }))
+    expect(screen.getByRole('textbox', { name: 'Model ID' })).toBe(input)
+    expect(document.activeElement).toBe(input)
+    expect(input.value).toBe('mod')
+  })
+
   it('closes the discovered-models dialog on Escape', async () => {
     renderEditor()
 
@@ -120,7 +139,7 @@ describe('ModelListEditor state notifications', () => {
     )
   })
 
-  it('restores inherited catalog inputs instead of persisting the effective value', async () => {
+  it('shows inherited catalog inputs without saving an explicit override', async () => {
     const onSave = vi.fn().mockResolvedValue(undefined)
     const catalogModels: readonly ModelDescriptor[] = [
       {
@@ -133,7 +152,7 @@ describe('ModelListEditor state notifications', () => {
     ]
     render(
       <ModelListEditor
-        models={[{ id: 'vision-model', inputModalities: ['text'] }]}
+        models={[{ id: 'vision-model' }]}
         catalogModels={catalogModels}
         providerDefaultInput={['text']}
         writable
@@ -145,8 +164,6 @@ describe('ModelListEditor state notifications', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Advanced model settings' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Use inherited' }))
-
     expect(screen.getByRole<HTMLInputElement>('checkbox', { name: 'Image' }).checked).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: 'Save model list' }))
     await waitFor(() => expect(onSave).toHaveBeenCalledWith([{ id: 'vision-model' }]))
@@ -166,10 +183,16 @@ describe('ModelListEditor state notifications', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Advanced model settings' }))
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Text' }))
-
-    expect(screen.getByRole<HTMLInputElement>('checkbox', { name: 'Text' }).checked).toBe(true)
-    expect(screen.getByRole('alert').textContent).toBe('Select at least one input type.')
+    const text = screen.getByRole<HTMLInputElement>('checkbox', { name: 'Text' })
+    const image = screen.getByRole<HTMLInputElement>('checkbox', { name: 'Image' })
+    expect(text.checked).toBe(true)
+    expect(text.disabled).toBe(true)
+    fireEvent.click(image)
+    expect(screen.queryByRole('button', { name: 'Use inherited' })).toBeNull()
+    expect(text.disabled).toBe(false)
+    fireEvent.click(text)
+    expect(image.checked).toBe(true)
+    expect(image.disabled).toBe(true)
     expect(onSave).not.toHaveBeenCalled()
   })
 

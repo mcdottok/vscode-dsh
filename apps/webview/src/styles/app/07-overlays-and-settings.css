@@ -437,12 +437,12 @@
     background-color var(--dsh-motion-duration-fast) var(--dsh-motion-ease-standard);
 }
 
-.dsh-settings__switch[aria-checked='true'] {
+.dsh-settings__switch:is([aria-checked='true'], :has(> input:checked)) {
   border-color: var(--dsh-accent-line);
   background: var(--dsh-primary);
 }
 
-.dsh-settings__switch[aria-checked='true'] > span {
+.dsh-settings__switch:is([aria-checked='true'], :has(> input:checked)) > span {
   background: var(--dsh-primary-text);
   transform: translateX(1rem);
 }
@@ -453,7 +453,7 @@
     background: ButtonText;
   }
 
-  .dsh-settings__switch:disabled > span {
+  .dsh-settings__switch:is(:disabled, :has(> input:disabled)) > span {
     background: GrayText;
   }
 }

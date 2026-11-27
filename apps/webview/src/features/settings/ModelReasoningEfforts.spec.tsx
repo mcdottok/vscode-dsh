@@ -54,6 +54,16 @@ function Editor(props: {
 describe('ModelReasoningEfforts', () => {
   afterEach(() => cleanup())
 
+  it('shows the API parameter help on focus and dismisses it with Escape', () => {
+    render(<Harness initial={{ id: 'model' }} onChange={() => undefined} />)
+    const help = screen.getByRole('button', { name: 'About reasoning levels' })
+    expect(screen.queryByRole('tooltip')).toBeNull()
+    fireEvent.focus(help)
+    expect(screen.getByRole('tooltip').textContent).toContain('reasoning_effort')
+    fireEvent.keyDown(help, { key: 'Escape' })
+    expect(screen.queryByRole('tooltip')).toBeNull()
+  })
+
   it('starts a declaration from the schema levels and removes it when the switch is off', () => {
     const changes: EditableModel[] = []
     render(<Harness initial={{ id: 'model' }} onChange={(next) => changes.push(next)} />)
@@ -80,7 +90,7 @@ describe('ModelReasoningEfforts', () => {
       />,
     )
 
-    const low = screen.getByLabelText<HTMLInputElement>('low Sent value')
+    const low = screen.getByLabelText<HTMLInputElement>('low API parameter value')
     fireEvent.change(low, { target: { value: 'minimal' } })
     expect(changes.at(-1)?.reasoningEfforts).toEqual({ off: null, low: 'minimal', high: 'high' })
 
@@ -98,7 +108,7 @@ describe('ModelReasoningEfforts', () => {
       />,
     )
 
-    expect(screen.getByLabelText<HTMLInputElement>('off Sent value').disabled).toBe(true)
+    expect(screen.getByLabelText<HTMLInputElement>('off API parameter value').disabled).toBe(true)
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove reasoning level low' }))
     expect(changes.at(-1)?.reasoningEfforts).toEqual({ off: null, high: 'high' })
@@ -132,7 +142,7 @@ describe('ModelReasoningEfforts', () => {
       />,
     )
 
-    expect(screen.getByLabelText<HTMLInputElement>('minimal Sent value').disabled).toBe(true)
+    expect(screen.getByLabelText<HTMLInputElement>('minimal API parameter value').disabled).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: 'Level 1: minimal' }))
     expect(screen.getByRole('option', { name: 'low' })).toBeDefined()
     expect(screen.getByRole('option', { name: 'medium' })).toBeDefined()

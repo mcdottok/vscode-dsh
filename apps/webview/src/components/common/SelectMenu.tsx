@@ -14,7 +14,7 @@ export interface SelectMenuProps {
   /** Applied to the trigger, the labelable element an external `<label for>` targets. */
   readonly id?: string
   readonly className?: string
-  readonly icon: IconName
+  readonly icon?: IconName
   readonly density?: 'compact' | 'regular'
   readonly displayLabel?: boolean
   /** Overlay menus escape nearby layout; flow menus reserve room in forms. */
@@ -182,7 +182,7 @@ export const SelectMenu = memo(function SelectMenu(props: SelectMenuProps): Reac
         onClick={() => (open ? close() : openMenu())}
         onKeyDown={onTriggerKeyDown}
       >
-        <Icon name={props.icon} />
+        {props.icon === undefined ? null : <Icon name={props.icon} />}
         <span className="dsh-select-menu__trigger-text">{props.label}</span>
         <span className="dsh-select-menu__trigger-label">{props.label}</span>
         <Icon name="chevron-down" className="dsh-select-menu__chevron" />

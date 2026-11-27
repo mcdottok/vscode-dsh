@@ -2131,6 +2131,40 @@ describe('AppStore startup session restoration', () => {
     store.dispose()
   })
 
+  it('refreshes reasoning levels for the active session after a provider settings change', async () => {
+    let configured = false
+    const current = { providerId: 'gateway', modelId: 'gateway-chat' }
+    const reasoningLevels = [{ id: 'high', label: 'High' }]
+    const client = new StartupClient((request) => {
+      if (request.type === 'models.session.list')
+        return {
+          models: [
+            {
+              id: current.modelId,
+              providerId: current.providerId,
+              label: 'Gateway Chat',
+              supportsReasoning: configured,
+              ...(configured ? { reasoningLevels } : {}),
+            },
+          ],
+          failures: [],
+          current,
+          routable: true,
+        }
+      return startupResponse(request)
+    })
+    const store = createAppStore(client as unknown as ProtocolClient)
+
+    await store.openSession('session-active')
+    await vi.waitFor(() => expect(store.sessionModels[0]?.supportsReasoning).toBe(false))
+
+    configured = true
+    await store.refreshModelCatalog()
+
+    expect(store.sessionModels[0]?.reasoningLevels).toEqual(reasoningLevels)
+    store.dispose()
+  })
+
   it('does not notify when the model catalog refresh is unchanged', async () => {
     const provider = { id: 'deepseek', name: 'DeepSeek', kind: 'builtin', configurable: false, fields: [] }
     const model = {

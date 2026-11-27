@@ -21,6 +21,7 @@ export type IconName =
   | 'file'
   | 'folder'
   | 'folder-add'
+  | 'help'
   | 'image'
   | 'list'
   | 'model'
@@ -73,6 +74,13 @@ export function Icon({ name, className }: IconProps): ReactElement {
 
 function renderIcon(name: IconName): ReactElement {
   switch (name) {
+    case 'help':
+      return (
+        <>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M9.5 9a2.5 2.5 0 1 1 4.1 1.9c-1.1.9-1.6 1.4-1.6 2.6M12 16.5h.01" />
+        </>
+      )
     case 'code':
       return <path d="m7 7-5 5 5 5m10-10 5 5-5 5M14 4l-4 16" />
     case 'analysis':

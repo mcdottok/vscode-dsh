@@ -227,16 +227,23 @@ describe('ProviderSettingsEditor write-time validation', () => {
     await waitFor(() => expect(onClose).toHaveBeenCalledWith(true))
   })
 
-  it('unsets the explicit modality field to restore provider inheritance', async () => {
-    const { onSave } = renderEditor([{ id: 'model-a', inputModalities: ['text', 'image'] }])
+  it('saves image input from the checkbox without showing a reset action', async () => {
+    const { onSave } = renderEditor([{ id: 'model-a', inputModalities: ['text'] }])
     expandAdvanced()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Use inherited' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Image' }))
+    expect(screen.queryByRole('button', { name: 'Use inherited' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
 
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith(
-        [{ kind: 'set', path: 'llm-deepseek.models', value: [{ id: 'model-a' }] }],
+        [
+          {
+            kind: 'set',
+            path: 'llm-deepseek.models',
+            value: [{ id: 'model-a', inputModalities: ['text', 'image'] }],
+          },
+        ],
         3,
       ),
     )
@@ -352,7 +359,6 @@ describe('ProviderSettingsEditor write-time validation', () => {
     )
 
     expandAdvanced()
-    expect(screen.getByText('Inherited: Text, Image')).toBeDefined()
     expect(screen.getByRole<HTMLInputElement>('checkbox', { name: 'Image' }).checked).toBe(true)
     fireEvent.click(screen.getByRole('checkbox', { name: 'Image' }))
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }))

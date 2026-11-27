@@ -1,6 +1,7 @@
-import { useState, type ReactElement } from 'react'
+import { useId, useRef, useState, type ReactElement } from 'react'
 import type { Translate } from '../../i18n.js'
 import { SelectMenu } from '../../components/common/SelectMenu.js'
+import { useDismissibleLayer } from '../../components/common/useDismissibleLayer.js'
 import { Icon } from '../../ui/Icon.js'
 import type { EditableModel } from './ModelListEditor.js'
 
@@ -115,6 +116,10 @@ export interface ModelReasoningEffortsProps {
 export function ModelReasoningEfforts(props: ModelReasoningEffortsProps): ReactElement {
   const { model, levels, levelsOnly, position, disabled, t, onChange } = props
   const entries = readEfforts(model)
+  const helpId = useId()
+  const helpRef = useRef<HTMLDivElement>(null)
+  const [helpOpen, setHelpOpen] = useState(false)
+  useDismissibleLayer({ open: helpOpen, refs: [helpRef], onDismiss: () => setHelpOpen(false) })
   // Only the focused field keeps its own text, so a field cleared while typing
   // stays empty although its level's name is stored. Leaving the field drops
   // it, and removing a level resets the buffer with it.
@@ -183,30 +188,61 @@ export function ModelReasoningEfforts(props: ModelReasoningEffortsProps): ReactE
   const label = `${t('settings.modelReasoning')} ${String(position)}`
 
   return (
-    <fieldset className="dsh-settings__model-reasoning" aria-label={label}>
-      <legend>{t('settings.modelReasoning')}</legend>
-      <label className="dsh-settings__model-reasoning-switch">
-        <input
-          type="checkbox"
-          role="switch"
-          checked={entries !== undefined}
-          disabled={disabled}
-          aria-label={label}
-          onChange={(event) => {
-            write(event.currentTarget.checked ? initialEntries : undefined)
-            setTyping(undefined)
+    <fieldset className="dsh-settings__model-reasoning">
+      <legend className="dsh-settings__visually-hidden">{label}</legend>
+      <div className="dsh-settings__model-reasoning-heading">
+        <span>{t('settings.modelReasoning')}</span>
+        <div
+          ref={helpRef}
+          className="dsh-settings__model-reasoning-help"
+          onPointerEnter={(event) => {
+            if (event.pointerType === 'mouse') setHelpOpen(true)
           }}
-        />
-        <span>{t('settings.modelReasoningDeclared')}</span>
-      </label>
-      <p className="dsh-settings__model-reasoning-hint">{t('settings.modelReasoningHint')}</p>
+          onPointerLeave={(event) => {
+            if (event.pointerType === 'mouse' && !event.currentTarget.contains(document.activeElement))
+              setHelpOpen(false)
+          }}
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget) && !event.currentTarget.matches(':hover'))
+              setHelpOpen(false)
+          }}
+        >
+          <button
+            className="dsh-settings__model-reasoning-help-trigger"
+            type="button"
+            aria-label={t('settings.modelReasoningHelp')}
+            aria-controls={helpId}
+            aria-expanded={helpOpen}
+            onFocus={() => setHelpOpen(true)}
+            onClick={() => setHelpOpen(true)}
+          >
+            <Icon name="help" />
+          </button>
+          <span id={helpId} className="dsh-settings__model-reasoning-hint" role="tooltip" hidden={!helpOpen}>
+            {t('settings.modelReasoningHint')}
+          </span>
+        </div>
+        <label className="dsh-settings__switch dsh-settings__model-reasoning-switch">
+          <input
+            type="checkbox"
+            role="switch"
+            checked={entries !== undefined}
+            disabled={disabled}
+            aria-label={label}
+            onChange={(event) => {
+              write(event.currentTarget.checked ? initialEntries : undefined)
+              setTyping(undefined)
+            }}
+          />
+          <span aria-hidden="true" />
+        </label>
+      </div>
       {entries === undefined ? null : (
         <>
           {entries.length === 0 ? null : (
             <div className="dsh-settings__model-reasoning-head" aria-hidden="true">
               <span>{t('settings.modelReasoningLevel')}</span>
               <span>{t('settings.modelReasoningValue')}</span>
-              <span />
             </div>
           )}
           {entries.map(([level, wire], index) => (
@@ -216,7 +252,6 @@ export function ModelReasoningEfforts(props: ModelReasoningEffortsProps): ReactE
             <div className="dsh-settings__model-reasoning-row" key={index}>
               <SelectMenu
                 className="dsh-settings__model-reasoning-select"
-                icon="settings"
                 menuMode="flow"
                 label={level}
                 ariaLabel={`${t('settings.modelReasoningLevel')} ${String(index + 1)}`}
@@ -249,7 +284,7 @@ export function ModelReasoningEfforts(props: ModelReasoningEffortsProps): ReactE
                   setTyping(undefined)
                 }}
               >
-                <Icon name="close" />
+                <Icon name="trash" />
               </button>
             </div>
           ))}
@@ -261,7 +296,7 @@ export function ModelReasoningEfforts(props: ModelReasoningEffortsProps): ReactE
             <p className="dsh-settings__error">{t('settings.modelReasoningNeedsLevel')}</p>
           ) : null}
           <button
-            className="dsh-button dsh-button--secondary dsh-button--compact"
+            className="dsh-button dsh-button--secondary dsh-button--compact dsh-settings__model-add-action"
             type="button"
             disabled={disabled || levels.every((level) => used.includes(level))}
             onClick={() => addLevel(entries)}
