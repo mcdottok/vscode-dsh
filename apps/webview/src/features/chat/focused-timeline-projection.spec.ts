@@ -160,6 +160,32 @@ describe('focused Turn presentation', () => {
     expect(project([message('replacement', 9)])[0]?.id).toBe('focused-turn:replacement')
   })
 
+  it('updates a visible streaming reply without rebuilding its work summary', () => {
+    const project = createFocusedTimelineProjector()
+    const prefix: DisplayTimelineNode[] = [
+      message('old', 1),
+      { kind: 'user-message', id: 'user', markdown: 'next' },
+    ]
+    const live = { ...message('tail', 2, false), reasoning: { markdown: 'done', streaming: false } }
+    const initial = project([...prefix, live], prefix)
+    const prior = initial.at(-1)
+    if (prior?.kind !== 'focused-turn') throw new Error('Expected focused turn')
+
+    const longer = { ...live, markdown: 'tail grows', reasoning: { ...live.reasoning } }
+    const updated = project([...prefix, longer], prefix)
+    const current = updated.at(-1)
+    if (current?.kind !== 'focused-turn') throw new Error('Expected focused turn')
+    expect(updated[0]).toBe(initial[0])
+    expect(current.answer).toBe(longer)
+    expect(current.processSummary).toBe(prior.processSummary)
+    expect(current.sourceIds).toBe(prior.sourceIds)
+
+    const finished = { ...longer, streaming: false, turnCompleted: true }
+    const completed = project([...prefix, finished], prefix).at(-1)
+    expect(completed?.kind === 'focused-turn' && completed.foldable).toBe(true)
+    expect(completed?.kind === 'focused-turn' && completed.answer).toBe(finished)
+  })
+
   it('keeps one Turn in one row without losing a single source message', () => {
     const source = Array.from({ length: 1_000 }, (_, index) => message(`message-${index}`, 1))
     const rows = createFocusedTimelineProjector()(source)

@@ -237,6 +237,8 @@ interface DisplayNodeProjectionCache {
 
 interface DisplayNodeProjection {
   readonly nodes: readonly DisplayTimelineNode[]
+  /** A shared array proves those exact display nodes were reused at the start. */
+  readonly reusedPrefix: readonly DisplayTimelineNode[]
   readonly cache: DisplayNodeProjectionCache
 }
 
@@ -303,6 +305,7 @@ function projectDisplayNodes(
 
   return {
     nodes: projected,
+    reusedPrefix: prefix,
     cache: {
       sourceNodes: nodes,
       showDshEvents,

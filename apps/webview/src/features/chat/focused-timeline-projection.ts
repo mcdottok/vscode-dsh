@@ -166,31 +166,80 @@ function turnStates(nodes: readonly DisplayTimelineNode[]): Map<number, TurnStat
   return turns
 }
 
+function replaceStreamingReply(
+  row: PresentedTimelineNode | undefined,
+  before: DisplayTimelineNode | undefined,
+  after: DisplayTimelineNode | undefined,
+): PresentedTimelineNode | undefined {
+  if (
+    before?.kind !== 'assistant-message' ||
+    after?.kind !== 'assistant-message' ||
+    !before.streaming ||
+    before.streaming !== after.streaming ||
+    before.id !== after.id ||
+    before.turn !== after.turn ||
+    before.step !== after.step ||
+    before.sequence !== after.sequence ||
+    before.turnCompleted !== after.turnCompleted ||
+    before.interrupted !== after.interrupted ||
+    before.reasoning?.streaming !== after.reasoning?.streaming ||
+    before.markdown.trim() === '' ||
+    !after.markdown.startsWith(before.markdown)
+  )
+    return undefined
+  // The row receives the entire new message. The checks above cover what
+  // affects its identity, position and turn summary.
+  if (row === before) return after
+  if (row?.kind !== 'focused-turn' || row.nodes.at(-1) !== before) return undefined
+  const nodes = row.nodes.slice()
+  nodes[nodes.length - 1] = after
+  return {
+    ...row,
+    nodes,
+    answer: row.answer === before ? after : row.answer,
+  }
+}
+
 /**
  * One Turn projects to one row. The row keeps a bounded, compact process log
  * on screen, so a very long Turn neither multiplies rows nor floods the page.
  */
 export function createFocusedTimelineProjector(): (
   nodes: readonly DisplayTimelineNode[],
+  reusedPrefix?: readonly DisplayTimelineNode[],
 ) => readonly PresentedTimelineNode[] {
   let previous:
     | {
         readonly source: readonly DisplayTimelineNode[]
+        readonly reusedPrefix: readonly DisplayTimelineNode[] | undefined
         readonly rows: readonly PresentedTimelineNode[]
         readonly starts: readonly number[]
         readonly turns: ReadonlyMap<number, TurnState>
       }
     | undefined
-  return (nodes) => {
+  return (nodes, reusedPrefix) => {
     if (previous?.source === nodes) return previous.rows
     let common = 0
-    if (previous !== undefined)
+    if (previous !== undefined) {
+      if (reusedPrefix !== undefined && previous.reusedPrefix === reusedPrefix) common = reusedPrefix.length
       while (
         common < nodes.length &&
         common < previous.source.length &&
         nodes[common] === previous.source[common]
       )
         common++
+      // The display projector has already reused history. A visible reply's
+      // text alone changes no turn boundaries, tool facts or folding decisions.
+      if (common === nodes.length - 1 && nodes.length === previous.source.length) {
+        const updated = replaceStreamingReply(previous.rows.at(-1), previous.source[common], nodes[common])
+        if (updated !== undefined) {
+          const rows = previous.rows.slice()
+          rows[rows.length - 1] = updated
+          previous = { ...previous, source: nodes, reusedPrefix, rows }
+          return rows
+        }
+      }
+    }
     const turns = turnStates(nodes)
     // A changed call can alter the first summary even if its virtual row is
     // much later and its health/turn coordinates have not changed.
@@ -305,7 +354,7 @@ export function createFocusedTimelineProjector(): (
       })
       index = runEnd
     }
-    previous = { source: nodes, rows, starts, turns }
+    previous = { source: nodes, reusedPrefix, rows, starts, turns }
     return rows
   }
 }

@@ -170,10 +170,10 @@ export const Timeline = memo(function Timeline(props: TimelineProps): ReactEleme
   const displayNodes = useMemo(
     () =>
       (conversationLayout === 'focused'
-        ? focusedProjector(displayProjection.nodes)
+        ? focusedProjector(displayProjection.nodes, displayProjection.reusedPrefix)
         : displayProjection.nodes
       ).filter((node) => node.kind !== 'notice' && node.kind !== 'retry' && node.kind !== 'turn-terminal'),
-    [conversationLayout, displayProjection.nodes, focusedProjector],
+    [conversationLayout, displayProjection.nodes, displayProjection.reusedPrefix, focusedProjector],
   )
   // The Webview's own "Copy" copies nothing without a selection; this fills it
   // with the addressed row's Markdown instead of an empty clipboard.
