@@ -665,6 +665,7 @@ describe('Timeline', () => {
       expect(scrollTop).toBe(0)
       expect(scrollWithKey('End').defaultPrevented).toBe(true)
       expect(scrollTop).toBe(4_600)
+      expect(timeline.dataset.scrollFollow).toBe('pinned')
       expect(scrollWithKey(' ', { shiftKey: true }).defaultPrevented).toBe(true)
       expect(scrollTop).toBe(4_400)
       expect(scrollRequests).toContain(4_600)
@@ -840,6 +841,48 @@ describe('Timeline', () => {
     })
     fireEvent.click(screen.getByRole('button', { name: 'Load earlier' }))
     expect(loadSecond).toHaveBeenCalledTimes(2)
+  })
+
+  it('preserves the newer reading position when a page arrives during the same wheel gesture', async () => {
+    let finishPage!: () => void
+    const loadOlder = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishPage = resolve
+        }),
+    )
+    const current = { kind: 'user-message', id: 'current', markdown: 'Current' } as const
+    const earlier = { kind: 'user-message', id: 'earlier', markdown: 'Earlier' } as const
+    const pendingNodes = [current]
+    const props = {
+      sessionId: 'session-1',
+      streaming: false,
+      hasMoreHistory: true,
+      pagedHistory: true,
+      onLoadOlderHistory: loadOlder,
+    }
+    const view = render(<Timeline {...props} nodes={pendingNodes} />)
+    const timeline = screen.getByRole('region', { name: 'Conversation timeline' })
+    let height = 1_000
+    Object.defineProperty(timeline, 'scrollHeight', { configurable: true, get: () => height })
+    Object.defineProperty(timeline, 'clientHeight', { configurable: true, value: 300 })
+
+    fireEvent.wheel(timeline, { deltaY: -30 })
+    timeline.scrollTop = 280
+    fireEvent.scroll(timeline)
+    fireEvent.click(screen.getByRole('button', { name: 'Load earlier' }))
+    view.rerender(<Timeline {...props} nodes={pendingNodes} loadingOlderHistory />)
+
+    fireEvent.wheel(timeline, { deltaY: -80 })
+    timeline.scrollTop = 180
+    fireEvent.scroll(timeline)
+    height = 1_300
+    view.rerender(<Timeline {...props} nodes={[earlier, current]} loadingOlderHistory={false} />)
+
+    expect(loadOlder).toHaveBeenCalledOnce()
+    expect(timeline.scrollTop).toBe(480)
+    expect(timeline.dataset.scrollFollow).toBe('free')
+    await act(async () => finishPage())
   })
 
   it('keeps memoized row actions wired to the latest parent callback', () => {

@@ -199,9 +199,13 @@ describe('useScrollFollow user jump', () => {
     expect(nextFrame).toBeUndefined()
   })
 
-  it('keeps a pinned reader glued to the tail when the viewport narrows', async () => {
+  it('snaps during a viewport resize and eases later streaming growth', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] })
     stubReducedMotion(false)
     const resize = stubViewportResize()
+    const requestFrame = vi.fn<typeof window.requestAnimationFrame>(() => 1)
+    vi.stubGlobal('requestAnimationFrame', requestFrame)
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
     function Stream(): ReactElement {
       const follow = useScrollFollow({
         contentKey: 'narrow',
@@ -238,6 +242,23 @@ describe('useScrollFollow user jump', () => {
     })
     expect(viewport.scrollTop).toBe(940)
     expect(screen.getByTestId('narrow-pinned').getAttribute('data-pinned')).toBe('true')
+
+    // Content arriving during resize does not extend the resize window.
+    act(() => {
+      vi.advanceTimersByTime(150)
+    })
+    setScrollMetrics(viewport, 940, 1_370, 400)
+    act(() => resize(content, 1_370))
+    expect(viewport.scrollTop).toBe(970)
+    expect(requestFrame).not.toHaveBeenCalled()
+
+    act(() => {
+      vi.advanceTimersByTime(100)
+    })
+    setScrollMetrics(viewport, 970, 1_400, 400)
+    act(() => resize(content, 1_400))
+    expect(viewport.scrollTop).toBe(970)
+    expect(requestFrame).toHaveBeenCalledOnce()
   })
 
   it('lets a captured reader gesture cancel same-turn append following', async () => {
@@ -685,6 +706,10 @@ describe('useScrollFollow user jump', () => {
     act(() => resize(content, 1_000))
     fireEvent.wheel(viewport, { deltaY: -30 })
     setScrollMetrics(viewport, 500, 1_400, 300)
+    // The previous internal write can finish before the new gesture moves.
+    fireEvent(viewport, new Event('scrollend'))
+    fireEvent.click(screen.getByRole('button', { name: 'Preserve layout' }))
+    expect(viewport.scrollTop).toBe(500)
 
     act(() => {
       resize(viewport, 300)
