@@ -10,6 +10,12 @@ const MAX_FOLLOW_SPEED_PX_PER_MS = 2
 const INITIAL_PLACEMENT_STABLE_FRAMES = 2
 const INITIAL_PLACEMENT_MAX_FRAMES = 8
 const SCROLL_KEYS = new Set(['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', ' '])
+const SCROLL_DISCLOSURE_EVENT = 'dsh:scroll-disclosure'
+
+/** Notify the scrollports before a reader changes the size of a disclosure. */
+export function preserveDisclosurePosition(trigger: HTMLElement): void {
+  trigger.dispatchEvent(new Event(SCROLL_DISCLOSURE_EVENT, { bubbles: true }))
+}
 
 interface ScheduledFollow {
   readonly cancel: () => void
@@ -49,6 +55,8 @@ export interface ScrollFollowOptions {
   readonly smoothTailGrowth?: boolean
   /** Apply paging keys on the focused scrollport through the same position writer. */
   readonly keyboardNavigation?: boolean
+  /** Only live log views follow growth automatically. */
+  readonly autoFollow?: boolean
 }
 
 /** A reader position captured before a history prepend or layout change. */
@@ -138,6 +146,9 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
   const readerGestureRef = useRef<ReaderGesture | undefined>(undefined)
   const interactionGenerationRef = useRef(0)
   const internalScrollTopRef = useRef<number | undefined>(undefined)
+  const disclosurePositionRef = useRef<{ readonly generation: number; readonly top: number } | undefined>(
+    undefined,
+  )
   const lastReaderScrollTopRef = useRef<number | undefined>(undefined)
   const viewportHeightRef = useRef(0)
   const measuredTailRef = useRef<number | undefined>(undefined)
@@ -145,6 +156,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
   const initialPlacementFrameRef = useRef<number | undefined>(undefined)
   const layoutProtectionRef = useRef<LayoutProtection>({ preserveTailUntil: 0, snapTailUntil: 0 })
   const smoothTailGrowth = options.smoothTailGrowth === true
+  const autoFollow = options.autoFollow !== false
   const tailMotionRef = useRef<{ frame: number; target: number; position: number } | undefined>(undefined)
   const scrollHandlerRef = useRef<() => void>(() => undefined)
   const itemCountRef = useRef(options.itemCount)
@@ -207,7 +219,12 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     layoutProtectionRef.current = { preserveTailUntil: 0, snapTailUntil: 0 }
   }, [])
 
-  const isUserScrollActive = useCallback((): boolean => readerGestureRef.current !== undefined, [])
+  const isUserScrollActive = useCallback(
+    (): boolean =>
+      readerGestureRef.current !== undefined &&
+      disclosurePositionRef.current?.generation !== interactionGenerationRef.current,
+    [],
+  )
 
   const preserveTailDuringLayout = useCallback((): void => {
     layoutProtectionRef.current.preserveTailUntil = window.performance.now() + LAYOUT_SETTLE_MS
@@ -428,6 +445,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
 
   const scheduleScrollToLatest = useCallback(
     (scheduleOptions?: ScrollFollowScheduleOptions): void => {
+      if (!autoFollow) return
       // A free reader may be clamped by a normal-flow/virtualized-canvas
       // transition. Restore the last observed reader position first; this
       // path never changes a free reader into tail-following mode.
@@ -489,6 +507,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       })
     },
     [
+      autoFollow,
       cancelScheduledFollow,
       followGrowth,
       isUserScrollActive,
@@ -601,6 +620,11 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     const element = scrollRef.current
     if (element === null) return
     const expectedScrollTop = internalScrollTopRef.current
+    const disclosure = disclosurePositionRef.current
+    if (disclosure?.generation === interactionGenerationRef.current) {
+      const limit = Math.max(0, element.scrollHeight - element.clientHeight)
+      if (Math.abs(element.scrollTop - Math.min(disclosure.top, limit)) <= 1) return
+    }
     const isInternalScroll =
       expectedScrollTop !== undefined && Math.abs(element.scrollTop - expectedScrollTop) <= 1
     // The native event for our previous tail write may be delivered after a
@@ -722,16 +746,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
   useLayoutEffect(() => {
     const element = scrollRef.current
     if (element === null) return
-    const getNestedScrollBoundary = (event: Event): Element | null => {
-      if (!(event.target instanceof Element)) return null
-      const boundary = event.target.closest('[data-scroll-follow-boundary]')
-      return boundary !== null && boundary !== element && element.contains(boundary) ? boundary : null
-    }
-    const isNestedScrollGesture = (event: Event): boolean => {
-      const boundary = getNestedScrollBoundary(event)
-      return boundary !== null && boundary.scrollHeight - boundary.clientHeight > 1
-    }
-    const nestedWheelConsumes = (target: EventTarget | null, deltaY: number): boolean => {
+    const nestedScrollConsumes = (target: EventTarget | null, deltaY?: number): boolean => {
       for (
         let node = target instanceof Element ? target : null;
         node !== null && node !== element;
@@ -741,6 +756,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
         if (maxTop <= 1) continue
         const style = getComputedStyle(node)
         if (!/^(auto|scroll)$/u.test(style.overflowY)) continue
+        if (deltaY === undefined) return true
         const remaining = deltaY > 0 ? maxTop - node.scrollTop : node.scrollTop
         if (remaining > 1 || /^(contain|none)$/u.test(style.overscrollBehaviorY)) return true
       }
@@ -750,15 +766,14 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       if (event.defaultPrevented || event.ctrlKey || event.shiftKey) return
       const { deltaMode, deltaX, deltaY } = event
       if (Math.abs(deltaY) <= Math.abs(deltaX)) return
-      const insideWorkLog = getNestedScrollBoundary(event) !== null
-      if (insideWorkLog && nestedWheelConsumes(event.target, deltaY)) return
-      if (options.snapToTailOnWheel && event.cancelable && deltaY > 0) {
+      if (nestedScrollConsumes(event.target, deltaY)) return
+      if (autoFollow && options.snapToTailOnWheel && event.cancelable && deltaY > 0) {
         let distance = deltaY
         if (deltaMode === 1) distance *= Number.parseFloat(getComputedStyle(element).lineHeight) || 16
         if (deltaMode === 2) distance *= element.clientHeight
         const maxTop = element.scrollHeight - element.clientHeight
-        if (maxTop > 1 && maxTop - element.scrollTop <= distance + WHEEL_TAIL_DISTANCE) {
-          if (!insideWorkLog && nestedWheelConsumes(event.target, deltaY)) return
+        const gap = maxTop - element.scrollTop
+        if (gap > 1 && gap <= distance + WHEEL_TAIL_DISTANCE) {
           // Reattach against the current layout before another chunk can move
           // the tail or the native wheel animation can leave a stale offset.
           event.preventDefault()
@@ -771,7 +786,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     const onPointerDown = (event: PointerEvent): void => {
       // Scrollbar dragging and native middle-button autoscroll both begin
       // before the scroll event can distinguish reader input from layout.
-      if ((event.button !== 0 && event.button !== 1) || isNestedScrollGesture(event)) return
+      if ((event.button !== 0 && event.button !== 1) || nestedScrollConsumes(event.target)) return
       armUserScrollLock(true)
     }
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -781,7 +796,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
         event.altKey ||
         event.ctrlKey ||
         event.metaKey ||
-        isNestedScrollGesture(event)
+        nestedScrollConsumes(event.target)
       )
         return
       if (event.target instanceof HTMLButtonElement || event.target instanceof HTMLInputElement) return
@@ -812,12 +827,56 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     const onScroll = (event: Event): void => {
       if (event.target === element) scrollHandlerRef.current()
     }
+    let disclosureFrame: number | undefined
+    const cancelDisclosureFrame = (): void => {
+      if (disclosureFrame !== undefined) window.cancelAnimationFrame(disclosureFrame)
+      disclosureFrame = undefined
+      disclosurePositionRef.current = undefined
+    }
+    const onDisclosure = (event: Event): void => {
+      const trigger = event.target
+      if (!(trigger instanceof HTMLElement) || element.clientHeight === 0) return
+      const viewport = element.getBoundingClientRect()
+      const header = trigger.getBoundingClientRect()
+      if (header.bottom <= viewport.top || header.top >= viewport.bottom) return
+      armUserScrollLock(false)
+      stickToBottomRef.current = false
+      lastReaderScrollTopRef.current = element.scrollTop
+      setIsPinnedToBottom(false)
+      updateJumpVisibility()
+
+      cancelDisclosureFrame()
+      if (typeof window.requestAnimationFrame !== 'function') {
+        clearUserScrollLock()
+        return
+      }
+      const offset = header.top - viewport.top
+      const generation = interactionGenerationRef.current
+      disclosurePositionRef.current = { generation, top: element.scrollTop }
+      // The event bubbles from the innermost port out. Restore that port
+      // first, then measure the same header from each containing port.
+      disclosureFrame = window.requestAnimationFrame(() => {
+        disclosureFrame = undefined
+        disclosurePositionRef.current = undefined
+        if (generation !== interactionGenerationRef.current) return
+        clearUserScrollLock()
+        if (!element.contains(trigger)) return
+        const delta = trigger.getBoundingClientRect().top - element.getBoundingClientRect().top - offset
+        const maxTop = Math.max(0, element.scrollHeight - element.clientHeight)
+        if (Math.abs(delta) > 0.5)
+          writeScrollTop(element, Math.min(maxTop, Math.max(0, element.scrollTop + delta)))
+        updateJumpVisibility()
+      })
+    }
     element.addEventListener('wheel', onWheel, { capture: true, passive: !options.snapToTailOnWheel })
     element.addEventListener('pointerdown', onPointerDown, { capture: true, passive: true })
     element.addEventListener('keydown', onKeyDown, { capture: true })
     element.addEventListener('scroll', onScroll, { capture: true, passive: true })
     element.addEventListener('scrollend', onScrollEnd, { capture: true, passive: true })
+    element.addEventListener(SCROLL_DISCLOSURE_EVENT, onDisclosure)
     return () => {
+      cancelDisclosureFrame()
+      element.removeEventListener(SCROLL_DISCLOSURE_EVENT, onDisclosure)
       element.removeEventListener('wheel', onWheel, true)
       element.removeEventListener('pointerdown', onPointerDown, true)
       element.removeEventListener('keydown', onKeyDown, true)
@@ -826,6 +885,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
     }
   }, [
     armUserScrollLock,
+    autoFollow,
     clearUserScrollLock,
     handleWheel,
     options.keyboardNavigation,
@@ -863,8 +923,14 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       stickToBottomRef.current = true
       setIsPinnedToBottom(true)
       setShowJumpToLatest(false)
-    } else restoreReaderPosition(true)
+    } else if (autoFollow) restoreReaderPosition(true)
     updateJumpVisibility()
+    if (!autoFollow) {
+      cancelInitialPlacement()
+      cancelScheduledFollow()
+      cancelTailMotion()
+      return
+    }
     if (stickToBottomRef.current && options.itemCount > 0) {
       const initialPlacement = sessionChanged || (smoothTailGrowth && !positionedSessionRef.current)
       positionedSessionRef.current = true
@@ -876,6 +942,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       if (initialPlacement) settleInitialPlacement()
     }
   }, [
+    autoFollow,
     cancelInitialPlacement,
     cancelScheduledFollow,
     cancelTailMotion,
@@ -893,7 +960,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
 
   useLayoutEffect(() => {
     const element = scrollRef.current
-    if (element === null || typeof ResizeObserver === 'undefined') return
+    if (!autoFollow || element === null || typeof ResizeObserver === 'undefined') return
 
     const content = contentRef.current
     let contentHeight: number | undefined
@@ -937,6 +1004,7 @@ export function useScrollFollow(options: ScrollFollowOptions): ScrollFollowResul
       cancelScheduledFollow()
     }
   }, [
+    autoFollow,
     cancelScheduledFollow,
     isUserScrollActive,
     options.observeContentSize,

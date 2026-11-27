@@ -4,6 +4,7 @@ import { Icon } from '../../ui/Icon.js'
 import type { Translate } from '../../i18n.js'
 import { useConversationLayout } from '../../app/ConversationLayoutProvider.js'
 import { MarkdownContent } from './MarkdownContent.js'
+import { preserveDisclosurePosition } from '../../components/common/useScrollFollow.js'
 
 export interface ReasoningDisclosureProps {
   readonly id: string
@@ -35,7 +36,11 @@ export const ReasoningDisclosure = memo(function ReasoningDisclosure(
   const contentId = `${props.id}:content`
   const showPreview = props.expanded || (props.streaming && preview !== '')
   const showCollapsedPreview = preview !== '' && (!props.hideSettledPreview || props.streaming)
-  const toggle = (): void => props.onExpandedChange(!props.expanded)
+  const chevron = (
+    <span className="dsh-timeline__disclosure" aria-hidden="true">
+      <Icon name="chevron-down" />
+    </span>
+  )
 
   return (
     <section
@@ -58,13 +63,17 @@ export const ReasoningDisclosure = memo(function ReasoningDisclosure(
             ? props.translate('timeline.hideReasoning')
             : props.translate('timeline.showReasoning')
         }
-        onClick={toggle}
+        onClick={(event) => {
+          preserveDisclosurePosition(event.currentTarget)
+          props.onExpandedChange(!props.expanded)
+        }}
       >
         <span className="dsh-timeline__reasoning-icon" aria-hidden="true">
           <Icon name="sparkles" />
         </span>
         <span className="dsh-timeline__reasoning-heading">
           <strong>{props.translate('timeline.thinking')}</strong>
+          {focused ? chevron : null}
           {!props.expanded && showCollapsedPreview ? (
             <ContentFlow as="span" variant="truncate" className="dsh-timeline__reasoning-summary">
               {preview.replace(/\s+/gu, ' ')}
@@ -72,9 +81,7 @@ export const ReasoningDisclosure = memo(function ReasoningDisclosure(
           ) : null}
         </span>
         {props.streaming ? <span className="dsh-timeline__streaming" aria-hidden="true" /> : null}
-        <span className="dsh-timeline__disclosure" aria-hidden="true">
-          <Icon name="chevron-down" />
-        </span>
+        {focused ? null : chevron}
       </button>
       <div className="dsh-disclosure" data-open={props.expanded}>
         <div className="dsh-disclosure__inner">

@@ -24,7 +24,14 @@
           kind: 'assistant-message',
           id: 'r' + i,
           markdown: '',
-          reasoning: { markdown: 'Inspect implementation ' + i, streaming: false },
+          reasoning: {
+            markdown:
+              i === 0
+                ? 'Inspect implementation 0\n\n' +
+                  'Long reasoning paragraph for the scroll anchor.\n\n'.repeat(32)
+                : 'Inspect implementation ' + i,
+            streaming: false,
+          },
           streaming: false,
           turn: 1,
           step: i + 1,

@@ -45,14 +45,12 @@
   line-height: 24px;
 }
 
-.dsh-app[data-conversation-layout='focused']
-  :is(.dsh-tool-row__summary, .dsh-tool-card__summary, .dsh-timeline__reasoning-toggle):hover {
+.dsh-app[data-conversation-layout='focused'] :is(.dsh-tool-row__summary, .dsh-tool-card__summary):hover {
   background: transparent;
   color: var(--dsh-text);
 }
 
-.dsh-app[data-conversation-layout='focused']
-  :is(.dsh-tool-row__title, .dsh-tool-card__title, .dsh-timeline__reasoning-heading strong) {
+.dsh-app[data-conversation-layout='focused'] :is(.dsh-tool-row__title, .dsh-tool-card__title) {
   font-weight: 400;
   color: inherit;
 }
@@ -65,14 +63,40 @@
   color: inherit;
 }
 
-.dsh-app[data-conversation-layout='focused'] .dsh-timeline__reasoning-preview--expanded {
+.dsh-app[data-conversation-layout='focused'] .dsh-timeline__reasoning-toggle {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  border-radius: 0;
+  color: var(--dsh-muted);
+}
+
+.dsh-app[data-conversation-layout='focused'] .dsh-timeline__reasoning-heading {
+  align-items: center;
+  gap: var(--dsh-space-1);
+}
+
+.dsh-app[data-conversation-layout='focused'] .dsh-timeline__reasoning-toggle[aria-expanded='true'] {
   color: var(--dsh-text);
 }
 
 .dsh-app[data-conversation-layout='focused']
-  .dsh-timeline__reasoning-preview--expanded
-  > .dsh-timeline__reasoning-toggle {
-  position: static;
+  .dsh-timeline__row
+  .dsh-timeline__reasoning-toggle:is(:hover, :focus-visible) {
+  background-color: var(--dsh-work-header-background, var(--dsh-bg));
+}
+
+.dsh-app[data-conversation-layout='focused']
+  .dsh-timeline__reasoning-toggle:focus-visible
+  .dsh-timeline__disclosure {
+  color: var(--dsh-link);
+}
+
+.dsh-app[data-conversation-layout='focused'] .dsh-timeline__reasoning-toggle:focus-visible {
+  outline: 1px solid var(--dsh-focus);
+  outline-offset: -1px;
+}
+
+.dsh-app[data-conversation-layout='focused'] .dsh-timeline__reasoning-preview--expanded {
+  color: var(--dsh-text);
 }
 
 .dsh-app[data-conversation-layout='focused'] .dsh-timeline__reasoning-preview-content {

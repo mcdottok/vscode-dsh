@@ -22,6 +22,7 @@ import { ToolSearchPreview } from './ToolSearchPreview.js'
 import { ToolTerminalPreview } from './ToolTerminalPreview.js'
 import { ToolWebPreview } from './ToolWebPreview.js'
 import { useConversationLayout } from '../../app/ConversationLayoutProvider.js'
+import { preserveDisclosurePosition } from '../../components/common/useScrollFollow.js'
 
 export type ToolTimelineNode = Extract<TimelineNode, { readonly kind: 'tool' }>
 
@@ -103,6 +104,7 @@ const ToolCallRows = memo(function ToolCallRows(props: ToolCallCollectionProps):
       <summary
         className="dsh-timeline__tool-group-summary"
         aria-label={props.translate('timeline.showToolCalls', { count: props.tools.length })}
+        onClick={(event) => preserveDisclosurePosition(event.currentTarget)}
       >
         <span className="dsh-timeline__tool-group-icon" aria-hidden="true">
           <Icon name="tool" />
@@ -173,7 +175,22 @@ const ToolCardView = memo(function ToolCardView(props: ToolCardViewProps): React
   }, [expandedKeys, node.id, onExpandedChange])
 
   return (
-    <div className="dsh-timeline__tool-call" data-tool-call-id={node.id}>
+    <div
+      className="dsh-timeline__tool-call"
+      data-tool-call-id={node.id}
+      onClickCapture={(event) => {
+        if (!(event.target instanceof Element)) return
+        const trigger = event.target.closest<HTMLElement>(
+          'summary, .dsh-tool-row__toggle, .dsh-tool-row__summary[aria-expanded], .dsh-tool-card__summary[aria-expanded]',
+        )
+        if (
+          trigger !== null &&
+          !trigger.matches(':disabled') &&
+          trigger.closest('[data-tool-call-id]') === event.currentTarget
+        )
+          preserveDisclosurePosition(trigger)
+      }}
+    >
       {toolRendererRegistry.render(node.tool, {
         focused,
         expanded,

@@ -232,6 +232,7 @@
 /* Each process group stays independently scrollable between replies. */
 .dsh-focused-turn__process {
   position: relative;
+  isolation: isolate;
   max-height: min(46vh, 340px);
   overflow: auto;
   overscroll-behavior-x: contain;
@@ -239,7 +240,91 @@
   overscroll-behavior-y: auto;
   scrollbar-gutter: stable;
   overflow-anchor: none;
-  padding: 2px 4px 8px 0;
+  padding: 0 4px 8px 0;
+}
+
+.dsh-timeline {
+  --dsh-work-header-size: max(28px, var(--dsh-tool-summary-height));
+}
+
+.dsh-timeline[data-conversation-layout='focused'] {
+  --dsh-work-header-background: var(--dsh-bg);
+}
+
+.dsh-timeline,
+.dsh-focused-turn__process {
+  scroll-padding-block-start: calc(2 * var(--dsh-work-header-size));
+}
+
+/* Face the work log directly against its summary. The opaque one-pixel
+ * overlap covers fractional edges when the two scrollports move independently. */
+.dsh-timeline .dsh-focused-turn__summary[aria-expanded='true'] {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 4;
+  inline-size: 100%;
+  margin-block-end: 0;
+  background: var(--dsh-bg);
+  box-shadow: 0 1px 0 var(--dsh-bg);
+}
+
+.dsh-timeline
+  :is(
+    .dsh-focused-tools__summary[aria-expanded='true']:not(:disabled),
+    .dsh-timeline__tool-group[open] > .dsh-timeline__tool-group-summary
+  ) {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 3;
+  min-block-size: var(--dsh-work-header-size);
+  block-size: var(--dsh-work-header-size);
+  background: var(--dsh-work-header-background, var(--dsh-surface-raised));
+  box-shadow: 0 1px 0 var(--dsh-work-header-background, var(--dsh-surface-raised));
+}
+
+.dsh-focused-tools:has(> .dsh-focused-tools__summary[aria-expanded='true']:not(:disabled))
+  > .dsh-focused-tools__body,
+.dsh-timeline__tool-group[open] > .dsh-timeline__tool-group-list {
+  --dsh-work-child-inset: var(--dsh-work-header-size);
+}
+
+.dsh-focused-tools__body {
+  margin-inline-start: var(--dsh-space-2);
+  padding-inline-start: var(--dsh-space-2);
+  border-inline-start: var(--dsh-border);
+}
+
+.dsh-timeline :is(.dsh-tool-card, .dsh-tool-row) {
+  overflow: clip;
+}
+
+.dsh-timeline[data-conversation-layout]
+  .dsh-timeline__row
+  :is(
+    .dsh-timeline__reasoning-toggle[aria-expanded='true'],
+    .dsh-tool-row__summary[aria-expanded='true'],
+    .dsh-tool-card__summary[aria-expanded='true'],
+    .dsh-tool-row__summary--focused:has(> .dsh-tool-row__toggle[aria-expanded='true'])
+  ) {
+  position: sticky;
+  inset-block-start: var(--dsh-work-child-inset, 0px);
+  z-index: 2;
+  background: var(--dsh-work-header-background, var(--dsh-surface-raised));
+}
+
+.dsh-timeline :is(.dsh-tool-card__details, .dsh-tool-row__details) {
+  overscroll-behavior-y: auto;
+}
+
+/* Tool outputs keep their own bounded viewport. Inside the bounded work log,
+ * the wrapper adds no intermediate vertical scrollbar. */
+.dsh-focused-turn__process :is(.dsh-tool-card__details, .dsh-tool-row__details) {
+  max-block-size: none;
+  overflow: visible;
+}
+
+.dsh-focused-turn__process :is(.dsh-tool-card__section, .dsh-tool-row__section) > :is(p, pre) {
+  max-block-size: none;
 }
 
 .dsh-focused-turn__process:not([hidden]) > .dsh-focused-turn__process-content {

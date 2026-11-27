@@ -7,6 +7,7 @@ import { SubmittedPlanCard } from './SubmittedPlanCard.js'
 import { focusedPresentationPolicy } from './focused-presentation-policy.js'
 import type { TranscriptViewMode } from '../../app/ui-preferences.js'
 import type { ExpandedDetailsSetter } from './timeline-shared.js'
+import { preserveDisclosurePosition } from '../../components/common/useScrollFollow.js'
 
 const TOOL_PAGE_SIZE = 20
 
@@ -79,7 +80,8 @@ export function FocusedToolActivity(
         aria-expanded={visible}
         aria-controls={bodyId}
         disabled={!policy.groupTools}
-        onClick={() => {
+        onClick={(event) => {
+          preserveDisclosurePosition(event.currentTarget)
           setDisclosure({ ...disclosure, open: !open })
           props.onExpandedChange((current) => {
             const next = new Set(current)

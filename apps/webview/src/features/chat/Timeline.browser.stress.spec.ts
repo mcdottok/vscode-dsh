@@ -196,6 +196,58 @@ it.skipIf(browser === undefined)(
           delete window.workLogProbe;
         })()`)
       }
+      const checkStickyReasoning = async (): Promise<void> => {
+        await evaluate(`(() => {
+          const process = document.querySelector('.dsh-focused-turn__process:not([hidden])');
+          process.scrollIntoView({ block: 'center' });
+          process.scrollTop = 0;
+        })()`)
+        await settle()
+        const start = (await evaluate(`(() => {
+          const process = document.querySelector('.dsh-focused-turn__process:not([hidden])');
+          const summary = process.parentElement.querySelector('.dsh-focused-turn__summary');
+          const header = process.querySelector('.dsh-timeline__reasoning-toggle');
+          const top = process.getBoundingClientRect().top;
+          const geometry = {
+            gap: top - summary.getBoundingClientRect().bottom,
+            padding: parseFloat(getComputedStyle(process).paddingBlockStart),
+            offset: header.getBoundingClientRect().top - top,
+          };
+          header.click();
+          return geometry;
+        })()`)) as { gap: number; padding: number; offset: number }
+        expect(start.gap).toBeLessThanOrEqual(0.5)
+        expect(start.padding).toBe(0)
+        await settle()
+        const expanded = (await evaluate(`(() => {
+          const process = document.querySelector('.dsh-focused-turn__process:not([hidden])');
+          const header = process.querySelector('.dsh-timeline__reasoning-toggle');
+          return header.getBoundingClientRect().top - process.getBoundingClientRect().top;
+        })()`)) as number
+        expect(Math.abs(expanded - start.offset)).toBeLessThanOrEqual(2)
+
+        await evaluate("document.querySelector('.dsh-focused-turn__process:not([hidden])').scrollTop = 100")
+        await settle()
+        const sticky = (await evaluate(`(() => {
+          const process = document.querySelector('.dsh-focused-turn__process:not([hidden])');
+          const header = process.querySelector('.dsh-timeline__reasoning-toggle');
+          const rect = header.getBoundingClientRect();
+          const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+          const result = { offset: rect.top - process.getBoundingClientRect().top,
+            hit: header.contains(hit), scrolled: process.scrollTop };
+          header.click();
+          return result;
+        })()`)) as { offset: number; hit: boolean; scrolled: number }
+        expect(sticky.scrolled).toBeGreaterThan(50)
+        expect(Math.abs(sticky.offset)).toBeLessThanOrEqual(2)
+        expect(sticky.hit).toBe(true)
+        await settle()
+        expect(
+          await evaluate(
+            "document.querySelector('.dsh-focused-turn__process:not([hidden]) .dsh-timeline__reasoning-toggle').getAttribute('aria-expanded')",
+          ),
+        ).toBe('false')
+      }
       for (const mode of ['compact', 'standard', 'detailed', 'verbose']) {
         await send('Page.navigate', { url: `${origin}/__work_log_${process.pid}.html?mode=${mode}` })
         let ready = false
@@ -211,7 +263,10 @@ it.skipIf(browser === undefined)(
         await check()
         await evaluate("document.querySelector('.dsh-focused-turn__summary').click()")
         await check()
-        if (mode === 'compact') await checkWorkLogWheel()
+        if (mode === 'compact') {
+          await checkWorkLogWheel()
+          await checkStickyReasoning()
+        }
         for (let index = 0; index < 12; index++) {
           await evaluate(
             `(() => { const buttons = [...document.querySelectorAll('.dsh-focused-tools__summary')]; const button = buttons[Math.min(${index} * 3, buttons.length - 1)]; if (button && !button.disabled) button.click(); })()`,

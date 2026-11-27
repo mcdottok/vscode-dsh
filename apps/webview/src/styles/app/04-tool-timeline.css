@@ -77,6 +77,10 @@
   overflow: hidden;
 }
 
+.dsh-timeline__tool-group {
+  overflow: clip;
+}
+
 .dsh-timeline__tool-group-summary,
 .dsh-timeline__event-group-summary {
   list-style: none;
@@ -275,7 +279,7 @@ button.dsh-timeline__presented-file-reveal:hover {
 }
 
 .dsh-timeline__reasoning-preview {
-  overflow: hidden;
+  overflow: clip;
   padding: 0;
 }
 
@@ -303,7 +307,7 @@ button.dsh-timeline__presented-file-reveal:hover {
 }
 
 .dsh-timeline__reasoning-icon,
-.dsh-timeline__reasoning-toggle > .dsh-timeline__disclosure {
+.dsh-timeline__reasoning-toggle .dsh-timeline__disclosure {
   display: inline-grid;
   flex: 0 0 auto;
   width: var(--dsh-icon-size-sm);

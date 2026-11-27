@@ -3,7 +3,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { useCallback, type ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { useScrollFollow } from './useScrollFollow.js'
+import { preserveDisclosurePosition, useScrollFollow } from './useScrollFollow.js'
 import { useVirtualizedCollection } from './useVirtualizedCollection.js'
 
 describe('useScrollFollow user jump', () => {
@@ -327,12 +327,11 @@ describe('useScrollFollow user jump', () => {
     { top: 0, deltaY: -80, pinned: false },
     { top: 300, deltaY: 80, pinned: false },
   ])(
-    'gives a wheel gesture to the work log only when it can scroll in that direction (%j)',
+    'gives the nearest scrollable output the wheel only in a direction it can use (%j)',
     ({ top, deltaY, pinned }) => {
       const { viewport } = renderHarness()
       setScrollMetrics(viewport, 580, 1_000, 400)
       const workLog = document.createElement('div')
-      workLog.setAttribute('data-scroll-follow-boundary', '')
       workLog.style.overflowY = 'auto'
       setScrollMetrics(workLog, top, 500, 200)
       viewport.append(workLog)
@@ -343,6 +342,40 @@ describe('useScrollFollow user jump', () => {
       expect(screen.getByTestId('jump-state').getAttribute('data-pinned')).toBe(String(pinned))
     },
   )
+
+  it('does not swallow a wheel event when a live log is already at its end', () => {
+    const { viewport } = renderHarness(false, true)
+    setScrollMetrics(viewport, 600, 1_000, 400)
+    expect(fireEvent.wheel(viewport, { deltaY: 80, cancelable: true })).toBe(true)
+    expect(viewport.scrollTop).toBe(600)
+  })
+
+  it('keeps a disclosure header in view when collapsing first clamps the viewport', () => {
+    let nextFrame: FrameRequestCallback | undefined
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback): number => {
+      nextFrame = callback
+      return 1
+    })
+    vi.stubGlobal('cancelAnimationFrame', () => {
+      nextFrame = undefined
+    })
+    const { viewport } = renderHarness()
+    const header = document.createElement('button')
+    viewport.append(header)
+    viewport.getBoundingClientRect = () => new DOMRect(0, 0, 400, 400)
+    let headerTop = 20
+    header.getBoundingClientRect = () => new DOMRect(0, headerTop, 200, 28)
+    setScrollMetrics(viewport, 600, 1_000, 400)
+    act(() => preserveDisclosurePosition(header))
+    expect(nextFrame).toBeDefined()
+
+    setScrollMetrics(viewport, 400, 800, 400)
+    headerTop = -120
+    fireEvent.scroll(viewport)
+    act(() => nextFrame?.(performance.now()))
+    expect(viewport.scrollTop).toBe(260)
+    expect(screen.getByTestId('jump-state').getAttribute('data-pinned')).toBe('false')
+  })
 
   afterEach(() => {
     cleanup()
@@ -744,7 +777,10 @@ function stubViewportResize(): (target: Element, height: number, width?: number)
   }
 }
 
-function renderHarness(layoutMeasurementsActive = false): {
+function renderHarness(
+  layoutMeasurementsActive = false,
+  snapToTailOnWheel = false,
+): {
   viewport: HTMLDivElement
   scrollTo: ReturnType<typeof vi.fn>
 } {
@@ -754,6 +790,7 @@ function renderHarness(layoutMeasurementsActive = false): {
       itemCount: 1,
       sessionId: 'session-1',
       layoutMeasurementsActive,
+      snapToTailOnWheel,
     })
     return (
       <>
